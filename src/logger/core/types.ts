@@ -8,6 +8,17 @@
  */
 
 /**
+ * Transport modes for logger output routing.
+ *
+ * Defined locally to decouple the logger from server-layer types.
+ * The logger only needs this to decide stderr vs stdout routing.
+ *
+ * - `stdio` — ALL logs to stderr (stdout reserved for JSON-RPC)
+ * - `http` / `https` — Standard stream routing
+ */
+export type TransportMode = "stdio" | "http" | "https";
+
+/**
  * Available logging levels ordered by severity (lowest to highest).
  *
  * - `trace`: Very detailed debugging information
@@ -16,14 +27,14 @@
  * - `warn`: Warning conditions
  * - `error`: Error conditions
  */
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
 /**
  * MCP Logging levels as defined by the MCP specification (RFC 5424).
  *
  * MCP uses syslog-style levels which are more granular than our internal levels.
  */
-export type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
+export type McpLogLevel = "debug" | "info" | "notice" | "warning" | "error" | "critical" | "alert" | "emergency";
 
 /**
  * HTTP request context for structured logging.
@@ -50,7 +61,7 @@ export interface EventContext {
   /** Event action (e.g., 'execute', 'connect', 'disconnect') */
   action?: string;
   /** Event outcome */
-  outcome?: 'success' | 'failure' | 'unknown';
+  outcome?: "success" | "failure" | "unknown";
 }
 
 /**
@@ -86,7 +97,7 @@ export interface LogContext {
  * Interface for a logger instance.
  * Defines the public API that all logger implementations must follow.
  */
-export interface ILogger {
+export interface LoggerInterface {
   /**
    * Log a message at TRACE level.
    * @param message - The message to log (supports printf-style formatting)
@@ -127,7 +138,7 @@ export interface ILogger {
    * @param context - The component context for the child logger
    * @returns A new logger instance with the specified context
    */
-  child(context: { component: string }): ILogger;
+  child(context: { component: string }): LoggerInterface;
 
   /**
    * Run a function within a logging context.
@@ -148,7 +159,7 @@ export interface ILogger {
  * Interface for log writers.
  * Writers are responsible for outputting formatted log entries to specific destinations.
  */
-export interface ILogWriter {
+export interface LogWriter {
   /**
    * Write a log entry to the destination.
    * @param level - The log level
@@ -174,7 +185,7 @@ export interface ILogWriter {
  * Interface for log formatters.
  * Formatters are responsible for converting log data into formatted strings.
  */
-export interface ILogFormatter {
+export interface LogFormatter {
   /**
    * Format a log entry.
    * @param params - The log entry parameters
@@ -199,6 +210,8 @@ export interface LogEntryParams {
   context?: LogContext;
   /** Optional metadata object */
   metadata?: Record<string, unknown>;
+  /** Optional error (auto-detected from args or explicitly set) */
+  error?: Error;
   /** Timestamp (ISO 8601) */
   timestamp?: string;
 }
@@ -210,15 +223,33 @@ export interface LoggerConfig {
   /** Minimum log level to output */
   level: LogLevel;
   /** Log format ('json' or 'text') */
-  format: 'json' | 'text';
+  format: "json" | "text";
   /** Service name for structured logs */
   serviceName: string;
   /** Service version */
   serviceVersion: string;
   /** Environment (e.g., 'development', 'production') */
   environment: string;
-  /** Transport mode ('stdio' or 'sse') */
-  transport: 'stdio' | 'sse';
+  /** Transport mode (determines console output routing) */
+  transport: TransportMode;
   /** Directory for file logging (optional) */
   logDir?: string;
+}
+
+// ============================================================================
+// Log Notification Handler (Plugin Interface)
+// ============================================================================
+
+/**
+ * Interface for sending log notifications to external consumers.
+ *
+ * Implementations deliver log messages to connected clients (e.g., MCP
+ * clients via notifications/message). The logger uses this interface
+ * instead of depending directly on the MCP SDK.
+ *
+ * Implementations are registered via {@link McpNotificationLogger.addHandler}.
+ */
+export interface LogNotificationHandler {
+  /** Send a log notification at the given MCP log level. */
+  sendLogNotification(level: McpLogLevel, message: string): Promise<void>;
 }

@@ -5,12 +5,12 @@
  * - InternalError: Unexpected internal errors
  * - RegistryError: Tool/resource registry errors
  *
- * @module server/errors/categories/system
+ * @module errors/categories/system
  */
 
-import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { AppError, ErrorCodes, getFrameworkMessage } from '../core/index.js';
-import type { BaseErrorOptions } from '../core/index.js';
+import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { AppError, ErrorCodes } from "../core/index.js";
+import type { BaseErrorOptions } from "../core/index.js";
 
 // ============================================================================
 // Internal Error
@@ -33,13 +33,13 @@ import type { BaseErrorOptions } from '../core/index.js';
  * ```
  */
 export class InternalError extends AppError {
-  constructor(message: string, options: Omit<BaseErrorOptions, 'code'> = {}) {
+  constructor(message: string, options: Omit<BaseErrorOptions, "code"> = {}) {
     super(message, {
       code: ErrorCodes.INTERNAL_ERROR,
       statusCode: 500,
       mcpCode: ErrorCode.InternalError,
       cause: options.cause,
-      recoveryHint: options.recoveryHint || 'This is an internal error. Please try again or contact support.',
+      recoveryHint: options.recoveryHint || "This is an internal error. Please try again or contact support.",
       context: options.context,
     });
   }
@@ -67,8 +67,8 @@ export class InternalError extends AppError {
    * Create an InternalError for an unexpected state.
    */
   static unexpectedState(description: string): InternalError {
-    return new InternalError(getFrameworkMessage('INTERNAL_UNEXPECTED_STATE', { description }), {
-      recoveryHint: 'This indicates a bug. Please report this issue.',
+    return new InternalError(`Unexpected state: ${description}`, {
+      recoveryHint: "This indicates a bug. Please report this issue.",
     });
   }
 
@@ -76,7 +76,7 @@ export class InternalError extends AppError {
    * Create an InternalError for missing implementation.
    */
   static notImplemented(feature: string): InternalError {
-    return new InternalError(getFrameworkMessage('INTERNAL_NOT_IMPLEMENTED', { feature }), {
+    return new InternalError(`Feature '${feature}' is not implemented`, {
       recoveryHint: `The feature '${feature}' is not yet implemented.`,
     });
   }
@@ -100,16 +100,16 @@ export class InternalError extends AppError {
  */
 export class RegistryError extends AppError {
   /** The type of registry item (tool, resource, prompt) */
-  readonly itemType: 'tool' | 'resource' | 'prompt';
+  readonly itemType: "tool" | "resource" | "prompt";
 
   /** The name of the item */
   readonly itemName: string;
 
   constructor(
     message: string,
-    itemType: 'tool' | 'resource' | 'prompt',
+    itemType: "tool" | "resource" | "prompt",
     itemName: string,
-    options: Omit<BaseErrorOptions, 'code'> = {},
+    options: Omit<BaseErrorOptions, "code"> = {},
   ) {
     super(message, {
       code: ErrorCodes.REGISTRY_ERROR,
@@ -136,7 +136,7 @@ export class RegistryError extends AppError {
    * Create a RegistryError for a tool not found.
    */
   static toolNotFound(name: string): RegistryError {
-    return new RegistryError(getFrameworkMessage('REGISTRY_TOOL_NOT_FOUND', { name }), 'tool', name, {
+    return new RegistryError(`Tool '${name}' not found`, "tool", name, {
       recoveryHint: `Check the tool name '${name}' is correct. Use tools/list to see available tools.`,
     });
   }
@@ -145,7 +145,7 @@ export class RegistryError extends AppError {
    * Create a RegistryError for duplicate tool registration.
    */
   static duplicateTool(name: string): RegistryError {
-    return new RegistryError(getFrameworkMessage('REGISTRY_TOOL_DUPLICATE', { name }), 'tool', name, {
+    return new RegistryError(`Tool '${name}' is already registered`, "tool", name, {
       recoveryHint: `Tool '${name}' is already registered. Use a different name.`,
     });
   }
@@ -158,7 +158,7 @@ export class RegistryError extends AppError {
    * Create a RegistryError for a resource not found.
    */
   static resourceNotFound(name: string): RegistryError {
-    return new RegistryError(getFrameworkMessage('REGISTRY_RESOURCE_NOT_FOUND', { name }), 'resource', name, {
+    return new RegistryError(`Resource '${name}' not found`, "resource", name, {
       recoveryHint: `Check the resource URI '${name}' is correct. Use resources/list to see available resources.`,
     });
   }
@@ -167,7 +167,7 @@ export class RegistryError extends AppError {
    * Create a RegistryError for duplicate resource registration.
    */
   static duplicateResource(name: string): RegistryError {
-    return new RegistryError(getFrameworkMessage('REGISTRY_RESOURCE_DUPLICATE', { name }), 'resource', name, {
+    return new RegistryError(`Resource '${name}' is already registered`, "resource", name, {
       recoveryHint: `Resource '${name}' is already registered. Use a different URI.`,
     });
   }
@@ -180,7 +180,7 @@ export class RegistryError extends AppError {
    * Create a RegistryError for a prompt not found.
    */
   static promptNotFound(name: string): RegistryError {
-    return new RegistryError(getFrameworkMessage('REGISTRY_PROMPT_NOT_FOUND', { name }), 'prompt', name, {
+    return new RegistryError(`Prompt '${name}' not found`, "prompt", name, {
       recoveryHint: `Check the prompt name '${name}' is correct. Use prompts/list to see available prompts.`,
     });
   }
@@ -189,7 +189,7 @@ export class RegistryError extends AppError {
    * Create a RegistryError for duplicate prompt registration.
    */
   static duplicatePrompt(name: string): RegistryError {
-    return new RegistryError(getFrameworkMessage('REGISTRY_PROMPT_DUPLICATE', { name }), 'prompt', name, {
+    return new RegistryError(`Prompt '${name}' is already registered`, "prompt", name, {
       recoveryHint: `Prompt '${name}' is already registered. Use a different name.`,
     });
   }
@@ -198,6 +198,13 @@ export class RegistryError extends AppError {
   // Generic Factory Methods
   // ─────────────────────────────────────────────────────────────────────────
 
+  /** @internal Mapping for valid registry item types — eliminates type assertion */
+  private static readonly TYPE_MAP: Readonly<Record<string, "tool" | "resource" | "prompt">> = {
+    tool: "tool",
+    resource: "resource",
+    prompt: "prompt",
+  };
+
   /**
    * Create a RegistryError for a generic duplicate registration.
    *
@@ -205,7 +212,7 @@ export class RegistryError extends AppError {
    * @param itemName - The name of the item
    */
   static duplicate(itemType: string, itemName: string): RegistryError {
-    const normalizedType = itemType.toLowerCase() as 'tool' | 'resource' | 'prompt';
+    const normalizedType = RegistryError.TYPE_MAP[itemType.toLowerCase()] ?? "tool";
     return new RegistryError(`${itemType} '${itemName}' is already registered`, normalizedType, itemName, {
       recoveryHint: `${itemType} '${itemName}' is already registered. Use a different name.`,
     });

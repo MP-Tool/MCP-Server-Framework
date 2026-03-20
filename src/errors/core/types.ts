@@ -4,11 +4,11 @@
  * Pure TypeScript type definitions for the error system.
  * Contains only interfaces and type aliases - no runtime values.
  *
- * @module server/errors/core/types
+ * @module errors/core/types
  */
 
-import type { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import type { ErrorCodeType } from './index.js';
+import type { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import type { ErrorCodeType } from "./index.js";
 
 // ============================================================================
 // Serialization Types
@@ -57,25 +57,25 @@ export interface BaseErrorOptions {
   /** MCP error code override */
   mcpCode?: ErrorCode;
   /** Original error that caused this */
-  cause?: Error;
+  cause?: Error | undefined;
   /** Additional context for debugging */
-  context?: Record<string, unknown>;
+  context?: Record<string, unknown> | undefined;
   /** Recovery hint for users */
-  recoveryHint?: string;
+  recoveryHint?: string | undefined;
 }
 
 /**
  * Options for validation errors.
  */
-export interface ValidationErrorOptions extends Omit<BaseErrorOptions, 'code'> {
+export interface ValidationErrorOptions extends Omit<BaseErrorOptions, "code"> {
   /** The field that failed validation */
-  field?: string;
+  field?: string | undefined;
   /** The value that failed validation (will be sanitized) */
   value?: unknown;
   /** Expected type or format */
-  expected?: string;
+  expected?: string | undefined;
   /** Multiple validation issues */
-  issues?: ValidationIssue[];
+  issues?: ValidationIssue[] | undefined;
 }
 
 /**
@@ -94,4 +94,4 @@ export interface ValidationIssue {
 // Re-export Error Code Types for convenience
 // ============================================================================
 
-export type { ErrorCodeType, ErrorCategoryType } from './error-codes.js';
+export type { ErrorCodeType, ErrorCategoryType } from "./error-codes.js";

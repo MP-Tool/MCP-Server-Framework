@@ -10,10 +10,12 @@
  * Parse an environment variable as a boolean.
  *
  * Environment variables are always strings, so this helper provides
- * consistent boolean parsing across the codebase.
+ * consistent boolean parsing across the codebase. Also handles
+ * the case where a boolean is passed through directly (e.g., from
+ * a pre-parsed config object).
  *
- * @param value - The environment variable value (string or undefined)
- * @returns true if value equals 'true' (case-insensitive), false otherwise
+ * @param value - The environment variable value
+ * @returns true if value equals 'true' (case-insensitive) or is boolean true, false otherwise
  *
  * @example
  * ```typescript
@@ -23,10 +25,12 @@
  * parseEnvBoolean('false')  // false
  * parseEnvBoolean('1')      // false
  * parseEnvBoolean(undefined) // false
+ * parseEnvBoolean(true)     // true (passthrough)
  * ```
  */
-export function parseEnvBoolean(value: string | undefined): boolean {
-  return value?.toLowerCase() === 'true';
+export function parseEnvBoolean(value: string | boolean | undefined): boolean {
+  if (typeof value === "boolean") return value;
+  return value?.toLowerCase() === "true";
 }
 
 /**

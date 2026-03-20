@@ -11,7 +11,7 @@
  */
 
 // Secret Scrubber
-export { SecretScrubber, secretScrubber } from './secret-scrubber.js';
+export { SecretScrubber, secretScrubber } from "./secret-scrubber.js";
 
 // Injection Guard
-export { InjectionGuard, injectionGuard, sanitizeForLogging } from './injection-guard.js';
+export { InjectionGuard, injectionGuard, sanitizeForLogging } from "./injection-guard.js";

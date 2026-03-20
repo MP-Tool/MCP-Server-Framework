@@ -5,7 +5,7 @@
  * - Display limits for error messages
  * - Sensitive field patterns for redaction
  *
- * @module server/errors/core/constants
+ * @module errors/core/constants
  */
 
 // ============================================================================
@@ -31,38 +31,16 @@ export const VALIDATION_LIMITS = {
 // Sensitive Field Patterns
 // ============================================================================
 
-/**
- * Field names that should be redacted in error messages.
- *
- * These patterns are used to detect sensitive data that
- * should not appear in logs or error responses.
- */
-export const SENSITIVE_FIELD_PATTERNS = [
-  /password/i,
-  /secret/i,
-  /key/i,
-  /token/i,
-  /jwt/i,
-  /bearer/i,
-  /auth/i,
-  /credential/i,
-  /api[_-]?key/i,
-] as const;
+import { isSensitiveKey } from "../../utils/sensitive-keys.js";
 
 /**
- * Check if a field name is sensitive and should be redacted.
+ * Redaction placeholder for sensitive values in error serialization.
  *
- * @param fieldName - The field name to check
- * @returns True if the field is sensitive
+ * Named distinctly from the logger's `REDACTED_VALUE` ('**********')
+ * to avoid confusion: errors use bracket-style placeholders,
+ * the logger uses mask-style replacement.
  */
-export function isSensitiveField(fieldName: string): boolean {
-  return SENSITIVE_FIELD_PATTERNS.some((pattern) => pattern.test(fieldName));
-}
-
-/**
- * Redaction placeholder for sensitive values.
- */
-export const REDACTED_VALUE = '[REDACTED]' as const;
+export const REDACTED_PLACEHOLDER = "[REDACTED]" as const;
 
 /**
  * Redact a value if the field name is sensitive.
@@ -72,5 +50,5 @@ export const REDACTED_VALUE = '[REDACTED]' as const;
  * @returns The original value or '[REDACTED]'
  */
 export function redactIfSensitive(fieldName: string, value: unknown): unknown {
-  return isSensitiveField(fieldName) ? REDACTED_VALUE : value;
+  return isSensitiveKey(fieldName) ? REDACTED_PLACEHOLDER : value;
 }

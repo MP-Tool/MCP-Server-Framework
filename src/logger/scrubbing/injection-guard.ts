@@ -8,12 +8,12 @@
  * @module logger/scrubbing/injection-guard
  */
 
-import { CONTROL_CHAR_REPLACEMENTS, CONTROL_CHAR_PATTERN, ANSI_ESCAPE_PATTERN } from '../core/constants.js';
+import { CONTROL_CHAR_REPLACEMENTS, CONTROL_CHAR_PATTERN, ANSI_ESCAPE_PATTERN } from "../core/constants.js";
 
 /**
  * Pre-compiled regex for control characters (with /g flag for replacement).
  */
-const CONTROL_CHAR_REGEX = new RegExp(CONTROL_CHAR_PATTERN, 'g');
+const CONTROL_CHAR_REGEX = new RegExp(CONTROL_CHAR_PATTERN, "g");
 
 /**
  * Pre-compiled regex for testing control characters (without /g flag).
@@ -23,7 +23,7 @@ const CONTROL_CHAR_TEST_REGEX = new RegExp(CONTROL_CHAR_PATTERN);
 /**
  * Pre-compiled regex for ANSI escape sequences (with /g flag for replacement).
  */
-const ANSI_ESCAPE_REGEX = new RegExp(ANSI_ESCAPE_PATTERN, 'g');
+const ANSI_ESCAPE_REGEX = new RegExp(ANSI_ESCAPE_PATTERN, "g");
 
 /**
  * Pre-compiled regex for testing ANSI sequences (without /g flag).
@@ -68,11 +68,15 @@ export class InjectionGuard {
 
     // 1. Strip ANSI escape sequences if enabled
     if (this.stripAnsi) {
-      result = result.replace(ANSI_ESCAPE_REGEX, '');
+      result = result.replace(ANSI_ESCAPE_REGEX, "");
     }
 
-    // 2. Escape control characters using centralized mapping
-    result = result.replace(CONTROL_CHAR_REGEX, (char) => CONTROL_CHAR_REPLACEMENTS[char] ?? char);
+    // 2. Escape control characters using centralized mapping.
+    //    Unknown control chars get a generic \\xHH replacement.
+    result = result.replace(
+      CONTROL_CHAR_REGEX,
+      (char) => CONTROL_CHAR_REPLACEMENTS[char] ?? `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`,
+    );
 
     return result;
   }

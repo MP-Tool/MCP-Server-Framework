@@ -5,8 +5,10 @@
  * Used for MCP protocol communication.
  *
  * @see https://www.jsonrpc.org/specification#error_object
- * @module server/errors/core/json-rpc
+ * @module errors/core/json-rpc
  */
+
+import type { RequestId } from "@modelcontextprotocol/sdk/types.js";
 
 // ============================================================================
 // JSON-RPC Error Codes (MCP Spec Compliant)
@@ -69,4 +71,41 @@ export function isServerDefinedJsonRpcError(code: number): boolean {
  */
 export function isValidJsonRpcErrorCode(code: number): boolean {
   return isSpecDefinedJsonRpcError(code) || isServerDefinedJsonRpcError(code);
+}
+
+// ============================================================================
+// JSON-RPC Error Response
+// ============================================================================
+
+/**
+ * JSON-RPC 2.0 error response structure.
+ * Used as return type for {@link createJsonRpcError}.
+ */
+export interface JsonRpcErrorResponse {
+  readonly jsonrpc: "2.0";
+  readonly error: {
+    readonly code: JsonRpcErrorCodeType | number;
+    readonly message: string;
+  };
+  readonly id: RequestId | null;
+}
+
+/**
+ * Creates a JSON-RPC 2.0 error response.
+ *
+ * @param code - JSON-RPC error code (use JsonRpcErrorCode enum)
+ * @param message - Error message
+ * @param id - Request ID (null for notifications)
+ * @returns Structured JSON-RPC 2.0 error response
+ */
+export function createJsonRpcError(
+  code: JsonRpcErrorCodeType | number,
+  message?: string,
+  id: RequestId | null = null,
+): JsonRpcErrorResponse {
+  return {
+    jsonrpc: "2.0",
+    error: { code, message: message ?? "Unknown error" },
+    id,
+  };
 }

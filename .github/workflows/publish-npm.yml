@@ -1,0 +1,143 @@
+name: Publish to npm
+
+# Publishes the package to npm registry.
+# Uses npm Trusted Publishing (OIDC) for secure, token-free authentication.
+#
+# Triggered:
+# - Automatically by the release workflow after a successful GitHub Release
+# - Manually via workflow_dispatch (with optional dry-run)
+#
+# Trusted Publishing Setup Required:
+# 1. Go to https://www.npmjs.com/package/mcp-server-framework/access
+# 2. Add Trusted Publisher:
+#    - Provider: GitHub Actions
+#    - Repository: <org>/mcp-server-framework
+#    - Workflow: publish-npm.yml
+#    - Environment: (leave blank)
+#
+# References:
+# - https://docs.npmjs.com/trusted-publishers
+# - https://docs.npmjs.com/generating-provenance-statements
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (test without publishing)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write  # Required for OIDC/Trusted Publishing
+  contents: read   # Required for checkout
+
+env:
+  NODE_OPTIONS: '--max-old-space-size=4096'
+  CI: true
+
+jobs:
+  publish-npm:
+    name: Publish to npm Registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '22.x'
+          # registry-url is REQUIRED for npm to use OIDC authentication
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Upgrade npm for Trusted Publishing support
+        run: |
+          echo "Current npm version: $(npm --version)"
+          # Trusted Publishing requires npm 11.5.1+
+          npm install -g npm@latest
+          echo "Upgraded npm version: $(npm --version)"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Get package version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Package version: $VERSION"
+
+      - name: Verify build artifacts
+        run: |
+          echo "=== Verifying Build ==="
+          
+          # Check main entry point exists
+          if [ ! -f "build/index.js" ]; then
+            echo "❌ Build failed - build/index.js not found"
+            exit 1
+          fi
+          echo "✅ Main entry point exists"
+          
+          # Verify key subpath exports exist
+          SUBPATHS=("config/index.js" "errors/index.js" "logger/index.js" "connection/index.js" "server/http/index.js" "server/session/index.js" "telemetry/index.js")
+          for subpath in "${SUBPATHS[@]}"; do
+            if [ ! -f "build/${subpath}" ]; then
+              echo "❌ Missing subpath export: build/${subpath}"
+              exit 1
+            fi
+          done
+          echo "✅ All subpath exports present"
+          
+          # Show build summary
+          echo ""
+          echo "=== Build Summary ==="
+          echo "Files: $(find build -name "*.js" | wc -l) JavaScript"
+          echo "Types: $(find build -name "*.d.ts" | wc -l) Declaration files"
+          echo "Maps:  $(find build -name "*.js.map" | wc -l) Source maps"
+          du -sh build/
+
+      - name: Preview package contents
+        run: |
+          echo "=== Files to be published ==="
+          npm pack --dry-run 2>&1 | head -50
+          echo ""
+          echo "=== Package size ==="
+          npm pack --json | jq '.[0] | {name, version, size, unpackedSize}'
+
+      - name: Publish to npm (Trusted Publishing)
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          # Trusted Publishing uses OIDC for authentication
+          # - No NPM_TOKEN or NODE_AUTH_TOKEN needed
+          # - Provenance is automatically generated
+          # - Requires npm 11.5.1+ and Trusted Publisher configured on npmjs.com
+          npm publish --access public
+
+      - name: Dry run (skip publish)
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "🧪 DRY RUN MODE - Skipping publication"
+          npm pack --dry-run
+
+      - name: Summary
+        if: success() && github.event.inputs.dry_run != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## ✅ Published to npm
+          
+          **Package:** \`mcp-server-framework@${VERSION}\`
+          
+          📦 [View on npm](https://www.npmjs.com/package/mcp-server-framework/v/${VERSION})
+          EOF

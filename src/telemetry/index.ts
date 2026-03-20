@@ -11,6 +11,15 @@
  * OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
  * ```
  *
+ * All OTEL settings are routed through the config system (env vars + config file):
+ * - `OTEL_EXPORTER_OTLP_ENDPOINT` — OTLP endpoint URL
+ * - `OTEL_TRACES_EXPORTER` — Trace exporter: otlp (default), console, none
+ * - `OTEL_LOG_LEVEL` — SDK diagnostic log level
+ * - `OTEL_METRIC_EXPORT_INTERVAL` — Metric export interval (ms)
+ *
+ * Framework-managed env vars:
+ * - `OTEL_METRICS_EXPORTER` — otlp, prometheus, console, none (default: otlp,prometheus)
+ *
  * ## Usage
  *
  * ```typescript
@@ -39,14 +48,14 @@
 // SDK Lifecycle
 // ============================================================================
 
-export { initializeTelemetry, shutdownTelemetry, isSdkInitialized } from './sdk.js';
+export { initializeTelemetry, shutdownTelemetry, isSdkInitialized, getPrometheusExporter } from "./sdk.js";
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-export { getTelemetryConfig, isTelemetryEnabled } from './core/index.js';
-export type { TelemetryConfig } from './core/index.js';
+export { getTelemetryConfig, isTelemetryEnabled } from "./core/index.js";
+export type { TelemetryConfig } from "./core/index.js";
 
 // ============================================================================
 // Tracing
@@ -60,24 +69,20 @@ export {
   addSpanAttributes,
   addSpanEvent,
   getTraceContext,
-} from './tracing.js';
+  FrameworkSpanKind,
+  FrameworkSpanStatusCode,
+} from "./tracing.js";
 
-export { MCP_ATTRIBUTES } from './core/index.js';
-export type { SpanOptions, TraceContext } from './core/index.js';
+export { MCP_ATTRIBUTES } from "./core/index.js";
+export type { SpanOptions, TraceContext, SpanCallback, AsyncSpanCallback } from "./core/index.js";
 
 // ============================================================================
 // Metrics
 // ============================================================================
 
-export {
-  serverMetrics,
-  ServerMetricsManager,
-  createServerMetrics,
-  getServerMetrics,
-  resetServerMetrics,
-} from './metrics.js';
-export { METRIC_ATTRIBUTES } from './core/index.js';
-export type { ServerMetrics, ServerStats } from './core/index.js';
+export { ServerMetricsManager, createServerMetrics, getServerMetrics, resetServerMetrics } from "./metrics.js";
+export { METRIC_ATTRIBUTES } from "./core/index.js";
+export type { ServerMetrics, ServerStats } from "./core/index.js";
 
 // ============================================================================
 // Constants (for advanced usage)
@@ -92,12 +97,20 @@ export {
   TRANSPORT_TYPES,
   TELEMETRY_LOG_COMPONENTS,
   SdkLogMessages,
-  MetricsLogMessages,
-} from './core/index.js';
+} from "./core/index.js";
 
 // ============================================================================
-// OpenTelemetry Re-exports
+// OpenTelemetry-compatible Re-exports (framework-level, no static OTEL import)
 // ============================================================================
 
-export { SpanKind, SpanStatusCode } from '@opentelemetry/api';
-export type { Span, Attributes, Context } from '@opentelemetry/api';
+// SpanKind & SpanStatusCode are re-exported as FrameworkSpanKind / FrameworkSpanStatusCode
+// from tracing.js above. For backward-compat, provide aliases with the original names.
+// Type-only re-exports remain zero-cost.
+export { FrameworkSpanKind as SpanKind, FrameworkSpanStatusCode as SpanStatusCode } from "./tracing.js";
+export type { Span, Attributes, Context, Tracer } from "@opentelemetry/api";
+
+// ============================================================================
+// Connection Telemetry Bridge
+// ============================================================================
+
+export { createConnectionTelemetry } from "./connection-telemetry-bridge.js";

@@ -15,15 +15,17 @@
 export type {
   LogLevel,
   McpLogLevel,
+  TransportMode,
   HttpContext,
   EventContext,
   LogContext,
-  ILogger,
-  ILogWriter,
-  ILogFormatter,
+  LoggerInterface,
+  LogWriter,
+  LogFormatter,
   LogEntryParams,
   LoggerConfig,
-} from './types.js';
+  LogNotificationHandler,
+} from "./types.js";
 
 // ============================================================================
 // Constants
@@ -38,11 +40,7 @@ export {
   // Default configuration
   DEFAULT_LOG_LEVEL,
   DEFAULT_LOG_FORMAT,
-  DEFAULT_COMPONENT,
   DEFAULT_SERVICE_NAME,
-  // Transport configuration
-  TRANSPORT_MODES,
-  DEFAULT_TRANSPORT,
   // Formatting constants
   ID_DISPLAY_LENGTH,
   LEVEL_PAD_LENGTH,
@@ -65,10 +63,10 @@ export {
   MAX_CHILD_LOGGER_CACHE_SIZE,
   MAX_MESSAGE_LENGTH,
   TRUNCATION_SUFFIX,
-} from './constants.js';
+} from "./constants.js";
 
 // Export types from constants
-export type { SensitiveKey, TransportMode } from './constants.js';
+export type { SensitiveKey } from "./constants.js";
 
 // ============================================================================
 // Context Management
@@ -87,28 +85,25 @@ export {
   withChildContext,
   // Utilities
   getContextDepth,
-  // Testing utilities (internal)
-  _resetContextState,
-} from './context.js';
+} from "./context.js";
+
+// ============================================================================
+// Trace Context (Plugin Interface)
+// ============================================================================
+
+export type { TraceContext, TraceContextExtractor } from "./trace-context.js";
+export { setTraceContextExtractor, extractTraceContext } from "./trace-context.js";
 
 // ============================================================================
 // Errors
 // ============================================================================
 
-export {
-  LoggerErrorCode,
-  LoggerError,
-  LoggerInitError,
-  ContextDepthError,
-  WriterError,
-  FormatterError,
-  ScrubberError,
-} from './errors.js';
+export { LoggerErrorCode, LoggerError, LoggerInitError, WriterError, FormatterError, ScrubberError } from "./errors.js";
 
-export type { LoggerErrorCodeType } from './errors.js';
+export type { LoggerErrorCodeType } from "./errors.js";
 
 // ============================================================================
 // Formatting Utilities
 // ============================================================================
 
-export { formatSessionId, formatRequestId, formatTraceId } from './format.js';
+export { formatSessionId, formatRequestId, formatTraceId } from "./format.js";

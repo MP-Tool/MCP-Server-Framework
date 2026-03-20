@@ -3,20 +3,19 @@
  *
  * Writes log entries to stdout/stderr based on transport mode and log level.
  * In stdio mode, ALL logs go to stderr to avoid corrupting JSON-RPC on stdout.
- * In SSE mode, info/debug go to stdout, warn/error go to stderr.
+ * In HTTP mode, info/debug go to stdout, warn/error go to stderr.
  *
  * @module logger/writers/console-writer
  */
 
-import type { LogLevel } from '../core/types.js';
-import type { TransportMode } from '../core/constants.js';
-import { BaseLogWriter } from './base-writer.js';
+import type { LogLevel, TransportMode } from "../core/types.js";
+import { BaseLogWriter } from "./base-writer.js";
 
 /**
  * Configuration for the console writer.
  */
 export interface ConsoleWriterConfig {
-  /** Transport mode ('stdio' or 'sse') */
+  /** Transport mode determines output stream routing */
   transport: TransportMode;
 }
 
@@ -25,7 +24,7 @@ export interface ConsoleWriterConfig {
  *
  * Handles the complexity of MCP transport modes:
  * - **stdio mode**: ALL output goes to stderr (stdout is reserved for JSON-RPC)
- * - **sse mode**: Standard behavior (info/debug → stdout, warn/error → stderr)
+ * - **http/https mode**: Standard behavior (info/debug → stdout, warn/error → stderr)
  *
  * @example
  * ```typescript
@@ -56,16 +55,16 @@ export class ConsoleWriter extends BaseLogWriter {
     if (!this.enabled) return;
 
     // In stdio mode, MUST write to stderr to avoid corrupting JSON-RPC on stdout
-    if (this.transport === 'stdio') {
-      process.stderr.write(message + '\n');
+    if (this.transport === "stdio") {
+      process.stderr.write(message + "\n");
       return;
     }
 
-    // In SSE mode, use standard console behavior
-    if (level === 'error' || level === 'warn') {
-      process.stderr.write(message + '\n');
+    // In HTTP/HTTPS mode, use standard console behavior
+    if (level === "error" || level === "warn") {
+      process.stderr.write(message + "\n");
     } else {
-      process.stdout.write(message + '\n');
+      process.stdout.write(message + "\n");
     }
   }
 

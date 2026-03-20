@@ -4,15 +4,12 @@
  * Generic connection errors for the MCP framework.
  * Application-specific connection errors should extend these classes.
  *
- * @module server/errors/categories/connection
+ * @module errors/categories/connection
  */
 
-import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { AppError } from '../core/base.js';
-import { ErrorCodes } from '../core/error-codes.js';
-import { HttpStatus } from '../core/http.js';
-import type { BaseErrorOptions } from '../core/types.js';
-import { getFrameworkMessage } from '../core/messages.js';
+import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { AppError, ErrorCodes, HttpStatus } from "../core/index.js";
+import type { BaseErrorOptions } from "../core/index.js";
 
 // ============================================================================
 // Connection Error
@@ -27,26 +24,26 @@ import { getFrameworkMessage } from '../core/messages.js';
  * @example
  * ```typescript
  * // Framework usage
- * throw FrameworkConnectionError.failed('http://api.example.com');
- * throw FrameworkConnectionError.timeout('http://api.example.com', 5000);
+ * throw ConnectionError.failed('http://api.example.com');
+ * throw ConnectionError.timeout('http://api.example.com', 5000);
  *
  * // App-specific extension
- * class KomodoConnectionError extends FrameworkConnectionError {
- *   static komodoServerDown(url: string): KomodoConnectionError {
- *     return new KomodoConnectionError(
- *       `Komodo server at ${url} is not responding`,
+ * class MyApiConnectionError extends ConnectionError {
+ *   static apiServerDown(url: string): MyApiConnectionError {
+ *     return new MyApiConnectionError(
+ *       `API server at ${url} is not responding`,
  *       url,
- *       { recoveryHint: 'Ensure Komodo Core is running.' }
+ *       { recoveryHint: 'Ensure the API server is running.' }
  *     );
  *   }
  * }
  * ```
  */
-export class FrameworkConnectionError extends AppError {
+export class ConnectionError extends AppError {
   /** The target URL/address that connection was attempted to */
   readonly target: string;
 
-  constructor(message: string, target: string, options: Omit<BaseErrorOptions, 'code'> = {}) {
+  constructor(message: string, target: string, options: Omit<BaseErrorOptions, "code"> = {}) {
     super(message, {
       code: ErrorCodes.CONNECTION_ERROR,
       statusCode: options.statusCode ?? HttpStatus.BAD_GATEWAY,
@@ -69,11 +66,11 @@ export class FrameworkConnectionError extends AppError {
   /**
    * Create a ConnectionError for a generic failed connection.
    */
-  static failed(target: string, reason?: string): FrameworkConnectionError {
-    const baseMessage = getFrameworkMessage('CONNECTION_FAILED');
+  static failed(target: string, reason?: string): ConnectionError {
+    const baseMessage = "Failed to connect to server";
     const message = reason ? `${baseMessage}: ${reason}` : `${baseMessage} to '${target}'`;
 
-    return new FrameworkConnectionError(message, target, {
+    return new ConnectionError(message, target, {
       recoveryHint: `Check that the server at '${target}' is running and accessible.`,
     });
   }
@@ -81,8 +78,8 @@ export class FrameworkConnectionError extends AppError {
   /**
    * Create a ConnectionError for a refused connection.
    */
-  static refused(target: string): FrameworkConnectionError {
-    return new FrameworkConnectionError(getFrameworkMessage('CONNECTION_REFUSED'), target, {
+  static refused(target: string): ConnectionError {
+    return new ConnectionError("Connection refused", target, {
       recoveryHint: `Ensure the server is running at '${target}' and accepting connections.`,
     });
   }
@@ -93,11 +90,11 @@ export class FrameworkConnectionError extends AppError {
    * @param target - The target URL/address
    * @param timeoutMs - Optional timeout duration in milliseconds
    */
-  static timeout(target: string, timeoutMs?: number): FrameworkConnectionError {
-    const baseMessage = getFrameworkMessage('CONNECTION_TIMEOUT');
+  static timeout(target: string, timeoutMs?: number): ConnectionError {
+    const baseMessage = "Connection timed out";
     const message = timeoutMs ? `${baseMessage} (after ${timeoutMs}ms)` : baseMessage;
 
-    return new FrameworkConnectionError(message, target, {
+    return new ConnectionError(message, target, {
       statusCode: HttpStatus.GATEWAY_TIMEOUT,
       recoveryHint: `Connection to '${target}' timed out. Check network connectivity.`,
       context: timeoutMs ? { timeoutMs } : undefined,
@@ -107,8 +104,8 @@ export class FrameworkConnectionError extends AppError {
   /**
    * Create a ConnectionError for connection lost.
    */
-  static lost(target: string): FrameworkConnectionError {
-    return new FrameworkConnectionError(getFrameworkMessage('CONNECTION_LOST'), target, {
+  static lost(target: string): ConnectionError {
+    return new ConnectionError("Connection lost", target, {
       recoveryHint: `The connection to '${target}' was lost. Reconnecting may help.`,
     });
   }
@@ -116,8 +113,8 @@ export class FrameworkConnectionError extends AppError {
   /**
    * Create a ConnectionError for connection reset.
    */
-  static reset(target: string): FrameworkConnectionError {
-    return new FrameworkConnectionError(getFrameworkMessage('CONNECTION_RESET'), target, {
+  static reset(target: string): ConnectionError {
+    return new ConnectionError("Connection was reset", target, {
       recoveryHint: `The connection to '${target}' was reset by the server. Try again.`,
     });
   }
@@ -128,9 +125,9 @@ export class FrameworkConnectionError extends AppError {
    * @param reason - The reason the health check failed
    * @param target - Optional target URL (defaults to 'unknown')
    */
-  static healthCheckFailed(reason: string, target = 'unknown'): FrameworkConnectionError {
-    return new FrameworkConnectionError(`Health check failed: ${reason}`, target, {
-      recoveryHint: 'The server is reachable but not healthy. Check server logs for details.',
+  static healthCheckFailed(reason: string, target = "unknown"): ConnectionError {
+    return new ConnectionError(`Health check failed: ${reason}`, target, {
+      recoveryHint: "The server is reachable but not healthy. Check server logs for details.",
       context: { reason },
     });
   }

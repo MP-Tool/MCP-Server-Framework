@@ -1,21 +1,71 @@
 /**
  * Connection Module Types
  *
- * Centralized type definitions for the API connection module.
+ * Centralized type definitions for the connection module.
  * Includes connection state management and request tracking types.
- * Generic types work with any API client implementing IApiClient.
+ * Generic types work with any service client implementing ServiceClient.
  *
- * @module server/connection/core/types
+ * @module connection/core/types
  */
 
-import type { IApiClient } from '../../types/index.js';
+import type { ServiceClient } from "../types.js";
+
+// ============================================================================
+// Telemetry Abstraction (Dependency Inversion)
+// ============================================================================
+
+/**
+ * Telemetry operations used by ConnectionStateManager.
+ *
+ * Abstracts tracing and metrics to avoid a direct dependency
+ * from connection/ → server/telemetry/. Callers inject the
+ * real implementation; the default is a no-op.
+ */
+export interface ConnectionTelemetry {
+  /** Wrap an async operation in a tracing span. */
+  withSpan<T>(name: string, fn: (span: TelemetrySpan) => Promise<T>): Promise<T>;
+
+  /** Add attributes to the current active span. */
+  addSpanAttributes(attrs: Record<string, string | number | boolean | undefined>): void;
+
+  /** Add a named event to the current active span. */
+  addSpanEvent(name: string, attrs?: Record<string, string | number | boolean | undefined>): void;
+
+  /** Record a connection state transition in metrics. */
+  recordConnectionStateChange(previousState: string, newState: string): void;
+}
+
+/**
+ * Minimal span interface for the telemetry abstraction.
+ * Avoids importing OpenTelemetry API types into the connection/ layer.
+ */
+export interface TelemetrySpan {
+  setAttribute(key: string, value: string | number | boolean): void;
+}
+
+/**
+ * No-op telemetry implementation.
+ *
+ * Used as default when no telemetry is injected. All methods are silent no-ops,
+ * which is safe because the server/telemetry module already handles the
+ * "OTEL not initialized" case the same way.
+ */
+export const NO_OP_TELEMETRY: ConnectionTelemetry = {
+  async withSpan<T>(_name: string, fn: (span: TelemetrySpan) => Promise<T>): Promise<T> {
+    const noopSpan: TelemetrySpan = { setAttribute: () => {} };
+    return fn(noopSpan);
+  },
+  addSpanAttributes: () => {},
+  addSpanEvent: () => {},
+  recordConnectionStateChange: () => {},
+};
 
 // ============================================================================
 // Connection State Types
 // ============================================================================
 
 /**
- * Possible connection states for the API client.
+ * Possible connection states for the service client.
  *
  * State Machine:
  * ```
@@ -25,25 +75,25 @@ import type { IApiClient } from '../../types/index.js';
  *      └──────────── error ◀──────────┘
  * ```
  */
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 
 /**
  * All possible connection states as a readonly array.
  * Useful for validation and iteration.
  */
-export const CONNECTION_STATES = ['disconnected', 'connecting', 'connected', 'error'] as const;
+export const CONNECTION_STATES = ["disconnected", "connecting", "connected", "error"] as const;
 
 /**
  * Listener function signature for connection state changes.
  *
- * @typeParam TClient - The API client type (must implement IApiClient)
+ * @typeParam TService - The service client type (must implement ServiceClient)
  * @param state - The new connection state
- * @param client - The API client (null if not connected)
+ * @param client - The service client (null if not connected)
  * @param error - Error object if state is 'error'
  */
-export type ConnectionStateListener<TClient extends IApiClient = IApiClient> = (
+export type ConnectionStateListener<TService extends ServiceClient = ServiceClient> = (
   state: ConnectionState,
-  client: TClient | null,
+  client: TService | null,
   error?: Error,
 ) => void;
 
@@ -51,17 +101,17 @@ export type ConnectionStateListener<TClient extends IApiClient = IApiClient> = (
  * Event object representing a connection state transition.
  * Used for history tracking and debugging.
  *
- * @typeParam TClient - The API client type (must implement IApiClient)
+ * @typeParam TService - The service client type (must implement ServiceClient)
  */
-export interface ConnectionStateEvent<TClient extends IApiClient = IApiClient> {
+export interface ConnectionStateEvent {
   /** The previous connection state */
   readonly previousState: ConnectionState;
   /** The new (current) connection state */
   readonly currentState: ConnectionState;
-  /** The API client at the time of transition */
-  readonly client: TClient | null;
+  /** The client type identifier at the time of transition (e.g. 'my-api') */
+  readonly clientType: string | null;
   /** Error that caused the transition (if applicable) */
-  readonly error?: Error;
+  readonly error?: Error | undefined;
   /** Timestamp when the transition occurred */
   readonly timestamp: Date;
 }
@@ -80,94 +130,4 @@ export interface ConnectionStateStats {
   readonly historyLength: number;
   /** Last error if any */
   readonly lastError: Error | null;
-}
-
-// ============================================================================
-// Request Manager Types
-// ============================================================================
-
-/**
- * Request ID type - can be string or number per MCP spec.
- */
-export type RequestId = string | number;
-
-/**
- * Progress token type for MCP progress notifications.
- */
-export type ProgressToken = string | number;
-
-/**
- * Tracks an active MCP request with its abort controller and metadata.
- */
-export interface ActiveRequest {
-  /** Unique request identifier */
-  readonly requestId: RequestId;
-  /** MCP method being called (e.g., 'tools/call') */
-  readonly method: string;
-  /** AbortController to cancel the request */
-  readonly abortController: AbortController;
-  /** Optional progress token for progress reporting */
-  readonly progressToken?: ProgressToken;
-  /** Timestamp when the request was registered */
-  readonly startedAt: Date;
-}
-
-/**
- * Progress data for MCP progress notifications.
- *
- * @see https://spec.modelcontextprotocol.io/specification/2025-11-25/server/utilities/progress/
- */
-export interface ProgressData {
-  /**
-   * Current progress value.
-   * Should be between 0 and total (if total is specified).
-   */
-  progress: number;
-  /**
-   * Optional total value for percentage calculation.
-   * If omitted, progress is indeterminate.
-   */
-  total?: number;
-  /**
-   * Optional human-readable message describing current progress.
-   */
-  message?: string;
-}
-
-/**
- * Progress reporter function type.
- * Returns true if progress was sent successfully, false otherwise.
- */
-export type ProgressReporter = (data: ProgressData) => Promise<boolean>;
-
-/**
- * Statistics about the request manager state.
- */
-export interface RequestManagerStats {
-  /** Number of currently active requests */
-  readonly activeRequests: number;
-  /** List of active request IDs */
-  readonly requestIds: readonly RequestId[];
-}
-
-/**
- * MCP notification parameters for progress updates.
- */
-export interface ProgressNotificationParams {
-  /** Progress token identifying the operation */
-  progressToken: ProgressToken;
-  /** Current progress value */
-  progress: number;
-  /** Optional total for percentage calculation */
-  total?: number;
-  /** Optional progress message */
-  message?: string;
-}
-
-/**
- * Rate limit entry for tracking progress notification timing.
- */
-export interface RateLimitEntry {
-  /** Timestamp of last notification */
-  lastNotification: number;
 }

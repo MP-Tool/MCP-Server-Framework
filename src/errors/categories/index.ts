@@ -1,20 +1,25 @@
 /**
  * Error Categories Barrel Export
  *
- * @module server/errors/categories
+ * @module errors/categories
  */
 
-// MCP Protocol Errors
-export { McpProtocolError, SessionError, TransportError } from './mcp.js';
+// MCP Protocol Errors (split from former mcp.ts)
+export { McpProtocolError } from "./protocol.js";
+export { SessionError } from "./session.js";
+export { TransportError } from "./transport.js";
 
 // Validation Errors
-export { ValidationError, ConfigurationError } from './validation.js';
+export { ValidationError, ConfigurationError } from "./validation.js";
 
 // System Errors
-export { InternalError, RegistryError } from './system.js';
+export { InternalError, RegistryError } from "./system.js";
 
 // Operation Errors
-export { OperationError, OperationCancelledError } from './operation.js';
+export { OperationError, OperationCancelledError } from "./operation.js";
 
 // Connection Errors
-export { FrameworkConnectionError } from './connection.js';
+export { ConnectionError } from "./connection.js";
+
+// Auth Errors
+export { AuthenticationError, AuthorizationError } from "./auth.js";

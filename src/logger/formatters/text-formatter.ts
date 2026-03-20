@@ -2,34 +2,34 @@
  * Text Formatter Module
  *
  * Provides human-readable log formatting for development and debugging.
- * Format: [YYYY-MM-DD HH:mm:ss.SSS] [LEVEL] [Component] [Context] Message {metadata}
+ * Format: [RFC3339-TIMESTAMP] [LEVEL] [Component] [Context] Message {metadata}
  *
  * @module logger/formatters/text-formatter
  */
 
-import * as util from 'util';
-import type { LogContext, ILogFormatter, LogEntryParams } from '../core/types.js';
-import { ID_DISPLAY_LENGTH, LEVEL_PAD_LENGTH } from '../core/constants.js';
+import * as util from "util";
+import type { LogContext, LogFormatter, LogEntryParams } from "../core/types.js";
+import { ID_DISPLAY_LENGTH, LEVEL_PAD_LENGTH } from "../core/constants.js";
 
 /**
  * Configuration for the text formatter.
  */
 export interface TextFormatterConfig {
   /** Whether to include timestamps (default: true) */
-  includeTimestamp?: boolean;
+  includeTimestamp?: boolean | undefined;
   /** Whether to include the component name (default: true) */
-  includeComponent?: boolean;
+  includeComponent?: boolean | undefined;
   /** Whether to include session/request context (default: true) */
-  includeContext?: boolean;
+  includeContext?: boolean | undefined;
 }
 
 /**
  * Text Formatter class for human-readable log output.
  *
  * Produces logs in the format:
- * `[2024-01-15 10:30:45.123] [INFO ] [server] [sess:req] Processing request {count: 42}`
+ * `[2026-03-11T19:12:58.760Z] [INFO]  [server] [sess:req] Processing request {count: 42}`
  */
-export class TextFormatter implements ILogFormatter {
+export class TextFormatter implements LogFormatter {
   private config: Required<TextFormatterConfig>;
 
   /**
@@ -55,16 +55,15 @@ export class TextFormatter implements ILogFormatter {
 
     const parts: string[] = [];
 
-    // Timestamp
+    // Timestamp (RFC 3339 / ISO 8601 — preserves 'T' separator and 'Z' suffix)
     if (this.config.includeTimestamp) {
       const timestamp = params.timestamp ?? new Date().toISOString();
-      const displayTimestamp = timestamp.replace('T', ' ').slice(0, -1);
-      parts.push(`[${displayTimestamp}]`);
+      parts.push(`[${timestamp}]`);
     }
 
-    // Level (padded for alignment)
-    const levelStr = level.toUpperCase().padEnd(LEVEL_PAD_LENGTH);
-    parts.push(`[${levelStr}]`);
+    // Level (padded after bracket for column alignment)
+    const levelStr = level.toUpperCase();
+    parts.push(`[${levelStr}]`.padEnd(LEVEL_PAD_LENGTH + 2));
 
     // Component
     if (this.config.includeComponent) {
@@ -88,7 +87,7 @@ export class TextFormatter implements ILogFormatter {
       parts.push(JSON.stringify(metadata));
     }
 
-    return parts.join(' ');
+    return parts.join(" ");
   }
 
   /**
@@ -109,7 +108,11 @@ export class TextFormatter implements ILogFormatter {
       }
     }
 
-    return parts.join(':');
+    if (context.traceId) {
+      parts.push(`T:${context.traceId.slice(0, ID_DISPLAY_LENGTH)}`);
+    }
+
+    return parts.join(":");
   }
 }
 

@@ -8,10 +8,10 @@
  */
 
 // Schema & Builder
-export { createLogEntry, LogEntryBuilder, type StructuredLogEntry } from './schema.js';
+export { buildLogEntry, type LogEntryOptions, type StructuredLogEntry } from "./schema.js";
 
 // Text Formatter
-export { TextFormatter, textFormatter, type TextFormatterConfig } from './text-formatter.js';
+export { TextFormatter, textFormatter, type TextFormatterConfig } from "./text-formatter.js";
 
 // JSON Formatter
-export { JsonFormatter, type JsonFormatterConfig } from './json-formatter.js';
+export { JsonFormatter, type JsonFormatterConfig } from "./json-formatter.js";

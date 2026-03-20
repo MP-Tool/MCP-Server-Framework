@@ -10,18 +10,18 @@
  * - Base error class
  * - Framework messages
  *
- * @module server/errors/core
+ * @module errors/core
  */
 
 // ─────────────────────────────────────────────────────────────────────────
 // Error Codes & Categories
 // ─────────────────────────────────────────────────────────────────────────
-export { ErrorCodes, ErrorCategory, type ErrorCodeType, type ErrorCategoryType } from './error-codes.js';
+export { ErrorCodes, ErrorCategory, type ErrorCodeType, type ErrorCategoryType } from "./error-codes.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP Constants & Mappings
 // ─────────────────────────────────────────────────────────────────────────
-export { HttpStatus, ErrorCodeToHttpStatus, getHttpStatusForErrorCode, type HttpStatusType } from './http.js';
+export { HttpStatus, ErrorCodeToHttpStatus, getHttpStatusForErrorCode, type HttpStatusType } from "./http.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // JSON-RPC Constants
@@ -31,37 +31,30 @@ export {
   isSpecDefinedJsonRpcError,
   isServerDefinedJsonRpcError,
   isValidJsonRpcErrorCode,
+  createJsonRpcError,
   type JsonRpcErrorCodeType,
-} from './json-rpc.js';
+  type JsonRpcErrorResponse,
+} from "./json-rpc.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Validation Constants & Utilities
 // ─────────────────────────────────────────────────────────────────────────
-export {
-  VALIDATION_LIMITS,
-  SENSITIVE_FIELD_PATTERNS,
-  REDACTED_VALUE,
-  isSensitiveField,
-  redactIfSensitive,
-} from './constants.js';
+export { VALIDATION_LIMITS, REDACTED_PLACEHOLDER, redactIfSensitive } from "./constants.js";
+
+// Re-export shared utility — canonical source is utils/sensitive-keys.ts
+export { isSensitiveKey } from "../../utils/sensitive-keys.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Type Definitions
 // ─────────────────────────────────────────────────────────────────────────
-export type { SerializedError, BaseErrorOptions, ValidationErrorOptions, ValidationIssue } from './types.js';
+export type { SerializedError, BaseErrorOptions, ValidationErrorOptions, ValidationIssue } from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Base Error Class
 // ─────────────────────────────────────────────────────────────────────────
-export { AppError } from './base.js';
+export { AppError } from "./base.js";
 
 // ─────────────────────────────────────────────────────────────────────────
-// Framework Messages
+// Transport Error Messages
 // ─────────────────────────────────────────────────────────────────────────
-export {
-  FrameworkMessages,
-  getFrameworkMessage,
-  interpolate,
-  TransportErrorMessage,
-  type TransportErrorMessageKey,
-} from './messages.js';
+export { TransportErrorMessage, type TransportErrorMessageKey } from "./messages.js";

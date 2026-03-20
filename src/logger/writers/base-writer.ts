@@ -7,13 +7,13 @@
  * @module logger/writers/base-writer
  */
 
-import type { LogLevel, ILogWriter } from '../core/types.js';
+import type { LogLevel, LogWriter } from "../core/types.js";
 
 /**
  * Abstract base class for log writers.
  * Provides common functionality for all writer implementations.
  */
-export abstract class BaseLogWriter implements ILogWriter {
+export abstract class BaseLogWriter implements LogWriter {
   protected enabled: boolean = true;
 
   /**

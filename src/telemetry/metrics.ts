@@ -1,7 +1,7 @@
 /**
  * OpenTelemetry Metrics for Server State
  *
- * Provides metrics collection for the Komodo MCP Server including:
+ * Provides metrics collection for the MCP Server including:
  * - Server uptime and startup time
  * - Active sessions and connections
  * - Request counts and latencies
@@ -11,8 +11,10 @@
  * @module server/telemetry/metrics
  */
 
-import { metrics } from '@opentelemetry/api';
-import type { Counter, Histogram, UpDownCounter, Attributes } from '@opentelemetry/api';
+// @lazy-otel — @opentelemetry/api is loaded dynamically on first use.
+// The metrics API is lightweight (~200KB) but still avoided at module parse
+// time so that zero OTEL code loads when telemetry is disabled. See DD-020.
+import type { Counter, Histogram, UpDownCounter, Attributes } from "@opentelemetry/api";
 import {
   getTelemetryConfig,
   METRIC_ATTRIBUTES,
@@ -23,10 +25,33 @@ import {
   TELEMETRY_LOG_COMPONENTS,
   type ServerMetrics,
   type ServerStats,
-} from './core/index.js';
-import { logger as baseLogger } from '../logger/index.js';
+} from "./core/index.js";
+import { logger as baseLogger } from "../logger/index.js";
 
-const logger = baseLogger.child({ component: TELEMETRY_LOG_COMPONENTS.METRICS });
+const logger = baseLogger.child({
+  component: TELEMETRY_LOG_COMPONENTS.METRICS,
+});
+
+/**
+ * Lazily loads and caches the `metrics` namespace from `@opentelemetry/api`.
+ * Returns null if the import fails (shouldn't happen in production).
+ */
+let metricsApi: typeof import("@opentelemetry/api").metrics | null = null;
+
+async function getMetricsApi(): Promise<typeof import("@opentelemetry/api").metrics> {
+  if (metricsApi) return metricsApi;
+  const api = await import("@opentelemetry/api");
+  metricsApi = api.metrics;
+  return metricsApi;
+}
+
+/** @internal Log messages for metrics recording */
+const LogMessages = {
+  METRIC_REQUEST_FAILED: "Failed to record request metric: %s",
+  METRIC_SESSION_FAILED: "Failed to record session metric: %s",
+  METRIC_CONNECTION_STATE_FAILED: "Failed to record connection state metric: %s",
+  METRIC_ERROR_FAILED: "Failed to record error metric: %s",
+} as const;
 
 /**
  * Internal structure for metric instruments.
@@ -51,28 +76,72 @@ class ServerMetricsManager implements ServerMetrics {
   private totalRequests = 0;
   private failedRequests = 0;
   private activeHttpSessions = 0;
-  private activeLegacySseSessions = 0;
+  private activeSseSessions = 0;
   private connectionStateChanges = 0;
 
   // OpenTelemetry instruments
   private instruments: MetricInstruments = {};
 
+  /** Resolves when OTEL instruments are initialized (or immediately if OTEL is disabled) */
+  private readonly ready: Promise<void>;
+  private otelInitialized = false;
+  private otelDropWarningLogged = false;
+
   constructor() {
     this.startTime = new Date();
-    this.initializeMetrics();
+    // OTEL instruments are initialized asynchronously because the
+    // @opentelemetry/api import is lazy-loaded (see DD-020). The async
+    // init is fire-and-forget — in-memory counters always work regardless.
+    // In production the lazy singleton (`getServerMetrics()`) is created
+    // after `initializeTelemetry()`, so the await resolves near-instantly
+    // (module already cached).
+    this.ready = this.initializeMetrics()
+      .then(() => {
+        this.otelInitialized = true;
+      })
+      .catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.warn("OTEL metrics initialization failed: %s (in-memory metrics still active)", reason);
+      });
+  }
+
+  /**
+   * Wait for OTEL instrument initialization to complete.
+   *
+   * Not required for normal operation — in-memory counters work immediately.
+   * Useful when the caller needs to ensure OTEL metrics are captured from
+   * the very first request (e.g. in integration tests).
+   */
+  async waitForReady(): Promise<void> {
+    await this.ready;
+  }
+
+  /**
+   * Log a one-time debug warning when OTEL metrics are dropped
+   * because instruments aren't initialized yet.
+   */
+  private warnOtelNotReady(): void {
+    if (!this.otelDropWarningLogged && getTelemetryConfig().enabled) {
+      this.otelDropWarningLogged = true;
+      logger.debug(
+        "OTEL metrics instruments not yet initialized — OTEL metric dropped (in-memory counter still recorded)",
+      );
+    }
   }
 
   /**
    * Initialize OpenTelemetry metrics instruments.
+   * Async because @opentelemetry/api is lazy-loaded.
    */
-  private initializeMetrics(): void {
+  private async initializeMetrics(): Promise<void> {
     const config = getTelemetryConfig();
 
     if (!config.enabled) {
       return; // Skip OTEL setup if disabled
     }
 
-    const meter = metrics.getMeter(config.serviceName, config.serviceVersion);
+    const metricsNamespace = await getMetricsApi();
+    const meter = metricsNamespace.getMeter(config.serviceName, config.serviceVersion);
 
     // Request counter
     this.instruments.requestCounter = meter.createCounter(METRIC_NAMES.REQUESTS_TOTAL, {
@@ -145,6 +214,11 @@ class ServerMetricsManager implements ServerMetrics {
       this.failedRequests++;
     }
 
+    if (!this.otelInitialized) {
+      this.warnOtelNotReady();
+      return;
+    }
+
     try {
       const attributes: Attributes = {
         [METRIC_ATTRIBUTES.TOOL_NAME]: toolName,
@@ -156,30 +230,36 @@ class ServerMetricsManager implements ServerMetrics {
     } catch (error) {
       /* v8 ignore next 3 - OTEL error handling */
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn(`Failed to record request metric: ${message}`);
+      logger.warn(LogMessages.METRIC_REQUEST_FAILED, message);
     }
   }
 
   /**
    * Record an active session change.
-   * @param transport - Transport type ('http' or 'legacy-sse')
+   * @param transport - Transport type ('http' or 'sse')
    * @param delta - Change in session count (+1 for new, -1 for closed)
    */
   recordSessionChange(transport: string, delta: number): void {
+    let actualDelta = delta;
+
     if (transport === TRANSPORT_TYPES.HTTP) {
-      this.activeHttpSessions += delta;
-    } else if (transport === TRANSPORT_TYPES.LEGACY_SSE) {
-      this.activeLegacySseSessions += delta;
+      const previous = this.activeHttpSessions;
+      this.activeHttpSessions = Math.max(0, previous + delta);
+      actualDelta = this.activeHttpSessions - previous;
+    } else if (transport === TRANSPORT_TYPES.SSE) {
+      const previous = this.activeSseSessions;
+      this.activeSseSessions = Math.max(0, previous + delta);
+      actualDelta = this.activeSseSessions - previous;
     }
 
     try {
-      this.instruments.sessionGauge?.add(delta, {
+      this.instruments.sessionGauge?.add(actualDelta, {
         [METRIC_ATTRIBUTES.TRANSPORT]: transport,
       });
     } catch (error) {
       /* v8 ignore next 3 - OTEL error handling */
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn(`Failed to record session metric: ${message}`);
+      logger.warn(LogMessages.METRIC_SESSION_FAILED, message);
     }
   }
 
@@ -197,7 +277,7 @@ class ServerMetricsManager implements ServerMetrics {
     } catch (error) {
       /* v8 ignore next 3 - OTEL error handling */
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn(`Failed to record connection state metric: ${message}`);
+      logger.warn(LogMessages.METRIC_CONNECTION_STATE_FAILED, message);
     }
   }
 
@@ -213,7 +293,7 @@ class ServerMetricsManager implements ServerMetrics {
     } catch (error) {
       /* v8 ignore next 3 - OTEL error handling */
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn(`Failed to record error metric: ${message}`);
+      logger.warn(LogMessages.METRIC_ERROR_FAILED, message);
     }
   }
 
@@ -229,7 +309,7 @@ class ServerMetricsManager implements ServerMetrics {
       totalRequests: this.totalRequests,
       failedRequests: this.failedRequests,
       activeHttpSessions: this.activeHttpSessions,
-      activeLegacySseSessions: this.activeLegacySseSessions,
+      activeSseSessions: this.activeSseSessions,
       connectionStateChanges: this.connectionStateChanges,
       memoryUsageBytes: memUsage.rss,
       heapUsedBytes: memUsage.heapUsed,
@@ -244,7 +324,7 @@ class ServerMetricsManager implements ServerMetrics {
     this.totalRequests = 0;
     this.failedRequests = 0;
     this.activeHttpSessions = 0;
-    this.activeLegacySseSessions = 0;
+    this.activeSseSessions = 0;
     this.connectionStateChanges = 0;
   }
 }
@@ -302,24 +382,18 @@ export function getServerMetrics(): ServerMetricsManager {
  * Reset the singleton instance.
  *
  * **Warning**: Only use this for testing purposes.
- * This will reset all tracked metrics and create a fresh instance.
+ * This will reset all tracked metrics. A fresh instance with new OTEL
+ * instruments will be created on the next `getServerMetrics()` call.
+ *
+ * Note: OTEL metric instruments are cumulative by design — resetting
+ * in-memory counters does not affect already-exported metric data points.
+ * The new instance re-creates instruments from the global MeterProvider.
  *
  * @internal
  */
 export function resetServerMetrics(): void {
-  if (instance) {
-    instance.reset();
-  }
   instance = null;
 }
-
-/**
- * Singleton instance of the ServerMetricsManager.
- *
- * @deprecated Use `getServerMetrics()` instead for lazy initialization.
- * This export is maintained for backward compatibility.
- */
-export const serverMetrics = getServerMetrics();
 
 // Export the class for testing
 export { ServerMetricsManager };

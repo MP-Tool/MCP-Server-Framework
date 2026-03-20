@@ -4,12 +4,11 @@
  * Provides connection-specific error handling that extends the framework's AppError.
  * Follows the same pattern as session/core/base.ts for consistency.
  *
- * @module server/connection/core/base
+ * @module connection/core/base
  */
 
-import { ErrorCode as McpErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { AppError, HttpStatus } from '../../errors/index.js';
-import type { BaseErrorOptions } from '../../errors/core/types.js';
+import { ErrorCode as McpErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { HttpStatus } from "../../errors/index.js";
 
 // ============================================================================
 // Connection Error Codes
@@ -23,21 +22,21 @@ import type { BaseErrorOptions } from '../../errors/core/types.js';
  */
 export const ConnectionErrorCodes = {
   /** Connection to API server failed */
-  CONNECTION_FAILED: 'CONNECTION_FAILED',
+  CONNECTION_FAILED: "CONNECTION_FAILED",
   /** API server is unreachable */
-  SERVER_UNREACHABLE: 'SERVER_UNREACHABLE',
+  SERVER_UNREACHABLE: "SERVER_UNREACHABLE",
   /** Health check failed */
-  HEALTH_CHECK_FAILED: 'HEALTH_CHECK_FAILED',
+  HEALTH_CHECK_FAILED: "HEALTH_CHECK_FAILED",
   /** Connection timeout */
-  CONNECTION_TIMEOUT: 'CONNECTION_TIMEOUT',
+  CONNECTION_TIMEOUT: "CONNECTION_TIMEOUT",
   /** Invalid connection state transition */
-  INVALID_STATE_TRANSITION: 'INVALID_STATE_TRANSITION',
+  INVALID_STATE_TRANSITION: "INVALID_STATE_TRANSITION",
   /** Client not configured */
-  CLIENT_NOT_CONFIGURED: 'CLIENT_NOT_CONFIGURED',
+  CLIENT_NOT_CONFIGURED: "CLIENT_NOT_CONFIGURED",
   /** Request cancellation failed */
-  CANCELLATION_FAILED: 'CANCELLATION_FAILED',
+  CANCELLATION_FAILED: "CANCELLATION_FAILED",
   /** Progress reporting failed */
-  PROGRESS_FAILED: 'PROGRESS_FAILED',
+  PROGRESS_FAILED: "PROGRESS_FAILED",
 } as const;
 
 export type ConnectionErrorCode = (typeof ConnectionErrorCodes)[keyof typeof ConnectionErrorCodes];
@@ -90,50 +89,4 @@ export function getMcpCodeForConnectionError(code: ConnectionErrorCode): McpErro
  */
 export function getHttpStatusForConnectionError(code: ConnectionErrorCode): number {
   return connectionErrorToHttpStatus[code] ?? HttpStatus.INTERNAL_SERVER_ERROR;
-}
-
-// ============================================================================
-// Connection Error Base Class
-// ============================================================================
-
-/**
- * Options for creating a ConnectionError.
- */
-export interface ConnectionErrorOptions extends Omit<BaseErrorOptions, 'code'> {
-  /** Connection-specific error code */
-  code: ConnectionErrorCode;
-}
-
-/**
- * Base error class for all connection-related errors.
- *
- * Extends AppError with connection-specific error codes and mappings.
- * Use this as the base class for specialized connection errors.
- *
- * @example
- * ```typescript
- * throw new ConnectionError('Failed to connect to API server', {
- *   code: ConnectionErrorCodes.CONNECTION_FAILED,
- *   context: { url: 'https://api.example.com' }
- * });
- * ```
- */
-export class ConnectionError extends AppError {
-  constructor(message: string, options: ConnectionErrorOptions) {
-    const mcpCode = getMcpCodeForConnectionError(options.code);
-    const statusCode = getHttpStatusForConnectionError(options.code);
-
-    super(message, {
-      ...options,
-      mcpCode,
-      statusCode,
-    });
-  }
-
-  /**
-   * Type guard for connection error code.
-   */
-  isConnectionError(): this is ConnectionError {
-    return Object.values(ConnectionErrorCodes).includes(this.code as ConnectionErrorCode);
-  }
 }

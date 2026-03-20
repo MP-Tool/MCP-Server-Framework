@@ -13,14 +13,14 @@
  * - Serialization for logging
  * - Environment-aware stack traces
  *
- * @module server/errors/core/base
+ * @module errors/core/base
  */
 
-import { randomUUID } from 'node:crypto';
-import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { ErrorCodes, type ErrorCodeType } from './error-codes.js';
-import { ErrorCodeToHttpStatus } from './http.js';
-import type { BaseErrorOptions, SerializedError } from './types.js';
+import { randomUUID } from "node:crypto";
+import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCodes, type ErrorCodeType } from "./error-codes.js";
+import { ErrorCodeToHttpStatus } from "./http.js";
+import type { BaseErrorOptions, SerializedError } from "./types.js";
 
 // ============================================================================
 // Base Error Class
@@ -57,22 +57,23 @@ export class AppError extends Error {
   readonly mcpCode: ErrorCode;
 
   /** Additional context for debugging */
-  readonly context?: Record<string, unknown>;
+  readonly context?: Record<string, unknown> | undefined;
 
   /** Original error that caused this error */
-  override readonly cause?: Error;
+  override readonly cause?: Error | undefined;
 
   /** Timestamp when the error occurred */
   readonly timestamp: Date;
 
   /** Recovery hint for users - guidance on how to resolve the error */
-  readonly recoveryHint?: string;
+  readonly recoveryHint?: string | undefined;
 
   constructor(message: string, options: BaseErrorOptions = {}) {
     super(message);
     this.name = this.constructor.name;
     this.errorId = randomUUID();
     this.code = options.code ?? ErrorCodes.INTERNAL_ERROR;
+    // @ts-limitation — this.code is ErrorCodeType | string; lookup map requires ErrorCodeType key
     this.statusCode = options.statusCode ?? ErrorCodeToHttpStatus[this.code as ErrorCodeType] ?? 500;
     this.mcpCode = options.mcpCode ?? ErrorCode.InternalError;
     this.cause = options.cause;
@@ -110,7 +111,7 @@ export class AppError extends Error {
     };
 
     // Include stack in development only
-    if (process.env.NODE_ENV !== 'production' && this.stack) {
+    if (process.env.NODE_ENV !== "production" && this.stack) {
       serialized.stack = this.stack;
     }
 
@@ -123,8 +124,9 @@ export class AppError extends Error {
       }
     }
 
-    // Include context if present
-    if (this.context && Object.keys(this.context).length > 0) {
+    // Include context in development only — prevents leaking internal details
+    // (operation names, field names, paths) in production HTTP responses.
+    if (process.env.NODE_ENV !== "production" && this.context && Object.keys(this.context).length > 0) {
       serialized.context = this.context;
     }
 
@@ -185,7 +187,7 @@ export class AppError extends Error {
    * @param defaultMessage - Message to use if error has none
    * @returns A AppError instance
    */
-  static wrap(error: unknown, defaultMessage = 'An unexpected error occurred'): AppError {
+  static wrap(error: unknown, defaultMessage = "An unexpected error occurred"): AppError {
     if (error instanceof AppError) {
       return error;
     }
@@ -234,7 +236,7 @@ export class AppError extends Error {
   static isCancellation(error: unknown): boolean {
     if (error instanceof Error) {
       // Check for AbortError (from AbortController)
-      if (error.name === 'AbortError') {
+      if (error.name === "AbortError") {
         return true;
       }
       // Check for our cancellation code

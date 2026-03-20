@@ -7,7 +7,7 @@
  * @module server/telemetry/core/types
  */
 
-import type { Span, SpanKind, Attributes, Context } from '@opentelemetry/api';
+import type { Span, SpanKind, Attributes, Context } from "@opentelemetry/api";
 
 // ============================================================================
 // Configuration Types
@@ -15,20 +15,36 @@ import type { Span, SpanKind, Attributes, Context } from '@opentelemetry/api';
 
 /**
  * OpenTelemetry configuration options.
+ *
+ * Contains both framework-managed settings and standard OTEL settings
+ * that are passed through the config system for unified configuration.
  */
 export interface TelemetryConfig {
   /** Whether OpenTelemetry is enabled */
   readonly enabled: boolean;
-  /** Service name for traces */
+  /** Service name for traces and metrics */
   readonly serviceName: string;
   /** Service version */
   readonly serviceVersion: string;
-  /** Deployment environment */
-  readonly environment: string;
-  /** OTLP endpoint URL */
-  readonly endpoint?: string;
-  /** Enable debug logging */
-  readonly debug?: boolean;
+
+  // -- Standard OTEL settings (pass-through from config system) ---------------
+
+  /** OTLP exporter endpoint URL. Defaults to OTEL standard: http://localhost:4318 */
+  readonly endpoint: string;
+  /** Trace exporter: 'otlp', 'console', 'none' */
+  readonly tracesExporter?: string | undefined;
+  /** Log exporter: 'otlp', 'console', 'none'. Default: 'none' (framework uses own logger) */
+  readonly logsExporter: string;
+  /** SDK diagnostic log level: 'NONE', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'VERBOSE', 'ALL' */
+  readonly logLevel?: string | undefined;
+  /** Periodic metric export interval in milliseconds */
+  readonly metricExportInterval?: number | undefined;
+
+  /**
+   * Active metric exporters (parsed from OTEL_METRICS_EXPORTER).
+   * Supported values: 'otlp', 'prometheus', 'console', 'none'.
+   */
+  readonly metricsExporters: readonly string[];
 }
 
 // ============================================================================
@@ -101,8 +117,8 @@ export interface ServerStats {
   readonly failedRequests: number;
   /** Active HTTP sessions */
   readonly activeHttpSessions: number;
-  /** Active Legacy SSE sessions */
-  readonly activeLegacySseSessions: number;
+  /** Active SSE sessions */
+  readonly activeSseSessions: number;
   /** Connection state changes count */
   readonly connectionStateChanges: number;
   /** Current memory usage in bytes */
@@ -111,14 +127,11 @@ export interface ServerStats {
   readonly heapUsedBytes: number;
 }
 
-/**
- * Transport types for session tracking.
- */
-export type TransportType = 'http' | 'legacy-sse' | 'stdio';
+// TransportType removed — use canonical definition from session module
 
 // ============================================================================
 // Re-export OpenTelemetry Types (for convenience)
 // These are re-exported so consumers don't need to import from @opentelemetry/api
 // ============================================================================
 
-export type { Span, SpanKind, Attributes, Context } from '@opentelemetry/api';
+export type { Span, SpanKind, Attributes, Context } from "@opentelemetry/api";

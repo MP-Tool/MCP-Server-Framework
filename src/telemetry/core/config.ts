@@ -4,46 +4,46 @@
  * Provides type-safe access to OpenTelemetry settings from the central config.
  * Delegates to the application's centralized environment configuration.
  *
+ * Both framework-managed and standard OTEL settings are routed through
+ * the config system. This ensures a single source of truth and allows
+ * all settings to be configured via environment variables OR config file.
+ *
  * @module server/telemetry/core/config
  */
 
-import type { TelemetryConfig } from './types.js';
-import { parseFrameworkEnv, type FrameworkEnvConfig } from '../../config/index.js';
-
-/** Cached config for performance (lazy initialization) */
-let cachedConfig: FrameworkEnvConfig | undefined;
-
-/**
- * Gets or creates cached framework config
- */
-function getConfig(): FrameworkEnvConfig {
-  if (!cachedConfig) {
-    cachedConfig = parseFrameworkEnv();
-  }
-  return cachedConfig;
-}
+import type { TelemetryConfig } from "./types.js";
+import { getFrameworkConfig } from "../../config/index.js";
+import { TELEMETRY_DEFAULTS } from "./constants.js";
 
 /**
  * Get telemetry configuration from centralized application config.
  *
- * Uses the following environment variables (parsed in config/env.ts):
- * - `OTEL_ENABLED` - Enable OpenTelemetry (default: false)
- * - `OTEL_SERVICE_NAME` - Service name (default: 'komodo-mcp-server')
- * - `OTEL_EXPORTER_OTLP_ENDPOINT` - OTLP endpoint URL
- * - `OTEL_DEBUG` - Enable debug logging (default: false)
- * - `NODE_ENV` - Environment name (default: 'development')
+ * Framework-managed:
+ * - `OTEL_ENABLED` — Master toggle (default: false)
+ * - `OTEL_SERVICE_NAME` — Service name (default: MCP server name from `createServer()`)
+ * - `OTEL_METRICS_EXPORTER` — Metric exporters (default: 'otlp,prometheus')
+ *
+ * Standard OTEL (pass-through):
+ * - `OTEL_EXPORTER_OTLP_ENDPOINT` — OTLP endpoint URL
+ * - `OTEL_TRACES_EXPORTER` — Trace exporter selection
+ * - `OTEL_LOGS_EXPORTER` — Log exporter selection (default: 'none')
+ * - `OTEL_LOG_LEVEL` — SDK diagnostic log level
+ * - `OTEL_METRIC_EXPORT_INTERVAL` — Periodic metric export interval
  *
  * @returns Telemetry configuration object
  */
 export function getTelemetryConfig(): TelemetryConfig {
-  const config = getConfig();
+  const config = getFrameworkConfig();
   return {
     enabled: config.OTEL_ENABLED,
-    serviceName: config.OTEL_SERVICE_NAME,
+    serviceName: config.OTEL_SERVICE_NAME ?? TELEMETRY_DEFAULTS.SERVICE_NAME,
     serviceVersion: config.VERSION,
-    environment: config.NODE_ENV,
-    endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT,
-    debug: config.OTEL_DEBUG,
+    endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT ?? TELEMETRY_DEFAULTS.OTLP_ENDPOINT,
+    tracesExporter: config.OTEL_TRACES_EXPORTER,
+    logsExporter: config.OTEL_LOGS_EXPORTER,
+    logLevel: config.OTEL_LOG_LEVEL,
+    metricExportInterval: config.OTEL_METRIC_EXPORT_INTERVAL,
+    metricsExporters: config.OTEL_METRICS_EXPORTER,
   };
 }
 
@@ -53,5 +53,5 @@ export function getTelemetryConfig(): TelemetryConfig {
  * @returns true if OTEL_ENABLED=true
  */
 export function isTelemetryEnabled(): boolean {
-  return getConfig().OTEL_ENABLED;
+  return getFrameworkConfig().OTEL_ENABLED;
 }

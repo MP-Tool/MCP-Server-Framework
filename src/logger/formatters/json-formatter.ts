@@ -7,8 +7,8 @@
  * @module logger/formatters/json-formatter
  */
 
-import type { ILogFormatter, LogEntryParams } from '../core/types.js';
-import { createLogEntry } from './schema.js';
+import type { LogFormatter, LogEntryParams } from "../core/types.js";
+import { buildLogEntry } from "./schema.js";
 
 /**
  * Configuration for the JSON formatter.
@@ -22,6 +22,16 @@ export interface JsonFormatterConfig {
   environment: string;
   /** Whether to pretty-print JSON (default: false) */
   prettyPrint?: boolean;
+  /** Hostname (computed once at init) */
+  hostname?: string;
+  /** CPU architecture (e.g., 'x64', 'arm64') */
+  architecture?: string;
+  /** OS type / platform (e.g., 'linux', 'darwin') */
+  osType?: string;
+  /** Process ID */
+  pid?: number;
+  /** Process name */
+  processName?: string;
 }
 
 /**
@@ -29,7 +39,7 @@ export interface JsonFormatterConfig {
  *
  * Produces ECS-compatible JSON logs suitable for log aggregation platforms.
  */
-export class JsonFormatter implements ILogFormatter {
+export class JsonFormatter implements LogFormatter {
   private config: JsonFormatterConfig;
   private prettyPrint: boolean;
 
@@ -51,32 +61,48 @@ export class JsonFormatter implements ILogFormatter {
   public format(params: LogEntryParams): string {
     const { level, message, component, context, metadata } = params;
 
-    const builder = createLogEntry(level, message)
-      .withService(this.config.serviceName, this.config.serviceVersion, this.config.environment, component)
-      .withTrace(context?.traceId, context?.spanId)
-      .withSession(context?.sessionId);
-
-    // Add HTTP context if available
-    if (context?.http) {
-      builder.withHttp(context.http.method, context.http.path, context.http.statusCode, context.http.durationMs);
-    }
-
-    // Add event context if available
-    if (context?.event) {
-      builder.withEvent(context.event.category, context.event.action, context.event.outcome);
-    }
-
-    // Add metadata
-    if (metadata && Object.keys(metadata).length > 0) {
-      builder.withMetadata(metadata);
-    }
-
-    // Add request ID as label for easy filtering
-    if (context?.requestId) {
-      builder.withLabels({ request_id: context.requestId });
-    }
-
-    const entry = builder.build();
+    const entry = buildLogEntry({
+      level,
+      message,
+      service: {
+        name: this.config.serviceName,
+        version: this.config.serviceVersion,
+        environment: this.config.environment,
+        component,
+      },
+      host:
+        this.config.hostname || this.config.architecture || this.config.osType
+          ? {
+              name: this.config.hostname,
+              architecture: this.config.architecture,
+              os: this.config.osType ? { type: this.config.osType } : undefined,
+            }
+          : undefined,
+      process:
+        this.config.pid !== undefined || this.config.processName
+          ? { pid: this.config.pid, name: this.config.processName }
+          : undefined,
+      trace: context?.traceId || context?.spanId ? { id: context?.traceId, "span.id": context?.spanId } : undefined,
+      session: context?.sessionId ? { id: context.sessionId } : undefined,
+      http: context?.http
+        ? {
+            method: context.http.method,
+            "url.path": context.http.path,
+            "response.status_code": context.http.statusCode,
+            "request.duration_ms": context.http.durationMs,
+          }
+        : undefined,
+      event: context?.event
+        ? {
+            category: context.event.category,
+            action: context.event.action,
+            outcome: context.event.outcome,
+          }
+        : undefined,
+      error: params.error,
+      metadata,
+      labels: context?.requestId ? { request_id: context.requestId } : undefined,
+    });
 
     if (this.prettyPrint) {
       return JSON.stringify(entry, null, 2);

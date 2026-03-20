@@ -5,7 +5,7 @@
  * Application-specific errors should be created in app/errors/ by extending
  * these base classes.
  *
- * @module server/errors
+ * @module errors
  *
  * @example
  * ```typescript
@@ -14,8 +14,7 @@
  *   AppError,
  *   ValidationError,
  *   ErrorCodes,
- *   getFrameworkMessage,
- * } from './server/errors/index.js';
+ * } from './errors/index.js';
  *
  * // Using the factory
  * throw FrameworkErrorFactory.validation.fieldRequired('name');
@@ -50,21 +49,19 @@ export {
   isSpecDefinedJsonRpcError,
   isServerDefinedJsonRpcError,
   isValidJsonRpcErrorCode,
+  createJsonRpcError,
   type JsonRpcErrorCodeType,
+  type JsonRpcErrorResponse,
   // Validation
   VALIDATION_LIMITS,
-  SENSITIVE_FIELD_PATTERNS,
-  REDACTED_VALUE,
-  isSensitiveField,
+  REDACTED_PLACEHOLDER,
+  isSensitiveKey,
   redactIfSensitive,
   // Base Error
   AppError,
-  // Messages
-  FrameworkMessages,
-  getFrameworkMessage,
-  interpolate,
+  // Transport Error Messages
   TransportErrorMessage,
-} from './core/index.js';
+} from "./core/index.js";
 
 export type {
   // Types
@@ -74,7 +71,7 @@ export type {
   ValidationIssue,
   // Messages
   TransportErrorMessageKey,
-} from './core/index.js';
+} from "./core/index.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Error Categories
@@ -95,11 +92,14 @@ export {
   OperationError,
   OperationCancelledError,
   // Connection
-  FrameworkConnectionError,
-} from './categories/index.js';
+  ConnectionError,
+  // Auth
+  AuthenticationError,
+  AuthorizationError,
+} from "./categories/index.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Factory
 // ─────────────────────────────────────────────────────────────────────────
 
-export { FrameworkErrorFactory, type FrameworkErrorFactoryType } from './factory.js';
+export { FrameworkErrorFactory, type FrameworkErrorFactoryType } from "./factory.js";

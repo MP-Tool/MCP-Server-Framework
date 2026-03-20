@@ -5,11 +5,12 @@
  * - OperationError: Generic operation failures
  * - OperationCancelledError: Request cancellation
  *
- * @module server/errors/categories/operation
+ * @module errors/categories/operation
  */
 
-import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { AppError, ErrorCodes, BaseErrorOptions, getFrameworkMessage } from '../core/index.js';
+import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { AppError, ErrorCodes } from "../core/index.js";
+import type { BaseErrorOptions } from "../core/index.js";
 
 // ============================================================================
 // Operation Error
@@ -34,9 +35,14 @@ import { AppError, ErrorCodes, BaseErrorOptions, getFrameworkMessage } from '../
  */
 export class OperationError extends AppError {
   /** The operation that failed */
-  readonly operation?: string;
+  readonly operation?: string | undefined;
 
-  constructor(message: string, options: Omit<BaseErrorOptions, 'code'> & { operation?: string } = {}) {
+  constructor(
+    message: string,
+    options: Omit<BaseErrorOptions, "code"> & {
+      operation?: string | undefined;
+    } = {},
+  ) {
     super(message, {
       code: ErrorCodes.OPERATION_ERROR,
       statusCode: options.statusCode || 500,
@@ -60,13 +66,11 @@ export class OperationError extends AppError {
    * Create an OperationError for a failed operation.
    */
   static failed(operation: string, reason?: string): OperationError {
-    const message = reason
-      ? getFrameworkMessage('OPERATION_FAILED_REASON', { operation, reason })
-      : getFrameworkMessage('OPERATION_FAILED', { operation });
+    const message = reason ? `Operation '${operation}' failed: ${reason}` : `Operation '${operation}' failed`;
 
     return new OperationError(message, {
       operation,
-      recoveryHint: reason ? `Operation failed: ${reason}. Please try again.` : 'Please try the operation again.',
+      recoveryHint: reason ? `Operation failed: ${reason}. Please try again.` : "Please try the operation again.",
     });
   }
 
@@ -74,7 +78,7 @@ export class OperationError extends AppError {
    * Create an OperationError for a timeout.
    */
   static timeout(operation: string, timeoutMs: number): OperationError {
-    return new OperationError(getFrameworkMessage('OPERATION_TIMEOUT', { operation, timeoutMs: String(timeoutMs) }), {
+    return new OperationError(`Operation '${operation}' timed out after ${timeoutMs}ms`, {
       operation,
       statusCode: 504,
       context: { timeoutMs },
@@ -86,7 +90,7 @@ export class OperationError extends AppError {
    * Create an OperationError for an unavailable operation.
    */
   static unavailable(operation: string): OperationError {
-    return new OperationError(getFrameworkMessage('OPERATION_UNAVAILABLE', { operation }), {
+    return new OperationError(`Operation '${operation}' is currently unavailable`, {
       operation,
       statusCode: 503,
       recoveryHint: `Operation '${operation}' is currently unavailable. Please try again later.`,
@@ -118,22 +122,24 @@ export class OperationError extends AppError {
  */
 export class OperationCancelledError extends AppError {
   /** The ID of the cancelled request */
-  readonly requestId?: string | number;
+  readonly requestId?: string | number | undefined;
 
   /** The reason for cancellation */
-  readonly cancelReason?: string;
+  readonly cancelReason?: string | undefined;
 
   constructor(
     message: string,
     requestId?: string | number,
-    options: Omit<BaseErrorOptions, 'code'> & { cancelReason?: string } = {},
+    options: Omit<BaseErrorOptions, "code"> & {
+      cancelReason?: string | undefined;
+    } = {},
   ) {
     super(message, {
       code: ErrorCodes.OPERATION_CANCELLED,
       statusCode: 499, // Client Closed Request
       mcpCode: ErrorCode.InternalError,
       cause: options.cause,
-      recoveryHint: options.recoveryHint || 'The operation was cancelled. You may retry if needed.',
+      recoveryHint: options.recoveryHint || "The operation was cancelled. You may retry if needed.",
       context: {
         ...options.context,
         requestId,
@@ -153,9 +159,7 @@ export class OperationCancelledError extends AppError {
    * Create from a cancelled request.
    */
   static fromRequest(requestId: string | number, reason?: string): OperationCancelledError {
-    const message = reason
-      ? getFrameworkMessage('OPERATION_CANCELLED_REASON', { requestId: String(requestId), reason })
-      : getFrameworkMessage('OPERATION_CANCELLED', { requestId: String(requestId) });
+    const message = reason ? `Request ${requestId} was cancelled: ${reason}` : `Request ${requestId} was cancelled`;
 
     return new OperationCancelledError(message, requestId, {
       cancelReason: reason,
@@ -166,9 +170,9 @@ export class OperationCancelledError extends AppError {
    * Create from an AbortSignal.
    */
   static fromAbortSignal(signal: AbortSignal, requestId?: string | number): OperationCancelledError {
-    const reason = signal.reason instanceof Error ? signal.reason.message : String(signal.reason || 'Aborted');
+    const reason = signal.reason instanceof Error ? signal.reason.message : String(signal.reason || "Aborted");
 
-    return new OperationCancelledError(getFrameworkMessage('OPERATION_ABORTED', { reason }), requestId, {
+    return new OperationCancelledError(`Operation aborted: ${reason}`, requestId, {
       cancelReason: reason,
       cause: signal.reason instanceof Error ? signal.reason : undefined,
     });

@@ -10,16 +10,13 @@
  */
 
 // Base Writer
-export { BaseLogWriter } from './base-writer.js';
+export { BaseLogWriter } from "./base-writer.js";
 
 // Console Writer
-export { ConsoleWriter, type ConsoleWriterConfig } from './console-writer.js';
+export { ConsoleWriter, type ConsoleWriterConfig } from "./console-writer.js";
 
 // File Writer
-export { FileWriter, type FileWriterConfig } from './file-writer.js';
-
-// MCP Writer
-export { McpLogWriter, mcpLogWriter } from './mcp-writer.js';
+export { FileWriter, type FileWriterConfig } from "./file-writer.js";
 
 // Composite Writer
-export { CompositeWriter } from './composite-writer.js';
+export { CompositeWriter } from "./composite-writer.js";

@@ -7,8 +7,8 @@
  * @module logger/writers/composite-writer
  */
 
-import type { LogLevel, ILogWriter } from '../core/types.js';
-import { BaseLogWriter } from './base-writer.js';
+import type { LogLevel, LogWriter } from "../core/types.js";
+import { BaseLogWriter } from "./base-writer.js";
 
 /**
  * Composite Writer class that combines multiple writers.
@@ -26,7 +26,7 @@ import { BaseLogWriter } from './base-writer.js';
  * ```
  */
 export class CompositeWriter extends BaseLogWriter {
-  private writers: Map<string, ILogWriter> = new Map();
+  private writers: Map<string, LogWriter> = new Map();
 
   /**
    * Add a named writer to the composite.
@@ -34,7 +34,7 @@ export class CompositeWriter extends BaseLogWriter {
    * @param name - Unique name for the writer
    * @param writer - The writer instance
    */
-  addWriter(name: string, writer: ILogWriter): void {
+  addWriter(name: string, writer: LogWriter): void {
     this.writers.set(name, writer);
   }
 
@@ -54,7 +54,7 @@ export class CompositeWriter extends BaseLogWriter {
    * @param name - The writer name
    * @returns The writer or undefined
    */
-  getWriter(name: string): ILogWriter | undefined {
+  getWriter(name: string): LogWriter | undefined {
     return this.writers.get(name);
   }
 
@@ -80,7 +80,12 @@ export class CompositeWriter extends BaseLogWriter {
 
     for (const writer of this.writers.values()) {
       if (writer.isAvailable()) {
-        writer.write(level, message, component);
+        try {
+          writer.write(level, message, component);
+        } catch {
+          // Individual writer failure must not break the pipeline.
+          // Remaining writers continue to receive log output.
+        }
       }
     }
   }

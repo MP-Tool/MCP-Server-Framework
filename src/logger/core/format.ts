@@ -7,7 +7,7 @@
  * @module logger/core/format
  */
 
-import { ID_DISPLAY_LENGTH } from './constants.js';
+import { truncateId } from "../../utils/string-helpers.js";
 
 /**
  * Formats a session ID for logging purposes.
@@ -26,7 +26,7 @@ import { ID_DISPLAY_LENGTH } from './constants.js';
  * ```
  */
 export function formatSessionId(sessionId: string): string {
-  return sessionId.substring(0, ID_DISPLAY_LENGTH);
+  return truncateId(sessionId);
 }
 
 /**
@@ -36,7 +36,7 @@ export function formatSessionId(sessionId: string): string {
  * @returns Truncated request ID
  */
 export function formatRequestId(requestId: string): string {
-  return requestId.substring(0, ID_DISPLAY_LENGTH);
+  return truncateId(requestId);
 }
 
 /**
@@ -46,5 +46,5 @@ export function formatRequestId(requestId: string): string {
  * @returns Truncated trace ID
  */
 export function formatTraceId(traceId: string): string {
-  return traceId.substring(0, ID_DISPLAY_LENGTH);
+  return truncateId(traceId);
 }

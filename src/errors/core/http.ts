@@ -5,10 +5,10 @@
  * - HTTP status codes enum
  * - Error code to HTTP status mapping
  *
- * @module server/errors/core/http
+ * @module errors/core/http
  */
 
-import { ErrorCodes, type ErrorCodeType } from './index.js';
+import { ErrorCodes, type ErrorCodeType } from "./index.js";
 
 // ============================================================================
 // HTTP Status Codes

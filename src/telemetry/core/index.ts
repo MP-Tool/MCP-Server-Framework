@@ -21,13 +21,12 @@ export type {
   // Metrics
   ServerMetrics,
   ServerStats,
-  TransportType,
   // Re-exports from OpenTelemetry
   Span,
   Attributes,
   Context,
   SpanKind,
-} from './types.js';
+} from "./types.js";
 
 // ============================================================================
 // Constants
@@ -48,13 +47,18 @@ export {
   TELEMETRY_LOG_COMPONENTS,
   // Log Messages
   SdkLogMessages,
-  MetricsLogMessages,
   // Transport Types
   TRANSPORT_TYPES,
-} from './constants.js';
+} from "./constants.js";
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-export { getTelemetryConfig, isTelemetryEnabled } from './config.js';
+export { getTelemetryConfig, isTelemetryEnabled } from "./config.js";
+
+// ============================================================================
+// DiagLogger
+// ============================================================================
+
+export { frameworkDiagLogger } from "./diag-logger.js";

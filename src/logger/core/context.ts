@@ -13,9 +13,9 @@
  * @module logger/core/context
  */
 
-import { AsyncLocalStorage } from 'async_hooks';
-import type { LogContext } from './types.js';
-import { MAX_CONTEXT_DEPTH, COMPONENT_SEPARATOR } from './constants.js';
+import { AsyncLocalStorage } from "async_hooks";
+import type { LogContext } from "./types.js";
+import { MAX_CONTEXT_DEPTH, COMPONENT_SEPARATOR } from "./constants.js";
 
 // ============================================================================
 // Context Storage
@@ -179,7 +179,7 @@ export function createChildContext(childContext: Partial<LogContext>): LogContex
   const parent = contextStorage.getStore() ?? {};
 
   // Merge component names if both exist
-  let component = childContext.component;
+  let component: string | undefined;
   if (parent.component && childContext.component) {
     component = `${parent.component}${COMPONENT_SEPARATOR}${childContext.component}`;
   } else {
@@ -189,7 +189,7 @@ export function createChildContext(childContext: Partial<LogContext>): LogContex
   return {
     ...parent,
     ...childContext,
-    component,
+    ...(component !== undefined && { component }),
   };
 }
 
@@ -253,19 +253,4 @@ export function withChildContext<T>(childContext: Partial<LogContext>, fn: () =>
  */
 export function getContextDepth(): number {
   return contextStorage.getStore()?._depth ?? 0;
-}
-
-/**
- * Reset context state (for testing purposes only).
- *
- * Note: With per-context depth tracking, this is now a no-op.
- * Each context manages its own depth, so there's no global state to reset.
- * Kept for backward compatibility with existing tests.
- *
- * @internal
- * @deprecated No longer needed - depth is per-context, not global
- */
-export function _resetContextState(): void {
-  // No-op: depth is now tracked per-context in _depth field
-  // This function is kept for backward compatibility
 }

@@ -3,7 +3,7 @@
  *
  * Barrel export for centralized types and constants.
  *
- * @module server/connection/core
+ * @module connection/core
  */
 
 // Types
@@ -13,42 +13,26 @@ export type {
   ConnectionStateListener,
   ConnectionStateEvent,
   ConnectionStateStats,
-  // Request Manager Types
-  RequestId,
-  ProgressToken,
-  ActiveRequest,
-  ProgressData,
-  ProgressReporter,
-  RequestManagerStats,
-  ProgressNotificationParams,
-  RateLimitEntry,
-} from './types.js';
+  // Telemetry Abstraction
+  ConnectionTelemetry,
+  TelemetrySpan,
+} from "./types.js";
 
-export { CONNECTION_STATES } from './types.js';
+// Note: ProgressData and ProgressReporter are exported from mcp/types/context.ts (canonical source)
 
-// Base Error Classes
-export {
-  ConnectionErrorCodes,
-  ConnectionError,
-  getMcpCodeForConnectionError,
-  getHttpStatusForConnectionError,
-  type ConnectionErrorCode,
-  type ConnectionErrorOptions,
-} from './base.js';
+export { CONNECTION_STATES, NO_OP_TELEMETRY } from "./types.js";
+
+// Connection Error Codes & Mappings
+export { ConnectionErrorCodes, getMcpCodeForConnectionError, getHttpStatusForConnectionError } from "./base.js";
+export type { ConnectionErrorCode } from "./base.js";
 
 // Constants
 export {
-  // Configuration
   CONNECTION_STATE_CONFIG,
-  REQUEST_MANAGER_CONFIG,
-  // Log Components (new naming)
   CONNECTION_LOG_COMPONENTS,
-  // MCP Spec References (new naming)
   CONNECTION_MCP_SPEC,
-  // Notification Methods (new naming)
-  CONNECTION_NOTIFICATION_METHODS,
-  // Log Messages
+  RECONNECT_DEFAULTS,
+  VALID_STATE_TRANSITIONS,
   ConnectionStateLogMessages,
-  RequestManagerLogMessages,
   ClientInitializerLogMessages,
-} from './constants.js';
+} from "./constants.js";

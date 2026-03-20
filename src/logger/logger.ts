@@ -11,20 +11,20 @@
  * This facade follows the Single Responsibility Principle by coordinating
  * the logging pipeline without implementing the details itself.
  *
- * @module server/logger
+ * @module logger
  */
 
-import * as util from 'util';
+import * as util from "util";
 
 // Core types and utilities
-import type { LogLevel, LogContext, ILogger, LogEntryParams } from './core/types.js';
+import type { LogLevel, TransportMode, LogContext, LoggerInterface, LogEntryParams } from "./core/types.js";
 import {
   LOG_LEVELS,
   MAX_MESSAGE_LENGTH,
   TRUNCATION_SUFFIX,
   DEFAULT_LOG_LEVEL,
   DEFAULT_SERVICE_NAME,
-} from './core/constants.js';
+} from "./core/constants.js";
 import {
   runWithContext,
   getContext,
@@ -33,7 +33,8 @@ import {
   withExtendedContext,
   withChildContext,
   getContextDepth,
-} from './core/context.js';
+} from "./core/context.js";
+import { extractTraceContext } from "./core/trace-context.js";
 
 // Factory for DI-enabled resource management
 import {
@@ -42,10 +43,11 @@ import {
   hasLoggerResources,
   getLoggerResources,
   resetLoggerResources,
-} from './factory.js';
+  _setLoggerResources,
+} from "./factory.js";
 
 // Re-export factory types for consumers
-export type { LoggerSystemConfig, LoggerDependencies } from './factory.js';
+export type { LoggerSystemConfig, LoggerDependencies } from "./factory.js";
 export { LoggerResources, initializeLoggerResources, resetLoggerResources };
 
 // ============================================================================
@@ -60,13 +62,23 @@ export interface GlobalLoggerConfig {
   /** Log level */
   LOG_LEVEL: LogLevel;
   /** Log format */
-  LOG_FORMAT: 'text' | 'json';
+  LOG_FORMAT: "text" | "json";
   /** Transport mode */
-  MCP_TRANSPORT: 'stdio' | 'http';
+  MCP_TRANSPORT: TransportMode;
   /** Node environment */
-  NODE_ENV: 'development' | 'production' | 'test';
+  NODE_ENV: "development" | "production" | "test";
   /** Log directory (optional) */
-  LOG_DIR?: string;
+  LOG_DIR?: string | undefined;
+  /** Maximum log file size in bytes before rotation */
+  LOG_MAX_FILE_SIZE?: number | undefined;
+  /** Number of rotated log files to keep */
+  LOG_MAX_FILES?: number | undefined;
+  /** Log file retention in days (0 = disabled) */
+  LOG_RETENTION_DAYS?: number | undefined;
+  /** Include timestamps in text log output */
+  LOG_TIMESTAMP?: boolean | undefined;
+  /** Include component name in text log output */
+  LOG_COMPONENT?: boolean | undefined;
   /** Server name */
   SERVER_NAME: string;
   /** Server version */
@@ -79,11 +91,12 @@ export interface GlobalLoggerConfig {
  */
 const DEFAULT_LOGGER_CONFIG: GlobalLoggerConfig = {
   LOG_LEVEL: DEFAULT_LOG_LEVEL,
-  LOG_FORMAT: 'text',
-  MCP_TRANSPORT: 'http',
-  NODE_ENV: (process.env.NODE_ENV as GlobalLoggerConfig['NODE_ENV']) ?? 'development',
+  LOG_FORMAT: "text",
+  MCP_TRANSPORT: "http",
+  // @node-api — process.env.* returns string | undefined; config requires string literal union
+  NODE_ENV: (process.env.NODE_ENV as GlobalLoggerConfig["NODE_ENV"]) ?? "development",
   SERVER_NAME: DEFAULT_SERVICE_NAME,
-  SERVER_VERSION: '0.0.0',
+  SERVER_VERSION: "0.0.0",
 };
 
 /** Global logger configuration storage */
@@ -104,13 +117,22 @@ let globalLoggerConfig: GlobalLoggerConfig = { ...DEFAULT_LOGGER_CONFIG };
  *   MCP_TRANSPORT: config.MCP_TRANSPORT,
  *   NODE_ENV: config.NODE_ENV,
  *   LOG_DIR: config.LOG_DIR,
- *   SERVER_NAME: 'komodo-mcp-server',
+ *   SERVER_NAME: 'mcp-server',
  *   SERVER_VERSION: '1.0.0',
  * });
  * ```
  */
 export function configureLogger(config: Partial<GlobalLoggerConfig>): void {
   globalLoggerConfig = { ...globalLoggerConfig, ...config };
+
+  // Close and reset resources so the next log call re-creates them with the new config.
+  // This is necessary because LoggerResources captures formatter settings
+  // (e.g., includeTimestamp, includeComponent) at construction time.
+  // Must use resetLoggerResources() (not _setLoggerResources(null)) to properly
+  // close existing FileWriter streams and clear rotation/retention timers.
+  if (hasLoggerResources()) {
+    void resetLoggerResources();
+  }
 }
 
 /**
@@ -167,7 +189,7 @@ export interface LoggerOptions {
  * const testLogger = new Logger({ component: 'test', resources });
  * ```
  */
-export class Logger implements ILogger {
+export class Logger implements LoggerInterface {
   // ============================================================
   // Instance properties
   // ============================================================
@@ -178,8 +200,13 @@ export class Logger implements ILogger {
   /** Component name for this logger instance */
   private readonly component: string;
 
-  /** Resources instance (shared or injected) */
-  private readonly resources: LoggerResources;
+  /** Explicitly injected resources (DI/testing only) — `null` means use global */
+  private readonly _injectedResources: LoggerResources | null;
+
+  /** Resolve the active resources: injected for DI, otherwise global (dynamic). */
+  private get resources(): LoggerResources {
+    return this._injectedResources ?? Logger.getOrInitializeResources();
+  }
 
   /**
    * Get the effective log level (numeric for fast comparison).
@@ -199,15 +226,15 @@ export class Logger implements ILogger {
    *
    * @param componentOrOptions - Component name string or options object
    */
-  constructor(componentOrOptions: string | LoggerOptions = 'server') {
-    if (typeof componentOrOptions === 'string') {
+  constructor(componentOrOptions: string | LoggerOptions = "server") {
+    if (typeof componentOrOptions === "string") {
       this.component = componentOrOptions;
       this.levelOverride = undefined; // Use global config dynamically
-      this.resources = Logger.getOrInitializeResources();
+      this._injectedResources = null; // Resolve from global on each log call
     } else {
-      this.component = componentOrOptions.component ?? 'server';
+      this.component = componentOrOptions.component ?? "server";
       this.levelOverride = componentOrOptions.level; // Override if explicitly set
-      this.resources = componentOrOptions.resources ?? Logger.getOrInitializeResources();
+      this._injectedResources = componentOrOptions.resources ?? null;
     }
   }
 
@@ -221,11 +248,24 @@ export class Logger implements ILogger {
       initializeLoggerResources({
         level: cfg.LOG_LEVEL,
         format: cfg.LOG_FORMAT,
-        transport: cfg.MCP_TRANSPORT === 'http' ? 'sse' : 'stdio',
+        transport: cfg.MCP_TRANSPORT,
         serviceName: cfg.SERVER_NAME,
         serviceVersion: cfg.SERVER_VERSION,
         environment: cfg.NODE_ENV,
-        logDir: cfg.LOG_DIR,
+        ...(cfg.LOG_DIR !== undefined && { logDir: cfg.LOG_DIR }),
+        ...(cfg.LOG_MAX_FILE_SIZE !== undefined && {
+          maxFileSize: cfg.LOG_MAX_FILE_SIZE,
+        }),
+        ...(cfg.LOG_MAX_FILES !== undefined && { maxFiles: cfg.LOG_MAX_FILES }),
+        ...(cfg.LOG_RETENTION_DAYS !== undefined && {
+          retentionDays: cfg.LOG_RETENTION_DAYS,
+        }),
+        ...(cfg.LOG_TIMESTAMP !== undefined && {
+          includeTimestamp: cfg.LOG_TIMESTAMP,
+        }),
+        ...(cfg.LOG_COMPONENT !== undefined && {
+          includeComponent: cfg.LOG_COMPONENT,
+        }),
       });
     }
     return getLoggerResources();
@@ -266,15 +306,6 @@ export class Logger implements ILogger {
     await resetLoggerResources();
   }
 
-  /**
-   * Synchronous reset for backward compatibility.
-   * @deprecated Use resetState() async version instead
-   */
-  public static resetStateSync(): void {
-    // Fire and forget - not ideal but maintains backward compatibility
-    void resetLoggerResources();
-  }
-
   // ============================================================
   // Child Logger Factory
   // ============================================================
@@ -287,9 +318,13 @@ export class Logger implements ILogger {
    * @returns A cached or new Logger instance
    */
   public child(context: { component: string }): Logger {
-    return this.resources.getOrCreateChildLogger(
-      context.component,
-      () => new Logger({ component: context.component, resources: this.resources }),
+    return this.resources.getOrCreateChildLogger(context.component, () =>
+      this._injectedResources
+        ? new Logger({
+            component: context.component,
+            resources: this._injectedResources,
+          })
+        : new Logger({ component: context.component }),
     );
   }
 
@@ -378,35 +413,35 @@ export class Logger implements ILogger {
    * Log a message at TRACE level.
    */
   public trace(message: string, ...args: unknown[]): void {
-    this.log('trace', message, ...args);
+    this.log("trace", message, ...args);
   }
 
   /**
    * Log a message at DEBUG level.
    */
   public debug(message: string, ...args: unknown[]): void {
-    this.log('debug', message, ...args);
+    this.log("debug", message, ...args);
   }
 
   /**
    * Log a message at INFO level.
    */
   public info(message: string, ...args: unknown[]): void {
-    this.log('info', message, ...args);
+    this.log("info", message, ...args);
   }
 
   /**
    * Log a message at WARN level.
    */
   public warn(message: string, ...args: unknown[]): void {
-    this.log('warn', message, ...args);
+    this.log("warn", message, ...args);
   }
 
   /**
    * Log a message at ERROR level.
    */
   public error(message: string, ...args: unknown[]): void {
-    this.log('error', message, ...args);
+    this.log("error", message, ...args);
   }
 
   // ============================================================
@@ -434,8 +469,8 @@ export class Logger implements ILogger {
       return;
     }
 
-    // Step 2: Extract metadata from args
-    const { metadata, formatArgs } = this.extractMetadata(args);
+    // Step 2: Extract metadata and error from args
+    const { metadata, error, formatArgs } = this.extractMetadata(args);
 
     // Step 3: Printf-style message formatting
     let formattedMessage = util.format(message, ...formatArgs);
@@ -449,7 +484,17 @@ export class Logger implements ILogger {
     const context = getContext();
     const component = context?.component ?? this.component;
 
+    // Step 5b: Auto-enrich with OTEL trace context if not already set
+    let enrichedContext = context;
+    if (!context?.traceId) {
+      const otelCtx = extractTraceContext();
+      if (otelCtx) {
+        enrichedContext = { ...context, ...otelCtx };
+      }
+    }
+
     // Step 6: Scrub secrets from metadata
+    // @ts-limitation — scrubObject() returns unknown; object input guarantees object output
     const scrubbedMetadata = metadata
       ? (this.resources.secretScrubber.scrubObject(metadata) as Record<string, unknown>)
       : undefined;
@@ -459,8 +504,9 @@ export class Logger implements ILogger {
       level,
       message: formattedMessage,
       component,
-      context,
-      metadata: scrubbedMetadata,
+      ...(enrichedContext !== undefined && { context: enrichedContext }),
+      ...(scrubbedMetadata !== undefined && { metadata: scrubbedMetadata }),
+      ...(error !== undefined && { error }),
       timestamp: new Date().toISOString(),
     };
 
@@ -468,16 +514,20 @@ export class Logger implements ILogger {
     const formatted = this.resources.getFormatter().format(params);
 
     // Step 9: Apply injection guard and secret scrubbing to final output
-    const sanitized = this.resources.injectionGuard.sanitize(formatted);
-    const safeOutput = this.resources.secretScrubber.scrub(sanitized);
+    const safeOutput = this.sanitizeOutput(formatted);
 
     // Step 10: Write to outputs
     this.writeToOutputs(level, safeOutput, component);
 
-    // Step 11: Send to MCP client if context has sendMcpLog
-    if (context?.sendMcpLog) {
-      const safeMessage = this.resources.secretScrubber.scrub(formattedMessage);
-      context.sendMcpLog(level, safeMessage);
+    // Step 11: Send to MCP client if context has sendMcpLog (best-effort)
+    if (enrichedContext?.sendMcpLog) {
+      try {
+        const safeMessage = this.sanitizeOutput(formattedMessage);
+        enrichedContext.sendMcpLog(level, safeMessage);
+      } catch {
+        // Silently ignore — MCP client notification is best-effort.
+        // A throwing callback must never crash the caller's logging call.
+      }
     }
   }
 
@@ -487,28 +537,41 @@ export class Logger implements ILogger {
    */
   private extractMetadata(args: unknown[]): {
     metadata: Record<string, unknown> | undefined;
+    error: Error | undefined;
     formatArgs: unknown[];
   } {
     if (args.length === 0) {
-      return { metadata: undefined, formatArgs: [] };
+      return { metadata: undefined, error: undefined, formatArgs: [] };
     }
+
+    let metadata: Record<string, unknown> | undefined;
+    let error: Error | undefined;
+    let formatArgs = args;
 
     const lastArg = args[args.length - 1];
 
     // Check if last arg is a plain object (not null, not Error)
-    if (
-      lastArg !== null &&
-      typeof lastArg === 'object' &&
-      !util.types.isNativeError(lastArg) &&
-      !Array.isArray(lastArg)
-    ) {
-      return {
-        metadata: lastArg as Record<string, unknown>,
-        formatArgs: args.slice(0, -1),
-      };
+    if (lastArg !== null && typeof lastArg === "object" && !(lastArg instanceof Error) && !Array.isArray(lastArg)) {
+      // @type-narrowing — Runtime checks confirm object && !null && !Error && !Array; TS cannot narrow unknown
+      metadata = lastArg as Record<string, unknown>;
+      formatArgs = args.slice(0, -1);
     }
 
-    return { metadata: undefined, formatArgs: args };
+    // Check if last format arg (or the one before metadata) is an Error
+    const errorCandidate = formatArgs.length > 0 ? formatArgs[formatArgs.length - 1] : undefined;
+    if (errorCandidate instanceof Error) {
+      error = errorCandidate;
+    }
+
+    return { metadata, error, formatArgs };
+  }
+
+  /**
+   * Apply injection guard and secret scrubbing to formatted log output.
+   */
+  private sanitizeOutput(formatted: string): string {
+    const sanitized = this.resources.injectionGuard.sanitize(formatted);
+    return this.resources.secretScrubber.scrub(sanitized);
   }
 
   /**

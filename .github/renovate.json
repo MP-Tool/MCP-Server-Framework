@@ -1,0 +1,63 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "schedule": ["before 4am on monday"],
+  "timezone": "Europe/Berlin",
+  "labels": ["dependencies"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 10,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "Group all non-major dependency updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    },
+    {
+      "description": "Group MCP SDK updates separately",
+      "matchPackageNames": ["/^@modelcontextprotocol\\//"],
+      "groupName": "MCP SDK updates",
+      "groupSlug": "mcp-sdk"
+    },
+    {
+      "description": "Group all OpenTelemetry packages together",
+      "matchPackageNames": ["/^@opentelemetry\\//"],
+      "groupName": "OpenTelemetry updates",
+      "groupSlug": "opentelemetry"
+    },
+    {
+      "description": "Automerge minor/patch devDependency updates (types, linting, formatting)",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "TypeScript major updates require manual review (can break compilation)",
+      "matchPackageNames": ["typescript"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "breaking-change"]
+    },
+    {
+      "description": "Widen peer dependency ranges instead of bumping minimums",
+      "matchDepTypes": ["peerDependencies"],
+      "rangeStrategy": "widen"
+    },
+    {
+      "description": "Peer dependency major updates require careful review (API compatibility)",
+      "matchDepTypes": ["peerDependencies"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "breaking-change"]
+    }
+  ]
+}

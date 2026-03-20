@@ -1,0 +1,169 @@
+name: Release
+
+# Creates a GitHub Release with tag when the package version changes.
+# Triggers:
+# - Automatically on push/merge to main when package.json version changes
+# - Manually via workflow_dispatch
+# After a successful release, the npm publish workflow is triggered automatically.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    name: Check Version Change
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version_changed: ${{ steps.version_check.outputs.changed }}
+      current_version: ${{ steps.version_check.outputs.version }}
+      should_release: ${{ steps.version_check.outputs.should_release }}
+      is_prerelease: ${{ steps.version_check.outputs.is_prerelease }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 2
+
+      - name: Check version change
+        id: version_check
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if this is a prerelease (contains hyphen like 1.2.0-beta.1)
+          if [[ "$CURRENT_VERSION" == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Always release on manual trigger (workflow_dispatch)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "🚀 Manual trigger - releasing version $CURRENT_VERSION"
+            exit 0
+          fi
+          
+          # For push events, check if we have a parent commit
+          if ! git rev-parse HEAD^ >/dev/null 2>&1; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "🎉 Initial commit - releasing version $CURRENT_VERSION"
+            exit 0
+          fi
+          
+          # Check if package.json version changed in this push
+          if git diff HEAD^ HEAD --name-only | grep -q "package.json"; then
+            PREV_VERSION=$(git show HEAD^:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
+            
+            if [ "$CURRENT_VERSION" != "$PREV_VERSION" ]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "✅ Version changed from $PREV_VERSION to $CURRENT_VERSION"
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "ℹ️ Version unchanged: $CURRENT_VERSION"
+            fi
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ package.json not modified in this push"
+          fi
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    permissions:
+      contents: write  # Required for creating releases and tags
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Generate release notes
+        env:
+          VERSION: ${{ needs.check-version.outputs.current_version }}
+        run: |
+          cat > release_notes.md << 'HEADER'
+          ## Changelog
+          HEADER
+          
+          # Extract changelog section for this version
+          if grep -q "^## \[${VERSION}\]" CHANGELOG.md; then
+            sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '1d;$d' | sed '$d' >> release_notes.md
+          else
+            echo "_No changelog entry for this version._" >> release_notes.md
+          fi
+          
+          cat >> release_notes.md << EOF
+          
+          ## Installation
+          
+          \`\`\`bash
+          npm install mcp-server-framework@${VERSION}
+          \`\`\`
+          
+          ---
+          [Documentation](https://github.com/${{ github.repository }}#readme) · [Examples](https://github.com/${{ github.repository }}/tree/main/examples) · [Full Changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        with:
+          tag_name: ${{ needs.check-version.outputs.current_version }}
+          name: ${{ needs.check-version.outputs.current_version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ needs.check-version.outputs.is_prerelease == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Trigger npm Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [check-version, release]
+    permissions:
+      actions: write  # Required for triggering workflows
+    steps:
+      - name: Summary
+        env:
+          VERSION: ${{ needs.check-version.outputs.current_version }}
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## ✅ Release ${VERSION}
+          
+          | | |
+          |---|---|
+          | **Package** | \`mcp-server-framework@${VERSION}\` |
+          | **Tag** | \`${VERSION}\` |
+          | **Prerelease** | \`${{ needs.check-version.outputs.is_prerelease }}\` |
+          
+          [View Release](https://github.com/${{ github.repository }}/releases/tag/${VERSION})
+          EOF
+
+      # Trigger npm publish after successful release.
+      # Note: The 'release: [published]' event may not fire when the release is created
+      # by the same workflow, so we trigger publish-npm.yml explicitly.
+      - name: Trigger npm publish workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🚀 Triggering npm publish workflow..."
+          gh workflow run publish-npm.yml \
+            --repo ${{ github.repository }} \
+            --ref main
+          echo "✅ npm publish workflow triggered"

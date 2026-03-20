@@ -4,11 +4,11 @@
  * Centralized error creation for the MCP framework layer.
  * Application-specific errors should extend these in app/errors/.
  *
- * @module server/errors/factory
+ * @module errors/factory
  */
 
-import { ZodError } from 'zod';
-import { AppError, getFrameworkMessage } from './core/index.js';
+import { ZodError } from "zod";
+import { AppError } from "./core/index.js";
 import {
   McpProtocolError,
   SessionError,
@@ -19,7 +19,10 @@ import {
   RegistryError,
   OperationError,
   OperationCancelledError,
-} from './categories/index.js';
+  ConnectionError,
+  AuthenticationError,
+  AuthorizationError,
+} from "./categories/index.js";
 
 /**
  * Framework Error Factory
@@ -108,8 +111,14 @@ export const FrameworkErrorFactory = {
     /** Create a DNS rebinding error */
     dnsRebinding: (host: string) => TransportError.dnsRebinding(host),
 
+    /** Create a port-in-use error */
+    portInUse: (bind: string) => TransportError.portInUse(bind),
+
+    /** Create a privileges-required error */
+    privilegesRequired: (bind: string) => TransportError.privilegesRequired(bind),
+
     /** Create a custom transport error */
-    custom: (message: string, transportType?: 'http' | 'sse' | 'stdio' | 'streamable-http') =>
+    custom: (message: string, transportType?: "http" | "sse" | "stdio") =>
       new TransportError(message, { transportType }),
   },
 
@@ -156,6 +165,25 @@ export const FrameworkErrorFactory = {
 
     /** Create an invalid configuration error */
     invalid: (message: string) => ConfigurationError.invalid(message),
+
+    /** Config file not found (explicit MCP_CONFIG_FILE path) */
+    fileNotFound: (filePath: string) => ConfigurationError.fileNotFound(filePath),
+
+    /** Config file could not be read */
+    fileReadFailed: (filePath: string, cause?: Error) => ConfigurationError.fileReadFailed(filePath, cause),
+
+    /** Config file TOML/YAML parse failure */
+    fileParseFailed: (filePath: string, cause?: Error) => ConfigurationError.fileParseFailed(filePath, cause),
+
+    /** Config file schema validation failed (typos, wrong types) */
+    fileValidationFailed: (filePath: string, zodError: ZodError) =>
+      ConfigurationError.fileValidationFailed(filePath, zodError),
+
+    /** Unsupported config file extension */
+    unsupportedFormat: (extension: string) => ConfigurationError.unsupportedFormat(extension),
+
+    /** Cross-field constraint violation */
+    constraintViolation: (message: string, fields: string[]) => ConfigurationError.constraintViolation(message, fields),
 
     /** Create a custom configuration error */
     custom: (message: string, configKey?: string) => new ConfigurationError(message, { configKey }),
@@ -239,6 +267,57 @@ export const FrameworkErrorFactory = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Connection Errors
+  // ─────────────────────────────────────────────────────────────────────────
+
+  connection: {
+    /** Create a generic connection failed error */
+    failed: (target: string, reason?: string) => ConnectionError.failed(target, reason),
+
+    /** Create a connection refused error */
+    refused: (target: string) => ConnectionError.refused(target),
+
+    /** Create a connection timeout error */
+    timeout: (target: string, timeoutMs?: number) => ConnectionError.timeout(target, timeoutMs),
+
+    /** Create a connection lost error */
+    lost: (target: string) => ConnectionError.lost(target),
+
+    /** Create a connection reset error */
+    reset: (target: string) => ConnectionError.reset(target),
+
+    /** Create a health check failed error */
+    healthCheckFailed: (reason: string, target?: string) => ConnectionError.healthCheckFailed(reason, target),
+
+    /** Create a custom connection error */
+    custom: (message: string, target: string) => new ConnectionError(message, target),
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Auth Errors
+  // ─────────────────────────────────────────────────────────────────────────
+
+  auth: {
+    /** Token is invalid or malformed */
+    invalidToken: (reason?: string) => AuthenticationError.invalidToken(reason),
+
+    /** Token has expired */
+    tokenExpired: () => AuthenticationError.tokenExpired(),
+
+    /** No token provided */
+    missingToken: () => AuthenticationError.missingToken(),
+
+    /** Token lacks required scopes */
+    insufficientScope: (required: string[], actual: string[]) => AuthorizationError.insufficientScope(required, actual),
+
+    /** Generic forbidden */
+    forbidden: (reason?: string) => AuthorizationError.forbidden(reason),
+
+    /** Custom authentication error */
+    unauthorized: (message: string) => new AuthenticationError(message),
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Utility Methods
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -250,11 +329,6 @@ export const FrameworkErrorFactory = {
   },
 
   /**
-   * Get a message from the framework message catalog
-   */
-  getMessage: getFrameworkMessage,
-
-  /**
    * Normalize any error to an AppError
    */
   normalize: (error: unknown, fallbackMessage?: string): AppError => {
@@ -262,7 +336,7 @@ export const FrameworkErrorFactory = {
       return error;
     }
 
-    const message = error instanceof Error ? error.message : fallbackMessage || 'An unexpected error occurred';
+    const message = error instanceof Error ? error.message : fallbackMessage || "An unexpected error occurred";
 
     return new InternalError(message, {
       cause: error instanceof Error ? error : undefined,
