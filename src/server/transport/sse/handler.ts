@@ -124,8 +124,8 @@ export class SseRequestHandler {
       const closeOnce = (): void => {
         if (closed) return;
         closed = true;
-        logger.debug(LogMessages.SESSION_CLOSED, sessionId);
-        void this.sessionManager.close(sessionId, SESSION_CLOSE_REASONS.CLIENT_DISCONNECT).catch((err) => {
+        logger.trace(LogMessages.SESSION_CLOSED, sessionId);
+        void this.sessionManager.close(sessionId, SESSION_CLOSE_REASONS.CLIENT_DISCONNECT).catch((err: unknown) => {
           logger.warn(
             "Error closing session on client disconnect: %s",
             err instanceof Error ? err.message : String(err),
@@ -142,9 +142,9 @@ export class SseRequestHandler {
       // Connect MCP session to transport
       // Note: This is intentionally NOT awaited because connect() may block
       // waiting for the initialize message from the client.
-      mcpSession.sdk.connect(transport).catch((err) => {
+      mcpSession.sdk.connect(transport).catch((err: unknown) => {
         logger.error(LogMessages.SESSION_CONNECTION_ERROR, sessionId, err);
-        void this.sessionManager.close(sessionId, SESSION_CLOSE_REASONS.ERROR).catch((closeErr) => {
+        void this.sessionManager.close(sessionId, SESSION_CLOSE_REASONS.ERROR).catch((closeErr: unknown) => {
           logger.warn(
             "Error closing session after connection failure: %s",
             closeErr instanceof Error ? closeErr.message : String(closeErr),
@@ -153,7 +153,7 @@ export class SseRequestHandler {
       });
 
       logger.debug(LogMessages.STREAM_CONNECTED, sessionId);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error(LogMessages.CONNECTION_SETUP_ERROR, error);
       if (!res.headersSent) {
         res
@@ -209,7 +209,7 @@ export class SseRequestHandler {
       // @transport-downcast — Sessions in this handler are exclusively created with SSE transport
       const transport = session.transport.instance as SseTransport;
       await transport.handlePostMessage(req, res, req.body);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error(LogMessages.POST_ERROR, sessionId, error);
       if (!res.headersSent) {
         res

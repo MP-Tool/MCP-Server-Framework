@@ -182,7 +182,7 @@ export class McpSession implements LogNotificationHandler {
     // Setup lifecycle callbacks
     this.setupLifecycleCallbacks();
 
-    this.logger.debug(LogMessages.SESSION_CREATED, options.name, options.version);
+    this.logger.trace(LogMessages.SESSION_CREATED, options.name, options.version);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -232,9 +232,10 @@ export class McpSession implements LogNotificationHandler {
   async dispose(): Promise<void> {
     try {
       await this.sdk.close();
-      this.logger.trace(LogMessages.SESSION_CLOSED);
-    } catch (error) {
-      this.logger.warn(LogMessages.SESSION_ERROR, error instanceof Error ? error.message : String(error));
+      // No logging here — sdk.close() triggers onclose/onerror callbacks
+      // which are the canonical logging source (setupLifecycleCallbacks)
+    } catch {
+      // Swallowed — onerror callback already logs at ERROR level
     } finally {
       // Release callback references to allow GC of captured closures
       this.onCloseCallback = undefined;
@@ -553,8 +554,11 @@ export class McpSession implements LogNotificationHandler {
    * Sets up lifecycle callbacks on the underlying SDK server.
    */
   private setupLifecycleCallbacks(): void {
+    let closed = false;
     this.sdk.server.onclose = () => {
-      this.logger.debug(LogMessages.SESSION_CLOSED);
+      if (closed) return;
+      closed = true;
+      this.logger.trace(LogMessages.SESSION_CLOSED);
       this.onCloseCallback?.();
     };
 

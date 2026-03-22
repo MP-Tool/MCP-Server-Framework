@@ -186,6 +186,132 @@ export function parseByteSize(value: string): number {
 }
 
 // ============================================================================
+// Duration Parsing
+// ============================================================================
+
+/**
+ * Regex pattern for human-readable durations.
+ *
+ * Matches formats like `"15m"`, `"1.5h"`, `"500ms"`, or plain
+ * millisecond counts like `"900000"`. Case-insensitive, optional
+ * whitespace between number and unit.
+ *
+ * Shared with Zod schemas (`MCP_RATE_LIMIT_WINDOW_MS`, `OTEL_METRIC_EXPORT_INTERVAL`)
+ * to ensure consistent validation across env vars and config files.
+ *
+ * @example
+ * ```typescript
+ * DURATION_REGEX.test('15m');       // true
+ * DURATION_REGEX.test('1.5 h');     // true
+ * DURATION_REGEX.test('900000');    // true (plain ms)
+ * DURATION_REGEX.test('abc');       // false
+ * ```
+ */
+export const DURATION_REGEX = /^\d+(\.\d+)?\s*(ms|s|m|h|d|w)?$/i;
+
+/**
+ * Duration unit multipliers (all units → milliseconds).
+ * @internal
+ */
+const DURATION_MULTIPLIERS: Readonly<Record<string, number>> = {
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+};
+
+/**
+ * Parse a human-readable duration string into milliseconds.
+ *
+ * Accepts formats like `"15m"`, `"1.5h"`, `"500ms"`, `"2d"`, or plain
+ * numeric strings like `"900000"` (interpreted as milliseconds). Uses
+ * standard time units:
+ *
+ * | Unit | Meaning      | Multiplier  |
+ * |------|-------------|-------------|
+ * | ms   | milliseconds | 1           |
+ * | s    | seconds      | 1,000       |
+ * | m    | minutes      | 60,000      |
+ * | h    | hours        | 3,600,000   |
+ * | d    | days         | 86,400,000  |
+ * | w    | weeks        | 604,800,000 |
+ *
+ * @param value - Human-readable duration string (e.g. `"15m"`, `"900000"`)
+ * @returns Duration in milliseconds (floored to integer)
+ * @throws {Error} If the format is invalid
+ *
+ * @example
+ * ```typescript
+ * parseDuration('15m');       // 900000
+ * parseDuration('1.5h');      // 5400000
+ * parseDuration('500ms');     // 500
+ * parseDuration('2d');        // 172800000
+ * parseDuration('900000');    // 900000 (plain ms)
+ * ```
+ */
+export function parseDuration(value: string): number {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?$/i);
+
+  if (!match) {
+    throw new Error(
+      `Invalid duration format: "${value}". Use formats like "15m", "1.5h", "500ms", "2d", or a plain millisecond count like "900000".`,
+    );
+  }
+
+  const num = parseFloat(match[1]!);
+  const unit = match[2]?.toLowerCase();
+
+  if (!unit) {
+    return Math.floor(num);
+  }
+
+  return Math.floor(num * (DURATION_MULTIPLIERS[unit] ?? 1));
+}
+
+/**
+ * Format milliseconds as a human-readable duration string.
+ *
+ * Inverse of {@link parseDuration}. Produces the most natural unit
+ * for the given value, using at most two segments (e.g. `"1m 30s"`).
+ *
+ * @param ms - Duration in milliseconds
+ * @returns Human-readable duration string
+ *
+ * @example
+ * ```typescript
+ * formatDuration(500);        // "500ms"
+ * formatDuration(5000);       // "5s"
+ * formatDuration(90_000);     // "1m 30s"
+ * formatDuration(900_000);    // "15m"
+ * formatDuration(3_600_000);  // "1h"
+ * formatDuration(86_400_000); // "1d"
+ * ```
+ */
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) {
+    const s = ms / 1000;
+    return Number.isInteger(s) ? `${s}s` : `${s.toFixed(1)}s`;
+  }
+  if (ms < 3_600_000) {
+    const m = Math.floor(ms / 60_000);
+    const s = Math.round((ms % 60_000) / 1000);
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+  if (ms < 86_400_000) {
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.round((ms % 3_600_000) / 60_000);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  const d = Math.floor(ms / 86_400_000);
+  const h = Math.round((ms % 86_400_000) / 3_600_000);
+  return h > 0 ? `${d}d ${h}h` : `${d}d`;
+}
+
+// ============================================================================
 // Network Helpers
 // ============================================================================
 

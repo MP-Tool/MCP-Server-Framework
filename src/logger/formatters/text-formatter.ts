@@ -2,7 +2,8 @@
  * Text Formatter Module
  *
  * Provides human-readable log formatting for development and debugging.
- * Format: [RFC3339-TIMESTAMP] [LEVEL] [Component] [Context] Message {metadata}
+ * Default format: [LEVEL]  Message {metadata}
+ * Full format:    [RFC3339-TIMESTAMP] [LEVEL] [Component] [Context] Message {metadata}
  *
  * @module logger/formatters/text-formatter
  */
@@ -15,9 +16,9 @@ import { ID_DISPLAY_LENGTH, LEVEL_PAD_LENGTH } from "../core/constants.js";
  * Configuration for the text formatter.
  */
 export interface TextFormatterConfig {
-  /** Whether to include timestamps (default: true) */
+  /** Whether to include timestamps (default: false) */
   includeTimestamp?: boolean | undefined;
-  /** Whether to include the component name (default: true) */
+  /** Whether to include the component name (default: false) */
   includeComponent?: boolean | undefined;
   /** Whether to include session/request context (default: true) */
   includeContext?: boolean | undefined;
@@ -38,8 +39,8 @@ export class TextFormatter implements LogFormatter {
    */
   constructor(config: TextFormatterConfig = {}) {
     this.config = {
-      includeTimestamp: config.includeTimestamp ?? true,
-      includeComponent: config.includeComponent ?? true,
+      includeTimestamp: config.includeTimestamp ?? false,
+      includeComponent: config.includeComponent ?? false,
       includeContext: config.includeContext ?? true,
     };
   }

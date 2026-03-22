@@ -22,11 +22,10 @@ import type { AuthOptions } from "./auth/types.js";
  *
  * @example
  * ```typescript
- * // Minimal - just use auto-registered tools
+ * // Minimal - transport resolved from config cascade
  * const server = createServer({
  *   name: 'my-server',
  *   version: '1.0.0',
- *   transport: { mode: 'stdio' },
  * });
  * ```
  */
@@ -50,18 +49,22 @@ export interface CreateServerOptions {
   version?: string;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Transport (Required)
+  // Transport (Optional — resolved from config cascade if omitted)
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Transport configuration (required).
+   * Transport configuration.
    *
-   * Explicitly specify how the server communicates with clients.
-   * Use `{ mode: 'stdio' }` for CLI usage or `{ mode: 'http' }` for network usage.
+   * When omitted, transport mode is resolved from the config cascade:
+   * schema defaults → `.env` file → config file → environment variables.
    *
+   * Host and port are always resolved from the config cascade
+   * (`MCP_BIND_HOST`, `MCP_PORT`) regardless of whether transport is set.
+   *
+   * @default Resolved from `MCP_TRANSPORT` (default: `'stdio'`)
    * @see TransportOptions for details
    */
-  transport: TransportOptions;
+  transport?: TransportOptions;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Capabilities (Optional - sensible defaults)

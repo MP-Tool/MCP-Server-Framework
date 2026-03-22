@@ -54,7 +54,6 @@ const RuntimeLogMessages = {
   // Telemetry
   TELEMETRY_INIT: "OpenTelemetry initialized",
   TELEMETRY_SKIPPED: "OpenTelemetry disabled — skipping initialization",
-  TELEMETRY_SHUTDOWN: "OpenTelemetry shut down",
   // Lifecycle hooks
   LIFECYCLE_HOOK_ERROR: "Lifecycle hook %s failed: %s",
   // Transport
@@ -134,7 +133,7 @@ export class McpServerInstance implements ServerInstance {
     private readonly options: ServerOptions,
     private readonly sessionFactory: McpSessionFactory,
   ) {
-    this.transportMode = options.transport.mode;
+    this.transportMode = options.transport?.mode ?? "stdio";
     logger.debug(RuntimeLogMessages.STATE_TRANSITION, "(none)", "created");
   }
 
@@ -203,7 +202,6 @@ export class McpServerInstance implements ServerInstance {
     }
     await initializeTelemetry(this.options.onBeforeTelemetryInit);
     this.telemetryInitialized = true;
-    logger.debug(RuntimeLogMessages.TELEMETRY_INIT);
   }
 
   async start(): Promise<void> {
@@ -241,13 +239,12 @@ export class McpServerInstance implements ServerInstance {
 
       await this.invokeLifecycleHook("onStarting", () => this.options.lifecycle?.onStarting?.());
 
-      logger.debug(RuntimeLogMessages.TRANSPORT_STARTING, this.transportMode);
       const sessionFactory = () => this.sessionFactory.create();
       this.sessionManager = this.createSessionManager();
       this.transportHandle = await this.startTransport(sessionFactory, this.sessionManager);
 
       // Log stateless mode warning after transport is started
-      if (isHttpTransport(this.options.transport) && this.options.transport.stateless) {
+      if (this.options.transport && isHttpTransport(this.options.transport) && this.options.transport.stateless) {
         logger.warn(RuntimeLogMessages.STATELESS_MODE);
 
         // Warn about ineffective config combinations
@@ -266,7 +263,7 @@ export class McpServerInstance implements ServerInstance {
 
       await this.invokeLifecycleHook("onStarted", () => this.options.lifecycle?.onStarted?.());
 
-      logger.debug(RuntimeLogMessages.SERVER_STARTED, this.options.name, this.options.version, this.transportMode);
+      logger.info(RuntimeLogMessages.SERVER_STARTED, this.options.name, this.options.version, this.transportMode);
     } catch (error) {
       this.transitionState("error");
       const err = error instanceof Error ? error : new Error(String(error));
@@ -360,7 +357,6 @@ export class McpServerInstance implements ServerInstance {
     try {
       if (this.options.telemetryEnabled) {
         await shutdownTelemetry();
-        logger.debug(RuntimeLogMessages.TELEMETRY_SHUTDOWN);
       }
     } catch (error) {
       logger.warn(
@@ -485,7 +481,7 @@ export class McpServerInstance implements ServerInstance {
     sessionFactory: () => ReturnType<McpSessionFactory["create"]>,
     sessionManager: SessionManager,
   ): Promise<TransportHandle> {
-    const transport = this.options.transport;
+    const transport = this.options.transport ?? ({ mode: "stdio" } as const);
     if (isHttpTransport(transport)) {
       // @lazy-transport — Express loaded after OTEL init (see method JSDoc)
       const [{ createExpressApp }, { startHttpTransport }, { resolveTrustProxy }] = await Promise.all([

@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-framework",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Production-ready MCP Server Framework with built-in logging, metrics, sessions, and multi-transport support.",
   "license": "LGPL-3.0",
   "author": "Marcel Pfennig",
@@ -13,13 +13,11 @@
     "url": "https://github.com/MP-Tool/mcp-server-framework/issues"
   },
   "keywords": [
+    "typescript",
     "model-context-protocol",
     "mcp",
     "mcp-server",
-    "framework",
-    "ai",
-    "llm",
-    "typescript"
+    "framework"
   ],
   "type": "module",
   "main": "build/index.js",

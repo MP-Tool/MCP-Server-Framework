@@ -30,7 +30,7 @@ export interface TelemetryConfig {
   // -- Standard OTEL settings (pass-through from config system) ---------------
 
   /** OTLP exporter endpoint URL. Defaults to OTEL standard: http://localhost:4318 */
-  readonly endpoint: string;
+  readonly endpoint?: string | undefined;
   /** Trace exporter: 'otlp', 'console', 'none' */
   readonly tracesExporter?: string | undefined;
   /** Log exporter: 'otlp', 'console', 'none'. Default: 'none' (framework uses own logger) */

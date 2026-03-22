@@ -12,7 +12,7 @@
  */
 
 import { z } from "zod";
-import { splitCommaSeparated, parseByteSize } from "./string-helpers.js";
+import { splitCommaSeparated, parseByteSize, parseDuration } from "./string-helpers.js";
 
 // ============================================================================
 // Boolean Coercion
@@ -123,5 +123,33 @@ export function byteSizeSchema(defaultValue: string) {
   return z
     .string()
     .transform((val) => parseByteSize(val))
+    .default(defaultValue);
+}
+
+// ============================================================================
+// Duration
+// ============================================================================
+
+/**
+ * Zod schema for human-readable duration environment variables.
+ *
+ * Accepts strings like `"15m"`, `"1.5h"`, `"500ms"`, `"2d"`, or plain
+ * millisecond counts like `"900000"`. Transforms the input to a `number`
+ * (milliseconds) via {@link parseDuration}.
+ *
+ * @param defaultValue - Default value as human-readable string (e.g. `'15m'`)
+ * @returns Zod schema that accepts `string` and outputs `number` (milliseconds)
+ *
+ * @example
+ * ```typescript
+ * // In env schema:
+ * MCP_RATE_LIMIT_WINDOW_MS: durationSchema('15m').pipe(z.number().int().min(1000)),
+ * OTEL_METRIC_EXPORT_INTERVAL: durationSchema('60s'),
+ * ```
+ */
+export function durationSchema(defaultValue: string) {
+  return z
+    .string()
+    .transform((val) => parseDuration(val))
     .default(defaultValue);
 }

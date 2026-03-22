@@ -85,7 +85,7 @@ export function loadConfigFile(): ConfigFileResult | undefined {
  * Discover the config file path.
  *
  * Resolution order:
- * 1. `MCP_CONFIG_FILE` env var — explicit path (must exist, must be supported format)
+ * 1. `MCP_CONFIG_FILE_PATH` env var — explicit path (must exist, must be supported format)
  * 2. Auto-discovery in `process.cwd()` — first match from {@link DISCOVERY_FILENAMES}
  *
  * @returns Absolute path to the config file, or `undefined` if none found

@@ -245,7 +245,7 @@ export class McpSessionFactory {
       });
     }
 
-    logger.debug(SessionFactoryLogMessages.SESSION_CREATED);
+    logger.trace(SessionFactoryLogMessages.SESSION_CREATED);
 
     return session;
   }

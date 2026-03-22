@@ -14,8 +14,9 @@ import {
   optionalCommaSeparatedList,
   commaSeparatedList,
   byteSizeSchema,
+  durationSchema,
 } from "../utils/zod-helpers.js";
-import { BYTE_SIZE_REGEX } from "../utils/string-helpers.js";
+import { BYTE_SIZE_REGEX, parseDuration } from "../utils/string-helpers.js";
 import { readFileSync, accessSync, constants as fsConstants } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -151,8 +152,8 @@ export const frameworkEnvSchema = z
     /** Allowed hosts for DNS rebinding protection (comma-separated) */
     MCP_ALLOWED_HOSTS: optionalCommaSeparatedList(),
 
-    /** Rate limit window in milliseconds (default: 900000 = 15 minutes) */
-    MCP_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(900000),
+    /** Rate limit window duration (default: '15m' = 900000ms). Accepts human-readable durations like '15m', '1h', '30s'. */
+    MCP_RATE_LIMIT_WINDOW_MS: durationSchema("15m").pipe(z.number().int().min(1000)),
 
     /** Maximum requests per rate limit window (default: 1000) */
     MCP_RATE_LIMIT_MAX: z.coerce.number().int().min(100).default(1000),
@@ -282,8 +283,8 @@ export const frameworkEnvSchema = z
     /** Maximum total concurrent sessions across all transports (default: 200) */
     MCP_MAX_SESSIONS: z.coerce.number().int().min(1).default(200),
 
-    /** Maximum concurrent Streamable HTTP sessions (default: 100) */
-    MCP_MAX_STREAMABLE_HTTP_SESSIONS: z.coerce.number().int().min(1).default(100),
+    /** Maximum concurrent Streamable HTTP sessions (default: 200) */
+    MCP_MAX_STREAMABLE_HTTP_SESSIONS: z.coerce.number().int().min(1).default(200),
 
     /** Maximum concurrent SSE sessions (default: 50) */
     MCP_MAX_SSE_SESSIONS: z.coerce.number().int().min(1).default(50),
@@ -386,12 +387,17 @@ export const frameworkEnvSchema = z
     OTEL_LOG_LEVEL: z.string().min(1).optional(),
 
     /**
-     * Periodic metric export interval in milliseconds.
+     * Periodic metric export interval.
      *
      * Standard OTEL env var name. Controls how often PeriodicExportingMetricReader
      * pushes metrics to the OTLP endpoint or console.
+     * Accepts human-readable durations like '60s', '5m', or plain millisecond counts.
      */
-    OTEL_METRIC_EXPORT_INTERVAL: z.coerce.number().int().positive().optional(),
+    OTEL_METRIC_EXPORT_INTERVAL: z
+      .string()
+      .transform((val) => parseDuration(val))
+      .pipe(z.number().int().positive())
+      .optional(),
 
     /**
      * Metric exporters to activate (comma-separated).
@@ -402,9 +408,9 @@ export const frameworkEnvSchema = z
      * - `console` — Log metrics to console (useful for debugging)
      * - `none` — Disable all metric export
      *
-     * Default: 'otlp,prometheus' (both OTLP push + Prometheus pull)
+     * Default: 'prometheus' (Prometheus scrape endpoint)
      */
-    OTEL_METRICS_EXPORTER: commaSeparatedList({ lowercase: true }).default("otlp,prometheus"),
+    OTEL_METRICS_EXPORTER: commaSeparatedList({ lowercase: true }).default("prometheus"),
   })
   .superRefine((data, ctx) => {
     // Validate TLS configuration when HTTPS mode is selected
@@ -504,15 +510,23 @@ export function validateConfigConstraints(
     }
   }
 
-  // Session limit hierarchy: transport-specific limits must not exceed the global limit
-  const transportSum = config.MCP_MAX_STREAMABLE_HTTP_SESSIONS + config.MCP_MAX_SSE_SESSIONS;
-  if (transportSum > config.MCP_MAX_SESSIONS) {
+  // Session limits: per-transport caps must not exceed the global cap.
+  // Limits are independent — global MCP_MAX_SESSIONS is a first-come-first-served hard cap,
+  // while per-transport limits are independent ceilings within that global pool.
+  if (config.MCP_MAX_STREAMABLE_HTTP_SESSIONS > config.MCP_MAX_SESSIONS) {
     violations.push({
       message:
-        `MCP_MAX_STREAMABLE_HTTP_SESSIONS (${config.MCP_MAX_STREAMABLE_HTTP_SESSIONS}) + ` +
-        `MCP_MAX_SSE_SESSIONS (${config.MCP_MAX_SSE_SESSIONS}) = ${transportSum} exceeds ` +
-        `MCP_MAX_SESSIONS (${config.MCP_MAX_SESSIONS})`,
-      path: ["MCP_MAX_SESSIONS", "MCP_MAX_STREAMABLE_HTTP_SESSIONS", "MCP_MAX_SSE_SESSIONS"],
+        `MCP_MAX_STREAMABLE_HTTP_SESSIONS (${config.MCP_MAX_STREAMABLE_HTTP_SESSIONS}) ` +
+        `exceeds MCP_MAX_SESSIONS (${config.MCP_MAX_SESSIONS})`,
+      path: ["MCP_MAX_SESSIONS", "MCP_MAX_STREAMABLE_HTTP_SESSIONS"],
+    });
+  }
+  if (config.MCP_MAX_SSE_SESSIONS > config.MCP_MAX_SESSIONS) {
+    violations.push({
+      message:
+        `MCP_MAX_SSE_SESSIONS (${config.MCP_MAX_SSE_SESSIONS}) ` +
+        `exceeds MCP_MAX_SESSIONS (${config.MCP_MAX_SESSIONS})`,
+      path: ["MCP_MAX_SESSIONS", "MCP_MAX_SSE_SESSIONS"],
     });
   }
 

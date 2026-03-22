@@ -310,4 +310,13 @@ export type { TelemetryConfig, SpanOptions, ServerMetrics, ServerStats } from ".
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export { parseEnvBoolean, getEnvString, getEnvOptional } from "./utils/index.js";
+export {
+  parseEnvBoolean,
+  getEnvString,
+  getEnvOptional,
+  interpolate,
+  type MessageParams,
+  parseDuration,
+  formatDuration,
+  durationSchema,
+} from "./utils/index.js";

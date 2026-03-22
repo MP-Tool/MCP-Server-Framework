@@ -20,6 +20,41 @@ import {
 } from "../mcp/capabilities/registry/index.js";
 
 import type { CreateServerOptions, CreateServerResult } from "./types.js";
+import type { TransportOptions } from "./server-options.js";
+import { getFrameworkConfig } from "../config/index.js";
+
+// ============================================================================
+// Transport Resolution
+// ============================================================================
+
+/**
+ * Resolve transport from the config cascade when not provided programmatically.
+ *
+ * Reads `MCP_TRANSPORT`, `MCP_TLS_CERT_PATH`, and `MCP_TLS_KEY_PATH` from
+ * the resolved framework config. Host and port are NOT set here — they
+ * flow through the config cascade into `http-server.ts:resolveOptions()`.
+ */
+function resolveTransportFromConfig(): TransportOptions {
+  const config = getFrameworkConfig();
+  const mode = config.MCP_TRANSPORT;
+
+  if (mode === "https") {
+    const tls: { certPath: string; keyPath: string; caPath?: string } = {
+      certPath: config.MCP_TLS_CERT_PATH ?? "",
+      keyPath: config.MCP_TLS_KEY_PATH ?? "",
+    };
+    if (config.MCP_TLS_CA_PATH) {
+      tls.caPath = config.MCP_TLS_CA_PATH;
+    }
+    return { mode: "https", tls };
+  }
+
+  if (mode === "http") {
+    return { mode: "http" };
+  }
+
+  return { mode: "stdio" };
+}
 
 // ============================================================================
 // Create Server Function
@@ -90,7 +125,7 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
   builder.withOptions({
     name: options.name ?? DEFAULT_SERVER_NAME,
     version: options.version ?? DEFAULT_SERVER_VERSION,
-    transport: options.transport,
+    transport: options.transport ?? resolveTransportFromConfig(),
     capabilities: options.capabilities,
     lifecycle: options.lifecycle,
     shutdown: options.shutdown,

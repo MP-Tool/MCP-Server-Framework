@@ -10,6 +10,7 @@ import type { Request, Response, NextFunction } from "express";
 import { TransportErrorMessage, createJsonRpcError, HttpStatus, JsonRpcErrorCode } from "../../errors/index.js";
 import { getFrameworkConfig, registerCacheReset } from "../../config/index.js";
 import { logger as baseLogger } from "../../logger/index.js";
+import { formatDuration } from "../../utils/string-helpers.js";
 
 // ============================================================================
 // Logger
@@ -18,7 +19,7 @@ import { logger as baseLogger } from "../../logger/index.js";
 const LOG_COMPONENT = "rate-limit";
 
 const LogMessages = {
-  CONFIGURED: "Rate limiter configured: max %d requests per %ds window",
+  CONFIGURED: "Rate limiter configured: max %d requests per %s window",
   EXCEEDED: "Rate limit exceeded from %s",
   TRUST_PROXY_MISSING:
     "X-Forwarded-For header detected but MCP_TRUST_PROXY is not configured — " +
@@ -115,7 +116,7 @@ export function createRateLimiter(options?: RateLimiterOptions): RateLimitReques
     },
   });
 
-  logger.debug(LogMessages.CONFIGURED, max, Math.round(windowMs / 1000));
+  logger.debug(LogMessages.CONFIGURED, max, formatDuration(windowMs));
 
   // When trust proxy is not configured, reject requests that arrive via a reverse proxy.
   // Without trust proxy, req.ip resolves to the proxy IP — rate limiting and IP-based

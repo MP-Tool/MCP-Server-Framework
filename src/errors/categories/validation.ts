@@ -289,8 +289,8 @@ export class ConfigurationError extends AppError {
    */
   static fileNotFound(filePath: string): ConfigurationError {
     return new ConfigurationError(`Config file not found: ${filePath}`, {
-      configKey: "MCP_CONFIG_FILE",
-      recoveryHint: `Ensure the file '${filePath}' exists or remove the MCP_CONFIG_FILE environment variable.`,
+      configKey: "MCP_CONFIG_FILE_PATH",
+      recoveryHint: `Ensure the file '${filePath}' exists or remove the MCP_CONFIG_FILE_PATH environment variable.`,
     });
   }
 
@@ -299,7 +299,7 @@ export class ConfigurationError extends AppError {
    */
   static fileReadFailed(filePath: string, cause?: Error): ConfigurationError {
     return new ConfigurationError(`Failed to read config file: ${filePath}`, {
-      configKey: "MCP_CONFIG_FILE",
+      configKey: "MCP_CONFIG_FILE_PATH",
       cause,
       recoveryHint: `Check file permissions and path for '${filePath}'.`,
     });
@@ -310,7 +310,7 @@ export class ConfigurationError extends AppError {
    */
   static fileParseFailed(filePath: string, cause?: Error): ConfigurationError {
     return new ConfigurationError(`Failed to parse config file: ${filePath}`, {
-      configKey: "MCP_CONFIG_FILE",
+      configKey: "MCP_CONFIG_FILE_PATH",
       cause,
       recoveryHint: `Check the syntax of '${filePath}' — ensure it is valid TOML or YAML.`,
     });
@@ -327,7 +327,7 @@ export class ConfigurationError extends AppError {
     const detail = `Validation failed for '${filePath}':\n${issues}`;
 
     return new ConfigurationError(detail, {
-      configKey: "MCP_CONFIG_FILE",
+      configKey: "MCP_CONFIG_FILE_PATH",
       cause: zodError,
       recoveryHint: "Fix the listed issues in your config file. Use `.strict()` sections to catch typos.",
     });
@@ -338,7 +338,7 @@ export class ConfigurationError extends AppError {
    */
   static unsupportedFormat(extension: string): ConfigurationError {
     return new ConfigurationError(`Unsupported config file format: ${extension}. Supported: .toml, .yaml, .yml`, {
-      configKey: "MCP_CONFIG_FILE",
+      configKey: "MCP_CONFIG_FILE_PATH",
       recoveryHint: `Supported formats: .toml, .yaml, .yml`,
     });
   }

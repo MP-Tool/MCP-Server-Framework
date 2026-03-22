@@ -230,12 +230,14 @@ export interface ServerOptions {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Transport configuration (required).
+   * Transport configuration.
    *
-   * Explicitly specify how the server communicates with clients.
-   * Use `{ mode: 'stdio' }` for CLI usage or `{ mode: 'http' }` for network usage.
+   * When omitted, transport mode is resolved from the config cascade:
+   * schema defaults → `.env` file → config file → environment variables.
+   *
+   * @default Resolved from `MCP_TRANSPORT` (default: `'stdio'`)
    */
-  transport: TransportOptions;
+  transport?: TransportOptions;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Capabilities
