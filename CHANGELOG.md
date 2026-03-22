@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Patch 001
+## [1.0.1] - fix: session lifecycle, logging, config & OTEL improvements 
 
 ### Added
 
