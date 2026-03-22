@@ -166,7 +166,7 @@ export const FrameworkErrorFactory = {
     /** Create an invalid configuration error */
     invalid: (message: string) => ConfigurationError.invalid(message),
 
-    /** Config file not found (explicit MCP_CONFIG_FILE path) */
+    /** Config file not found (explicit MCP_CONFIG_FILE_PATH path) */
     fileNotFound: (filePath: string) => ConfigurationError.fileNotFound(filePath),
 
     /** Config file could not be read */

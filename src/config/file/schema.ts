@@ -14,7 +14,7 @@
  * All fields are optional — you only configure what you need.
  *
  * Intentionally excluded from config file support:
- * - `MCP_CONFIG_FILE` — meta-config (chicken-egg problem)
+ * - `MCP_CONFIG_FILE_PATH` — meta-config (chicken-egg problem)
  * - `NODE_ENV` — runtime concern, not file-config
  * - `VERSION` — build/deployment concern
  *
@@ -23,7 +23,13 @@
 
 import { z } from "zod";
 import type { FrameworkEnvConfig } from "../env.js";
-import { splitCommaSeparated, BYTE_SIZE_REGEX, parseByteSize } from "../../utils/string-helpers.js";
+import {
+  splitCommaSeparated,
+  BYTE_SIZE_REGEX,
+  parseByteSize,
+  parseDuration,
+  DURATION_REGEX,
+} from "../../utils/string-helpers.js";
 
 // ============================================================================
 // Types & Constants
@@ -49,7 +55,7 @@ export const DISCOVERY_FILENAMES = ["config.toml", "config.yaml", "config.yml", 
  *
  * This is a meta-config variable and intentionally NOT part of `FrameworkEnvConfig`.
  */
-export const CONFIG_FILE_ENV_VAR = "MCP_CONFIG_FILE" as const;
+export const CONFIG_FILE_ENV_VAR = "MCP_CONFIG_FILE_PATH" as const;
 
 /**
  * Maps file extensions to their format.
@@ -135,8 +141,8 @@ const securitySection = z
     allowed_hosts: z.array(z.string().min(1)),
     /** Maximum requests per rate limit window */
     rate_limit_max: z.number().int().min(100),
-    /** Rate limit window in milliseconds */
-    rate_limit_window_ms: z.number().int().min(1000),
+    /** Rate limit window as duration (e.g. '15m', '1h') or milliseconds (number) */
+    rate_limit_window: z.union([z.number().int().min(1000), z.string().regex(DURATION_REGEX)]),
     /**
      * Trust proxy setting for Express.
      * Values: hop count (number ≥ 1), or string (IP/CIDR/keyword/hostname).
@@ -204,8 +210,8 @@ const telemetrySection = z
     logs_exporter: z.string().min(1),
     /** SDK diagnostic log level: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, ALL */
     log_level: z.string().min(1),
-    /** Periodic metric export interval in milliseconds */
-    metric_export_interval: z.number().int().positive(),
+    /** Periodic metric export interval as duration (e.g. '60s', '5m') or milliseconds (number) */
+    metric_export_interval: z.union([z.number().int().positive(), z.string().regex(DURATION_REGEX)]),
     /**
      * Metric exporters (comma-separated): otlp, prometheus, console, none.
      * Default: 'otlp,prometheus'
@@ -324,7 +330,8 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
     const s = config.security;
     if (s.allowed_hosts !== undefined) overrides.MCP_ALLOWED_HOSTS = s.allowed_hosts;
     if (s.rate_limit_max !== undefined) overrides.MCP_RATE_LIMIT_MAX = s.rate_limit_max;
-    if (s.rate_limit_window_ms !== undefined) overrides.MCP_RATE_LIMIT_WINDOW_MS = s.rate_limit_window_ms;
+    if (s.rate_limit_window !== undefined)
+      overrides.MCP_RATE_LIMIT_WINDOW_MS = parseDuration(String(s.rate_limit_window));
     if (s.trust_proxy !== undefined) overrides.MCP_TRUST_PROXY = String(s.trust_proxy);
     if (s.cors_origin !== undefined) overrides.MCP_CORS_ORIGIN = s.cors_origin;
     if (s.cors_credentials !== undefined) overrides.MCP_CORS_CREDENTIALS = s.cors_credentials;
@@ -365,7 +372,8 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
     if (o.traces_exporter !== undefined) overrides.OTEL_TRACES_EXPORTER = o.traces_exporter;
     if (o.logs_exporter !== undefined) overrides.OTEL_LOGS_EXPORTER = o.logs_exporter;
     if (o.log_level !== undefined) overrides.OTEL_LOG_LEVEL = o.log_level;
-    if (o.metric_export_interval !== undefined) overrides.OTEL_METRIC_EXPORT_INTERVAL = o.metric_export_interval;
+    if (o.metric_export_interval !== undefined)
+      overrides.OTEL_METRIC_EXPORT_INTERVAL = parseDuration(String(o.metric_export_interval));
     if (o.metrics_exporter !== undefined) {
       // Config file stores single string, env.ts expects string[] after transform
       overrides.OTEL_METRICS_EXPORTER = splitCommaSeparated(o.metrics_exporter, { lowercase: true });

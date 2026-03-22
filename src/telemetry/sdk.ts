@@ -59,7 +59,7 @@
  * @module server/telemetry/sdk
  */
 
-import type { IncomingMessage } from "node:http";
+import type { IncomingMessage, RequestOptions } from "node:http";
 
 // @lazy-otel — All heavy @opentelemetry/* packages are loaded dynamically
 // inside initializeTelemetry() to avoid ~15-20 MB memory overhead when
@@ -73,7 +73,13 @@ import { METRIC_NAMES } from "./core/constants.js";
 import { logger as baseLogger } from "../logger/index.js";
 import { setTraceContextExtractor } from "../logger/core/index.js";
 import type { TraceContextExtractor, TraceContext } from "../logger/core/index.js";
-import { getTelemetryConfig, TELEMETRY_LOG_COMPONENTS, SdkLogMessages, frameworkDiagLogger } from "./core/index.js";
+import {
+  getTelemetryConfig,
+  TELEMETRY_LOG_COMPONENTS,
+  TELEMETRY_DEFAULTS,
+  SdkLogMessages,
+  frameworkDiagLogger,
+} from "./core/index.js";
 import type { TelemetryConfig } from "./core/index.js";
 
 /**
@@ -219,7 +225,7 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
   const config = getTelemetryConfig();
 
   if (!config.enabled) {
-    logger.debug(SdkLogMessages.INIT_SKIPPED);
+    logger.trace(SdkLogMessages.INIT_SKIPPED);
     return false;
   }
 
@@ -246,7 +252,7 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
     VERBOSE: api.DiagLogLevel.VERBOSE,
     ALL: api.DiagLogLevel.ALL,
   };
-  const diagLevel = diagLevelStr ? (diagLevelMap[diagLevelStr] ?? api.DiagLogLevel.INFO) : api.DiagLogLevel.INFO;
+  const diagLevel = diagLevelStr ? (diagLevelMap[diagLevelStr] ?? api.DiagLogLevel.WARN) : api.DiagLogLevel.WARN;
 
   api.diag.setLogger(frameworkDiagLogger, {
     logLevel: diagLevel,
@@ -325,6 +331,21 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
           const path = (request.url?.split("?")[0] ?? "").replace(/\/+$/, "");
           return TRACE_IGNORED_ROUTES.has(path);
         },
+        // Prevent recursive instrumentation of OTLP exporter HTTP calls.
+        // Without this, outgoing requests to the OTLP endpoint (e.g.
+        // POST localhost:4318/v1/traces) create additional spans that
+        // feed back into the export queue — causing ECONNREFUSED spam
+        // when no collector is running.
+        ignoreOutgoingRequestHook: (request: RequestOptions) => {
+          const host = request.hostname ?? request.host ?? "";
+          const endpoint = config.endpoint ?? TELEMETRY_DEFAULTS.OTLP_ENDPOINT;
+          try {
+            const endpointUrl = new URL(endpoint);
+            return host === endpointUrl.hostname || host === endpointUrl.host;
+          } catch {
+            return false;
+          }
+        },
       }),
       new otel.ExpressInstrumentation(),
     ],
@@ -346,7 +367,22 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
   };
   setTraceContextExtractor(otelExtractor);
 
-  logger.info(SdkLogMessages.INIT_SUCCESS, config.serviceName, config.endpoint);
+  // Log init summary — show OTLP endpoint only when an OTLP exporter is active
+  const usesOtlp =
+    config.tracesExporter === "otlp" || config.tracesExporter === undefined || config.metricsExporters.includes("otlp");
+
+  logger.info(SdkLogMessages.INIT_SUCCESS, config.serviceName);
+
+  if (usesOtlp) {
+    logger.info(
+      SdkLogMessages.INIT_SUMMARY_WITH_ENDPOINT,
+      config.tracesExporter ?? "otlp",
+      config.metricsExporters.join(", "),
+      config.endpoint,
+    );
+  } else {
+    logger.info(SdkLogMessages.INIT_SUMMARY, config.tracesExporter ?? "otlp", config.metricsExporters.join(", "));
+  }
   return true;
 }
 
@@ -358,11 +394,11 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
  */
 export async function shutdownTelemetry(): Promise<void> {
   if (!sdk) {
-    logger.debug(SdkLogMessages.SHUTDOWN_SKIPPED);
+    logger.trace(SdkLogMessages.SHUTDOWN_SKIPPED);
     return;
   }
 
-  logger.info(SdkLogMessages.SHUTDOWN_START);
+  logger.trace(SdkLogMessages.SHUTDOWN_START);
 
   try {
     await sdk.shutdown();

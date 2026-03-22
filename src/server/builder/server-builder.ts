@@ -153,7 +153,7 @@ export class McpServerBuilder implements ServerBuilder {
    * Creates the session factory and server instance from validated options.
    */
   private createServerInstance(options: ValidatedServerOptions, primitives: CollectedPrimitives): ServerInstance {
-    const transport = options.transport;
+    const transport = options.transport ?? ({ mode: "stdio" } as const);
     const stateless = isHttpTransport(transport) ? transport.stateless : undefined;
 
     const sessionFactory = new McpSessionFactory({

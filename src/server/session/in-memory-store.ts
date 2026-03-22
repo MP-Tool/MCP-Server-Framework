@@ -32,8 +32,6 @@ const LogMessages = {
   BROADCAST_TOOL_LIST: "Broadcasting tool list changed to %d sessions",
   BROADCAST_RESOURCE_LIST: "Broadcasting resource list changed to %d sessions",
   BROADCAST_PROMPT_LIST: "Broadcasting prompt list changed to %d sessions",
-  SHUTDOWN_STARTED: "Closing all sessions (%d active)",
-  SHUTDOWN_COMPLETE: "All sessions closed",
 } as const;
 
 const logger = baseLogger.child({ component: LOG_COMPONENT });
@@ -147,7 +145,7 @@ export class InMemorySessionStore implements SessionStore {
       this.statsCounters.peakConcurrent = this.sessions.size;
     }
 
-    logger.info(LogMessages.SESSION_CREATED, session.id, session.transport.type, this.sessions.size);
+    logger.trace(LogMessages.SESSION_CREATED, session.id, session.transport.type, this.sessions.size);
 
     return session;
   }
@@ -227,7 +225,7 @@ export class InMemorySessionStore implements SessionStore {
     this.byTransportType[session.transport.type]--;
     this.sessions.delete(sessionId);
 
-    logger.info(LogMessages.SESSION_CLOSED, sessionId, reason, this.sessions.size);
+    logger.trace(LogMessages.SESSION_CLOSED, sessionId, reason, this.sessions.size);
 
     return session;
   }
@@ -238,9 +236,6 @@ export class InMemorySessionStore implements SessionStore {
    */
   removeAll(): Session[] {
     this.isShuttingDown = true;
-    const sessionCount = this.sessions.size;
-
-    logger.info(LogMessages.SHUTDOWN_STARTED, sessionCount);
 
     const removed: Session[] = [];
     for (const sessionId of Array.from(this.sessions.keys())) {
@@ -250,7 +245,6 @@ export class InMemorySessionStore implements SessionStore {
       }
     }
 
-    logger.info(LogMessages.SHUTDOWN_COMPLETE);
     return removed;
   }
 

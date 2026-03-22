@@ -30,19 +30,19 @@ const logger = baseLogger.child({
 /** @internal Log messages for stateful handler */
 const LogMessages = {
   POST_NO_SESSION: "POST /mcp rejected: missing session ID for non-initialize request",
-  POST_SESSION_NOT_FOUND: "POST /mcp rejected: session not found [%s]",
+  POST_SESSION_NOT_FOUND: "POST /mcp rejected: MCP session not found [%s]",
   POST_MESSAGE: "POST /mcp [%s] method=%s",
-  SESSION_CREATING: "Creating new session from %s",
-  SESSION_INITIALIZED: "Session initialized: %s",
-  SESSION_CAPACITY_REACHED: "Session capacity reached, closing transport for %s",
-  SESSION_CLOSED: "Session closed: %s",
+  SESSION_CREATING: "Creating new MCP session from %s",
+  SESSION_INITIALIZED: "MCP Session initialized: %s",
+  SESSION_CAPACITY_REACHED: "MCP Session capacity reached, closing transport for %s",
+  SESSION_CLOSED: "MCP Session closed: %s",
   GET_SSE_OPENED: "GET /mcp SSE stream opened [%s]",
-  GET_SESSION_NOT_FOUND: "GET /mcp rejected: session not found [%s]",
+  GET_SESSION_NOT_FOUND: "GET /mcp rejected: MCP session not found [%s]",
   GET_SESSION_ID_FROM_QUERY:
-    "Session ID received via query parameter — prefer Mcp-Session-Id header to avoid URL leakage via Referer/logs",
-  SESSION_ID_INJECTED: "Injected session ID into rawHeaders for SSE request",
-  GET_ERROR: "Error handling GET for session %s: %s",
-  DELETE_ERROR: "Error handling DELETE for session %s: %s",
+    "MCP Session ID received via query parameter — prefer Mcp-Session-Id header to avoid URL leakage via Referer/logs",
+  SESSION_ID_INJECTED: "Injected MCP session ID into rawHeaders for SSE request",
+  GET_ERROR: "Error handling GET for MCP session %s: %s",
+  DELETE_ERROR: "Error handling DELETE for MCP session %s: %s",
 } as const;
 
 /**
@@ -229,7 +229,7 @@ export class StatefulHandler implements TransportRequestHandler {
         ...(this.eventStore !== undefined && { eventStore: this.eventStore }),
         onsessioninitialized: (sessionId: string) => {
           releaseSlot();
-          logger.debug(LogMessages.SESSION_INITIALIZED, shortId(sessionId));
+          logger.trace(LogMessages.SESSION_INITIALIZED, shortId(sessionId));
           const session = this.sessionManager.create({
             id: sessionId,
             transportType: "http",
@@ -239,7 +239,7 @@ export class StatefulHandler implements TransportRequestHandler {
 
           if (!session) {
             logger.warn(LogMessages.SESSION_CAPACITY_REACHED, shortId(sessionId));
-            void transport.close().catch((err) => {
+            void transport.close().catch((err: unknown) => {
               logger.warn(
                 "Failed to close transport after capacity rejection: %s",
                 err instanceof Error ? err.message : String(err),
@@ -250,12 +250,15 @@ export class StatefulHandler implements TransportRequestHandler {
       });
 
       /* v8 ignore start - SDK callback registration */
+      let transportClosed = false;
       transport.onclose = () => {
+        if (transportClosed) return;
+        transportClosed = true;
         releaseSlot();
         const sid = transport.sessionId;
         if (sid) {
-          logger.info(LogMessages.SESSION_CLOSED, shortId(sid));
-          void this.sessionManager.close(sid, SESSION_CLOSE_REASONS.CLIENT_DISCONNECT).catch((err) => {
+          logger.trace(LogMessages.SESSION_CLOSED, shortId(sid));
+          void this.sessionManager.close(sid, SESSION_CLOSE_REASONS.CLIENT_DISCONNECT).catch((err: unknown) => {
             logger.warn(
               "Error closing session on client disconnect: %s",
               err instanceof Error ? err.message : String(err),
@@ -304,13 +307,11 @@ export class StatefulHandler implements TransportRequestHandler {
     const headerValue = this.getSessionId(req);
     if (headerValue) return headerValue;
 
-    if (req.query) {
-      for (const param of SESSION_ID_QUERY_PARAMS) {
-        const value = req.query[param];
-        if (typeof value === "string" && value) {
-          logger.warn(LogMessages.GET_SESSION_ID_FROM_QUERY);
-          return value;
-        }
+    for (const param of SESSION_ID_QUERY_PARAMS) {
+      const value = req.query[param];
+      if (typeof value === "string" && value) {
+        logger.warn(LogMessages.GET_SESSION_ID_FROM_QUERY);
+        return value;
       }
     }
 

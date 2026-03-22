@@ -33,7 +33,16 @@ export {
   isLocalHost,
   parseByteSize,
   BYTE_SIZE_REGEX,
+  parseDuration,
+  formatDuration,
+  DURATION_REGEX,
 } from "./string-helpers.js";
 
 // Re-export Zod schema helpers
-export { booleanFromEnv, commaSeparatedList, optionalCommaSeparatedList, byteSizeSchema } from "./zod-helpers.js";
+export {
+  booleanFromEnv,
+  commaSeparatedList,
+  optionalCommaSeparatedList,
+  byteSizeSchema,
+  durationSchema,
+} from "./zod-helpers.js";

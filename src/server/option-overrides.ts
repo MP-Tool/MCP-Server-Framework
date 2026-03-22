@@ -42,7 +42,7 @@ export function mapServerOptionsToOverrides(
 
   // Bridge transport HTTP options (discriminated union — narrowed by isHttpTransport)
   const transport = options.transport;
-  if (isHttpTransport(transport)) {
+  if (transport && isHttpTransport(transport)) {
     if (transport.legacySseEnabled !== undefined) {
       overrides.MCP_LEGACY_SSE_ENABLED = transport.legacySseEnabled;
     }

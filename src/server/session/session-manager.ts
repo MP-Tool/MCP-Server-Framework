@@ -224,10 +224,10 @@ const LOG_COMPONENT = "session-manager";
 
 const LogMessages = {
   MANAGER_STARTED: "Session manager started (timeout=%dmin, cleanup=%ds, heartbeat=%ds)",
-  SESSION_CREATED: "Session created: id=%s, transport=%s",
+  SESSION_CREATED: "Session created: %s type=%s (active=%d)",
   SESSION_CAPACITY_FULL: "Session capacity reached — rejecting new session (%d/%d)",
-  SESSION_CLOSED: "Session closed: id=%s, reason=%s",
-  CLOSING_ALL: "Closing all sessions (%d active)",
+  SESSION_CLOSED: "Session closed: %s reason=%s (active=%d)",
+  CLOSING_ALL: "Closing all sessions... (%d active)",
   MANAGER_DISPOSED: "Session manager disposed",
   BROADCAST_TOOL_LIST: "Broadcasting tool list changed to %d session(s)",
   BROADCAST_RESOURCE_LIST: "Broadcasting resource list changed to %d session(s)",
@@ -361,12 +361,10 @@ export class SessionManagerImpl implements SessionManager {
     if (session) {
       mcpLogger.addHandler(session.mcpSession);
       getServerMetrics().recordSessionChange(session.transport.type, 1);
-      logger.debug(LogMessages.SESSION_CREATED, session.id, session.transport.type);
+      logger.info(LogMessages.SESSION_CREATED, session.id, session.transport.type, this.store.size);
       void this.invokeLifecycleHook("onClientConnected", session.id, () =>
         this.lifecycle?.onClientConnected?.(session.id),
       );
-    } else {
-      logger.info(LogMessages.SESSION_CAPACITY_FULL, this.store.size, this.config.maxSessions);
     }
     return session;
   }
@@ -389,9 +387,16 @@ export class SessionManagerImpl implements SessionManager {
 
   /**
    * Checks if there's capacity for a specific transport type.
-   * Enforces per-transport limits from config.
+   * Enforces global limit (first-come-first-served) and per-transport caps.
    */
   hasCapacityForTransport(transportType: TransportType): boolean {
+    // Global limit check — applies to all transport types
+    if (!this.store.hasCapacity()) {
+      logger.info(LogMessages.SESSION_CAPACITY_FULL, this.store.size, this.config.maxSessions);
+      return false;
+    }
+
+    // Per-transport limit checks
     if (transportType === "http" || transportType === "https") {
       const count = this.store.getByTransportType("http").length + this.store.getByTransportType("https").length;
       if (count >= this.config.maxStreamableHttpSessions) {
@@ -426,7 +431,7 @@ export class SessionManagerImpl implements SessionManager {
 
     getServerMetrics().recordSessionChange(session.transport.type, -1);
     mcpLogger.removeHandler(session.mcpSession);
-    logger.debug(LogMessages.SESSION_CLOSED, sessionId, reason);
+    logger.info(LogMessages.SESSION_CLOSED, sessionId, reason, this.store.size);
 
     try {
       await session.transport.instance.close();
@@ -447,8 +452,8 @@ export class SessionManagerImpl implements SessionManager {
   }
 
   async closeAll(): Promise<void> {
+    logger.info(LogMessages.CLOSING_ALL, this.store.size);
     const sessions = this.store.removeAll();
-    logger.info(LogMessages.CLOSING_ALL, sessions.length);
 
     const teardownPromises = sessions.map(async (session) => {
       getServerMetrics().recordSessionChange(session.transport.type, -1);
@@ -473,13 +478,13 @@ export class SessionManagerImpl implements SessionManager {
     });
 
     await Promise.allSettled(teardownPromises);
-    logger.debug(LogMessages.CLOSE_ALL_COMPLETE, sessions.length);
+    logger.info(LogMessages.CLOSE_ALL_COMPLETE, sessions.length);
   }
 
   dispose(): void {
     this.housekeeper.dispose();
     this.store.markShuttingDown();
-    logger.debug(LogMessages.MANAGER_DISPOSED);
+    logger.trace(LogMessages.MANAGER_DISPOSED);
   }
 
   // ==========================================================================

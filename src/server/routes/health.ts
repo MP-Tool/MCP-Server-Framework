@@ -140,26 +140,12 @@ export function createHealthRouter<TService extends ServiceClient = ServiceClien
    */
   router.get(ROUTES.HEALTH, (_req, res) => {
     const config = getFrameworkConfig();
-    const { byTransportType } = sessionManager.stats;
-    const streamableHttpCount = byTransportType.http + byTransportType.https;
 
-    const response: Record<string, unknown> = {
+    res.status(200).json({
       status: "healthy",
       version: config.VERSION,
       uptime: process.uptime(),
-      sessions: {
-        active: sessionManager.size,
-        streamableHttp: streamableHttpCount,
-      },
-    };
-
-    // Include SSE session count if enabled
-    if (sseInfo?.enabled) {
-      // @type-narrowing — response.sessions is narrower typed; SSE field added conditionally
-      (response.sessions as Record<string, number>).sse = byTransportType.sse;
-    }
-
-    res.status(200).json(response);
+    });
   });
 
   /**

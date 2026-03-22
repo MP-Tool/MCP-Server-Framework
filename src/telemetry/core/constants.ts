@@ -191,8 +191,10 @@ export const TELEMETRY_LOG_COMPONENTS = {
  */
 export const SdkLogMessages = {
   // Initialization
-  INIT_START: "Initializing OpenTelemetry SDK",
-  INIT_SUCCESS: "OpenTelemetry initialized: service=%s, endpoint=%s",
+  INIT_START: "OpenTelemetry SDK Initializing...",
+  INIT_SUCCESS: "OpenTelemetry initialized: service=%s",
+  INIT_SUMMARY: "  traces=%s, metrics=%s",
+  INIT_SUMMARY_WITH_ENDPOINT: "  traces=%s, metrics=%s, endpoint=%s",
   INIT_SKIPPED: "OpenTelemetry disabled - skipping initialization",
   INIT_PACKAGES_MISSING:
     "OpenTelemetry packages not installed (%s). OTEL_ENABLED=true requires: npm install @opentelemetry/sdk-node @opentelemetry/sdk-metrics @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-http @opentelemetry/exporter-metrics-otlp-http @opentelemetry/exporter-prometheus @opentelemetry/instrumentation-http @opentelemetry/instrumentation-express @opentelemetry/resources @opentelemetry/semantic-conventions — disabling telemetry",
@@ -207,8 +209,8 @@ export const SdkLogMessages = {
   UNKNOWN_TRACE_EXPORTER: "Unknown trace exporter '%s' — falling back to OTLP. Supported: otlp, console, none",
 
   // Shutdown
-  SHUTDOWN_START: "Shutting down OpenTelemetry SDK",
-  SHUTDOWN_SUCCESS: "OpenTelemetry SDK shut down successfully",
+  SHUTDOWN_START: "OpenTelemetry SDK shutting down...",
+  SHUTDOWN_SUCCESS: "OpenTelemetry SDK shutdown successfull",
   SHUTDOWN_ERROR: "Error shutting down OpenTelemetry SDK: %s",
   SHUTDOWN_SKIPPED: "OpenTelemetry SDK not initialized - nothing to shutdown",
 } as const;
