@@ -71,8 +71,8 @@
     "build/**/*.d.ts",
     "build/**/*.d.ts.map",
     "README.md",
-    "LICENSE.md",
-    "LICENSE-GPL.md",
+    "LICENSE.txt",
+    "LICENSE-GPL.txt",
     "CHANGELOG.md"
   ],
   "publishConfig": {
