@@ -194,9 +194,7 @@ export class SseRequestHandler {
         endpoint,
         sessionId.substring(0, SESSION_ID_DISPLAY_LENGTH),
       );
-      res
-        .status(HttpStatus.NOT_FOUND)
-        .json(createJsonRpcError(JsonRpcErrorCode.SESSION_NOT_FOUND, TransportErrorMessage.SESSION_NOT_FOUND));
+      res.status(HttpStatus.NOT_FOUND).send(TransportErrorMessage.SESSION_NOT_FOUND);
       return;
     }
 

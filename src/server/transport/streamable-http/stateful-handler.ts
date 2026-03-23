@@ -86,7 +86,7 @@ export class StatefulHandler implements TransportRequestHandler {
     const transport = this.getTransport(sessionId);
     if (!transport) {
       logger.warn(LogMessages.POST_SESSION_NOT_FOUND, shortId(sessionId));
-      sendError(res, HttpStatus.NOT_FOUND, JsonRpcErrorCode.SESSION_NOT_FOUND, TransportErrorMessage.SESSION_NOT_FOUND);
+      res.status(HttpStatus.NOT_FOUND).send(TransportErrorMessage.SESSION_NOT_FOUND);
       return;
     }
 
@@ -114,12 +114,7 @@ export class StatefulHandler implements TransportRequestHandler {
     const transport = this.getTransport(sessionId);
     if (!transport) {
       logger.warn(LogMessages.GET_SESSION_NOT_FOUND, shortId(sessionId));
-      sendError(
-        res,
-        HttpStatus.NOT_FOUND,
-        JsonRpcErrorCode.SESSION_NOT_FOUND,
-        TransportErrorMessage.SESSION_NOT_FOUND_REINIT,
-      );
+      res.status(HttpStatus.NOT_FOUND).send(TransportErrorMessage.SESSION_NOT_FOUND_REINIT);
       return;
     }
 
@@ -153,7 +148,7 @@ export class StatefulHandler implements TransportRequestHandler {
 
     const transport = this.getTransport(sessionId);
     if (!transport) {
-      sendError(res, HttpStatus.NOT_FOUND, JsonRpcErrorCode.SESSION_NOT_FOUND, TransportErrorMessage.SESSION_NOT_FOUND);
+      res.status(HttpStatus.NOT_FOUND).send(TransportErrorMessage.SESSION_NOT_FOUND);
       return;
     }
 

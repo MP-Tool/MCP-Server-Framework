@@ -42,6 +42,7 @@ skills-lock.json
 
 # Development
 .dev
+.vscode
 
 # Tests
 tests/
@@ -49,3 +50,5 @@ tests/
 src/*.test.ts
 src/*.spec.ts
 
+# TypeDocs
+docs/api
