@@ -232,8 +232,6 @@ Sources are merged in order of precedence:
 Defaults → .env file → Config file → Environment variables → Programmatic overrides
 ```
 
-**Environment variables** (excerpt — [full reference](docs/configuration.md)):
-
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MCP_TRANSPORT` | `http` | Transport mode: `stdio`, `http`, `https` |
