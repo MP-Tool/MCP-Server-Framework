@@ -1,6 +1,6 @@
 # MCP Server Framework
 
-[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0-blue.svg)](LICENSE.md)
+[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0-blue.svg)](LICENSE.txt)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A520-green.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-blue.svg)](https://www.typescriptlang.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.27+-purple.svg)](https://modelcontextprotocol.io/)
@@ -20,11 +20,11 @@ It's opinionated where it matters (security defaults, structured logging, transp
 
 This framework is a personal project built with best effort and care. AI tools (GitHub Copilot, Claude) were used extensively during development — for code generation, architecture exploration, and documentation. All AI-generated code and documentation has been critically reviewed, tested, and refined by me.
 
-That said: this software is provided **as-is, without warranty of any kind**. See the [license](LICENSE.md) for the full legal terms. If you find bugs or have ideas, [issues](https://github.com/MP-Tool/mcp-server-framework/issues) and contributions are always welcome.
+That said: this software is provided **as-is, without warranty of any kind**. See the [license](LICENSE.txt) for the full legal terms. If you find bugs or have ideas, [issues](https://github.com/MP-Tool/mcp-server-framework/issues) and contributions are always welcome.
 
 ## License
 
-[LGPL-3.0](LICENSE.md) — GNU Lesser General Public License v3.0 or later
+[LGPL-3.0](LICENSE.txt) — GNU Lesser General Public License v3.0 or later
 
 ## Features
 

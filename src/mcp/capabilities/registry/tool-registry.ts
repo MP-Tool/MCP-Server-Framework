@@ -20,7 +20,7 @@ import type { z } from "zod";
 import type { ToolDefinition, ToolContext, ToolProvider } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
 import type { Logger } from "../../../logger/index.js";
-import { JsonRpcErrorCode } from "../../../errors/index.js";
+import { JsonRpcErrorCode, AppError } from "../../../errors/index.js";
 import { withSpan, getServerMetrics, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
@@ -283,7 +283,11 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
             throw new McpError(JsonRpcErrorCode.REQUEST_CANCELLED, SdkBindingMessages.REQUEST_CANCELLED);
           }
 
-          logger.error(SdkBindingMessages.TOOL_ERROR, tool.name, error);
+          if (error instanceof AppError && error.statusCode < 500) {
+            logger.warn(SdkBindingMessages.TOOL_ERROR, tool.name, error.message);
+          } else {
+            logger.error(SdkBindingMessages.TOOL_ERROR, tool.name, error);
+          }
           span.setAttribute(MCP_ATTRIBUTES.SUCCESS, false);
 
           if (error instanceof McpError) {
