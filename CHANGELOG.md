@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - fix: license format, logging improvements, session-not-found response
+
 ### Fixed
 
 - **License** updated license files to .txt format for further compatibility and fixed GitHub license auto detection
