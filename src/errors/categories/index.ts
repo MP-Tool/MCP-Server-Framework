@@ -18,8 +18,5 @@ export { InternalError, RegistryError } from "./system.js";
 // Operation Errors
 export { OperationError, OperationCancelledError } from "./operation.js";
 
-// Connection Errors
-export { ConnectionError } from "./connection.js";
-
 // Auth Errors
 export { AuthenticationError, AuthorizationError } from "./auth.js";

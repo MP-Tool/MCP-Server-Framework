@@ -31,10 +31,6 @@
       "types": "./build/config/index.d.ts",
       "import": "./build/config/index.js"
     },
-    "./connection": {
-      "types": "./build/connection/index.d.ts",
-      "import": "./build/connection/index.js"
-    },
     "./errors": {
       "types": "./build/errors/index.d.ts",
       "import": "./build/errors/index.js"

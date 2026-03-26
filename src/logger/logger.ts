@@ -92,9 +92,9 @@ export interface GlobalLoggerConfig {
 const DEFAULT_LOGGER_CONFIG: GlobalLoggerConfig = {
   LOG_LEVEL: DEFAULT_LOG_LEVEL,
   LOG_FORMAT: "text",
-  MCP_TRANSPORT: "http",
+  MCP_TRANSPORT: "stdio",
   // @node-api — process.env.* returns string | undefined; config requires string literal union
-  NODE_ENV: (process.env.NODE_ENV as GlobalLoggerConfig["NODE_ENV"]) ?? "development",
+  NODE_ENV: (process.env.NODE_ENV ?? "development") as GlobalLoggerConfig["NODE_ENV"],
   SERVER_NAME: DEFAULT_SERVICE_NAME,
   SERVER_VERSION: "0.0.0",
 };

@@ -134,7 +134,6 @@ export class McpServerInstance implements ServerInstance {
     private readonly sessionFactory: McpSessionFactory,
   ) {
     this.transportMode = options.transport?.mode ?? "stdio";
-    logger.debug(RuntimeLogMessages.STATE_TRANSITION, "(none)", "created");
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -211,7 +210,6 @@ export class McpServerInstance implements ServerInstance {
     }
 
     this.transitionState("starting");
-    logger.info(RuntimeLogMessages.SERVER_STARTING);
 
     // Register signal handlers FIRST so that SIGINT/SIGTERM during any
     // async startup step (telemetry init, transport bind) triggers
@@ -219,9 +217,9 @@ export class McpServerInstance implements ServerInstance {
     this.setupSignalHandlers();
 
     try {
-      // Bridge programmatic options → framework config cache
-      // Must happen FIRST so onStarting() hooks can use the final config
-      // (e.g., API credentials from config file).
+      // Bridge programmatic options → framework config cache.
+      // Must happen BEFORE logger config so that MCP_TRANSPORT is correct
+      // when the logger decides stdout vs stderr routing (stdio safety).
       this.applyProgrammaticOverrides();
 
       // Bridge config file values → logger (must run after config resolution)
@@ -232,6 +230,8 @@ export class McpServerInstance implements ServerInstance {
 
       // Replay startup warnings through the now-configured logger
       flushStartupWarnings((msg) => logger.warn(msg));
+
+      logger.info(RuntimeLogMessages.SERVER_STARTING);
 
       // Initialize telemetry BEFORE lifecycle hooks so that consumer
       // API calls in onStarting() are already instrumented (DD-018).

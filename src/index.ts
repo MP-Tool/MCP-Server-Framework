@@ -28,7 +28,6 @@
  *
  * Internal modules are available via subpath imports for advanced use cases:
  * ```typescript
- * import { ConnectionStateManager } from 'mcp-server-framework/connection';
  * import { SessionManagerImpl } from 'mcp-server-framework/session';
  * import { startHttpTransport, createExpressApp } from 'mcp-server-framework/http';
  * import { getActiveSpan, SpanKind } from 'mcp-server-framework/telemetry';
@@ -65,7 +64,6 @@ export { text, json, error, image, audio, multi } from "./mcp/responses/index.js
 // Type guards
 export { isHttpTransport } from "./server/index.js";
 export { isStaticResource, isResourceTemplate } from "./mcp/types/index.js";
-export { isServiceClient } from "./connection/index.js";
 export { isFullOAuthProvider } from "./server/auth/index.js";
 
 // Auth provider factories
@@ -116,7 +114,7 @@ export type {
   TlsConfig,
   TransportOptions,
   ServerCapabilities,
-  HealthConfig,
+  ReadinessConfig,
   SessionConfigOptions,
   ServerOptions,
   ServerInstance,
@@ -184,11 +182,6 @@ export type {
   AudioResponseOptions,
 } from "./mcp/types/index.js";
 
-// --- Service client ---
-export type { ServiceClient, ServiceClientFactory, HealthCheckResult, HealthStatus } from "./connection/index.js";
-
-export { ConnectionStateManager } from "./connection/index.js";
-
 // --- EventStore (SDK re-exports for stream resumability) ---
 export type { EventStore, EventId, StreamId } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -255,7 +248,6 @@ export {
   RegistryError,
   OperationError,
   OperationCancelledError,
-  ConnectionError,
   AuthenticationError,
   AuthorizationError,
   FrameworkErrorFactory,

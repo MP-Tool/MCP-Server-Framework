@@ -19,7 +19,6 @@ import {
   RegistryError,
   OperationError,
   OperationCancelledError,
-  ConnectionError,
   AuthenticationError,
   AuthorizationError,
 } from "./categories/index.js";
@@ -264,33 +263,6 @@ export const FrameworkErrorFactory = {
 
     /** Duplicate prompt */
     duplicatePrompt: (name: string) => RegistryError.duplicatePrompt(name),
-  },
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Connection Errors
-  // ─────────────────────────────────────────────────────────────────────────
-
-  connection: {
-    /** Create a generic connection failed error */
-    failed: (target: string, reason?: string) => ConnectionError.failed(target, reason),
-
-    /** Create a connection refused error */
-    refused: (target: string) => ConnectionError.refused(target),
-
-    /** Create a connection timeout error */
-    timeout: (target: string, timeoutMs?: number) => ConnectionError.timeout(target, timeoutMs),
-
-    /** Create a connection lost error */
-    lost: (target: string) => ConnectionError.lost(target),
-
-    /** Create a connection reset error */
-    reset: (target: string) => ConnectionError.reset(target),
-
-    /** Create a health check failed error */
-    healthCheckFailed: (reason: string, target?: string) => ConnectionError.healthCheckFailed(reason, target),
-
-    /** Create a custom connection error */
-    custom: (message: string, target: string) => new ConnectionError(message, target),
   },
 
   // ─────────────────────────────────────────────────────────────────────────

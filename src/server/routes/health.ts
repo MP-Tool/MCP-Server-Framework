@@ -21,8 +21,6 @@
 
 import { Router } from "express";
 import type { SessionManager } from "../session/index.js";
-import type { ConnectionStateManager } from "../../connection/index.js";
-import type { ServiceClient } from "../../connection/types.js";
 import { getFrameworkConfig } from "../../config/index.js";
 import { logger as baseLogger } from "../../logger/index.js";
 
@@ -67,28 +65,23 @@ export interface SseInfoProvider {
 /**
  * Options for creating the health router.
  */
-export interface HealthRouterOptions<TService extends ServiceClient = ServiceClient> {
+export interface HealthRouterOptions {
   /** Session manager for tracking active sessions */
   sessionManager: SessionManager;
 
   /**
-   * Optional connection manager for API health checks.
-   * If not provided, API connectivity checks are skipped.
+   * Custom readiness check. Called on every `GET /ready` request.
+   * - Return `true` (or `undefined`/no check configured) → 200 (ready)
+   * - Return `false` → 503 (not ready)
+   * - Return a `string` → 503 with the string as reason
    */
-  connectionManager?: ConnectionStateManager<TService> | undefined;
+  readinessCheck?: (() => boolean | string | Promise<boolean | string>) | undefined;
 
   /**
-   * Function to check if API is configured.
-   * Reads from runtime environment to support Docker env_file.
-   * If not provided, defaults to checking for API_URL env var.
+   * Label for the service in health responses.
+   * @default 'service'
    */
-  isApiConfigured?: (() => boolean) | undefined;
-
-  /**
-   * Label for the API in health responses (e.g., 'my-api', 'docker', 'kubernetes')
-   * Defaults to 'api'
-   */
-  apiLabel?: string | undefined;
+  serviceLabel?: string | undefined;
 
   /**
    * Optional SSE transport information.
@@ -102,35 +95,29 @@ export interface HealthRouterOptions<TService extends ServiceClient = ServiceCli
 // ============================================================================
 
 /**
- * Creates health check router with configurable API connection monitoring.
+ * Creates health check router with configurable readiness checks.
  *
  * @param options - Configuration options for the health router
  * @returns Express router with /health and /ready endpoints
  *
  * @example
  * ```typescript
- * // Basic usage (no API monitoring)
+ * // Basic usage (no readiness check)
  * const router = createHealthRouter({ sessionManager });
  *
- * // With API connection monitoring
+ * // With custom readiness check
  * const router = createHealthRouter({
  *   sessionManager,
- *   connectionManager: myConnectionManager,
- *   isApiConfigured: () => !!process.env.API_URL,
- *   apiLabel: 'api',
+ *   readinessCheck: async () => {
+ *     const ok = await myApi.ping();
+ *     return ok || 'API not reachable';
+ *   },
+ *   serviceLabel: 'my-api',
  * });
  * ```
  */
-export function createHealthRouter<TService extends ServiceClient = ServiceClient>(
-  options: HealthRouterOptions<TService>,
-): Router {
-  const {
-    sessionManager,
-    connectionManager,
-    isApiConfigured = () => !!process.env.API_URL?.trim(),
-    apiLabel = "api",
-    sseInfo,
-  } = options;
+export function createHealthRouter(options: HealthRouterOptions): Router {
+  const { sessionManager, readinessCheck, serviceLabel = "service", sseInfo } = options;
 
   const router = Router();
 
@@ -152,12 +139,8 @@ export function createHealthRouter<TService extends ServiceClient = ServiceClien
    * Readiness probe endpoint
    * Returns appropriate status code based on server readiness.
    */
-  router.get(ROUTES.READY, (_req, res) => {
+  router.get(ROUTES.READY, async (_req, res) => {
     const config = getFrameworkConfig();
-
-    // Get API connection state (if connection manager is provided)
-    const connectionState = connectionManager?.getState() ?? "unknown";
-    const isApiConnected = connectionState === "connected";
 
     // Read session limits from dynamic config
     const maxSessions = config.MCP_MAX_SESSIONS;
@@ -175,10 +158,6 @@ export function createHealthRouter<TService extends ServiceClient = ServiceClien
     const sseAtLimit = sseEnabled && sseSessionCount >= maxSseSessions;
     const sessionsAtLimit = totalAtLimit || streamableHttpAtLimit || sseAtLimit;
 
-    // Determine readiness
-    const hasApiConfig = isApiConfigured();
-    const apiReady = !hasApiConfig || isApiConnected;
-
     // Determine status code
     let status: ReadinessStatusValue;
     let reason: string;
@@ -192,9 +171,25 @@ export function createHealthRouter<TService extends ServiceClient = ServiceClien
       } else {
         reason = `SSE session limit reached (${sseSessionCount}/${maxSseSessions})`;
       }
-    } else if (!apiReady) {
-      status = ReadinessStatus.SERVICE_UNAVAILABLE;
-      reason = `${apiLabel} not connected (state: ${connectionState})`;
+    } else if (readinessCheck) {
+      // Run consumer-provided readiness check
+      try {
+        const result = await readinessCheck();
+        if (result === true) {
+          status = ReadinessStatus.READY;
+          reason = "Server is ready";
+        } else if (result === false) {
+          status = ReadinessStatus.SERVICE_UNAVAILABLE;
+          reason = `${serviceLabel} not ready`;
+        } else {
+          // string → 503 with custom reason
+          status = ReadinessStatus.SERVICE_UNAVAILABLE;
+          reason = result;
+        }
+      } catch (err) {
+        status = ReadinessStatus.SERVICE_UNAVAILABLE;
+        reason = `${serviceLabel} readiness check failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
     } else {
       status = ReadinessStatus.READY;
       reason = "Server is ready";
@@ -209,16 +204,11 @@ export function createHealthRouter<TService extends ServiceClient = ServiceClien
       logger.debug(LogMessages.READINESS_CHECK, status, reason);
     }
 
-    const response = {
+    const response: Record<string, unknown> = {
       ready: isReady,
       status: reason,
       version: config.VERSION,
       uptime: process.uptime(),
-      [apiLabel]: {
-        configured: hasApiConfig,
-        state: connectionState,
-        connected: isApiConnected,
-      },
       sessions: {
         total: {
           current: totalSessionCount,
@@ -239,6 +229,14 @@ export function createHealthRouter<TService extends ServiceClient = ServiceClien
         }),
       },
     };
+
+    // Include service info only when a readiness check is configured
+    if (readinessCheck) {
+      response[serviceLabel] = {
+        ready: status === ReadinessStatus.READY,
+        ...(status !== ReadinessStatus.READY && { reason }),
+      };
+    }
 
     res.status(status).json(response);
   });

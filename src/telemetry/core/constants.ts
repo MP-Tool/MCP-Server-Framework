@@ -208,6 +208,10 @@ export const SdkLogMessages = {
   TRACE_EXPORTER_CONFIGURED: "Trace exporter configured: %s",
   UNKNOWN_TRACE_EXPORTER: "Unknown trace exporter '%s' — falling back to OTLP. Supported: otlp, console, none",
 
+  // Stdio Guard
+  CONSOLE_EXPORTER_STDIO_GUARD:
+    "OTEL console exporter(s) overridden to 'none' in stdio mode — console exporters write to stdout which corrupts MCP JSON-RPC protocol. Use 'otlp' exporter with a collector instead.",
+
   // Shutdown
   SHUTDOWN_START: "OpenTelemetry SDK shutting down...",
   SHUTDOWN_SUCCESS: "OpenTelemetry SDK shutdown successfull",

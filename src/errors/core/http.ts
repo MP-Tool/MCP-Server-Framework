@@ -93,7 +93,6 @@ export const ErrorCodeToHttpStatus: Partial<Record<ErrorCodeType, HttpStatusType
   [ErrorCodes.CONFIGURATION_ERROR]: HttpStatus.INTERNAL_SERVER_ERROR,
   [ErrorCodes.INTERNAL_ERROR]: HttpStatus.INTERNAL_SERVER_ERROR,
   [ErrorCodes.API_ERROR]: HttpStatus.BAD_GATEWAY,
-  [ErrorCodes.CONNECTION_ERROR]: HttpStatus.SERVICE_UNAVAILABLE,
   [ErrorCodes.SERVICE_UNAVAILABLE]: HttpStatus.SERVICE_UNAVAILABLE,
   [ErrorCodes.TIMEOUT_ERROR]: HttpStatus.GATEWAY_TIMEOUT,
   [ErrorCodes.REGISTRY_ERROR]: HttpStatus.NOT_FOUND,

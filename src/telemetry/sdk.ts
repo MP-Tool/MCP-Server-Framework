@@ -73,6 +73,7 @@ import { METRIC_NAMES } from "./core/constants.js";
 import { logger as baseLogger } from "../logger/index.js";
 import { setTraceContextExtractor } from "../logger/core/index.js";
 import type { TraceContextExtractor, TraceContext } from "../logger/core/index.js";
+import { getFrameworkConfig } from "../config/index.js";
 import {
   getTelemetryConfig,
   TELEMETRY_LOG_COMPONENTS,
@@ -222,7 +223,7 @@ let prometheusExporter: InstanceType<OtelModules["PrometheusExporter"]> | null =
  * ```
  */
 export async function initializeTelemetry(onBeforeInit?: () => void): Promise<boolean> {
-  const config = getTelemetryConfig();
+  let config: Readonly<TelemetryConfig> = getTelemetryConfig();
 
   if (!config.enabled) {
     logger.trace(SdkLogMessages.INIT_SKIPPED);
@@ -294,7 +295,27 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
   // priority (env var > config file > default).
   syncOtelEnvironment(config);
 
-  // ── Step 4: Build Resource & Exporters ───────────────────────────────
+  // ── Step 4: Guard Console Exporters in Stdio Mode ─────────────────
+  // Console exporters (ConsoleSpanExporter, ConsoleMetricExporter) write
+  // to stdout, which corrupts MCP JSON-RPC protocol in stdio transport.
+  // Override "console" → "none" and warn the user.
+  if (getFrameworkConfig().MCP_TRANSPORT === "stdio") {
+    const hasConsoleTraces = config.tracesExporter?.toLowerCase() === "console";
+    const hasConsoleMetrics = config.metricsExporters.includes("console");
+
+    if (hasConsoleTraces || hasConsoleMetrics) {
+      logger.warn(SdkLogMessages.CONSOLE_EXPORTER_STDIO_GUARD);
+      config = {
+        ...config,
+        ...(hasConsoleTraces && { tracesExporter: "none" }),
+        ...(hasConsoleMetrics && {
+          metricsExporters: config.metricsExporters.map((e) => (e === "console" ? "none" : e)),
+        }),
+      };
+    }
+  }
+
+  // ── Step 5: Build Resource & Exporters ───────────────────────────────
   // Resource: service identity attributes.
   // Additional attributes can be set via OTEL_RESOURCE_ATTRIBUTES (env only).
   const resource = otel.resourceFromAttributes({
@@ -311,7 +332,7 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
 
   logger.info(SdkLogMessages.METRICS_EXPORTERS_CONFIGURED, config.metricsExporters.join(", "));
 
-  // ── Step 5: Construct & Start SDK ────────────────────────────────────
+  // ── Step 6: Construct & Start SDK ────────────────────────────────────
   // - resourceDetectors: Only OTEL_RESOURCE_ATTRIBUTES (env) is respected.
   //   Host/process/OS auto-detectors are disabled to keep target_info lean.
   // - views: Custom histogram buckets for HTTP and MCP duration metrics.

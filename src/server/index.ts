@@ -30,7 +30,7 @@ export type {
   TransportOptions,
   TlsConfig,
   ServerCapabilities,
-  HealthConfig,
+  ReadinessConfig,
   SessionConfigOptions,
   ServerOptions,
   ServerInstance,

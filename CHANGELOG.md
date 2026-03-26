@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - BREAKING: Remove connection module, add ReadinessConfig
+
+### Added
+
+- **OTEL Console-Exporter Stdio Guard**: When transport mode is `stdio`, OTEL console exporters (`ConsoleSpanExporter`, `ConsoleMetricExporter`) are automatically overridden to `"none"` with a warning. Console exporters write to stdout, which would corrupt the MCP JSON-RPC protocol. Defense-in-depth measure — users should use `"otlp"` exporter with a collector instead.
+
+### Removed
+
+- **BREAKING**: Removed entire `connection/` module (`ConnectionStateManager`, `ServiceClient`, `ServiceClientFactory`, `HealthCheckResult`, `HealthStatus`, `isServiceClient`)
+  - Connection/API management is consumer-specific, not framework responsibility
+  - Removed subpath export `mcp-server-framework/connection`
+  - Removed `ConnectionError` from error categories and `FrameworkErrorFactory.connection.*`
+  - Removed `createConnectionTelemetry()` from telemetry module
+  - Removed `ErrorCodes.CONNECTION_ERROR` and `ErrorCategory.CONNECTION`
+
+### Changed
+
+- **BREAKING**: `HealthConfig<TService>` replaced with `ReadinessConfig`
+  - Old: `health: { connectionManager, isApiConfigured, apiLabel }`
+  - New: `health: { readinessCheck: () => boolean | string, serviceLabel }`
+  - `/ready` endpoint no longer reports API connection state
+  - `/ready` now calls the generic `readinessCheck()` callback
+  - `/ready` handler is now `async` to support async readiness checks
+
+### Fixed
+
+- **Stdio stdout corruption** (critical): Fixed multiple interacting issues that caused `[INFO]` log lines to appear on stdout when using stdio transport, breaking MCP JSON-RPC protocol for clients like Claude Desktop:
+  - **Logger default transport**: Changed default `MCP_TRANSPORT` in logger bootstrap from `"http"` to `"stdio"` — the safe default that routes all logs to stderr. Previously, the logger assumed HTTP mode before config was applied, causing early log lines to write to stdout.
+  - **Startup log ordering**: Reordered `McpServerInstance.start()` so that `applyProgrammaticOverrides()`, `applyLoggerConfig()`, `setConfigLogger()`, and `flushStartupWarnings()` all execute **before** the first `logger.info(SERVER_STARTING)` call.
+  - **Transport mode bridge**: Added `MCP_TRANSPORT` override in `mapServerOptionsToOverrides()` so that programmatic `transport.mode` from `createServer()` / `McpServerBuilder` is correctly propagated to the config system.
+  - **Constructor hygiene**: Removed pre-config `logger.debug()` call from `McpServerInstance` constructor that could fire before logger configuration was applied.
+- **Logger NODE_ENV type assertion**: Fixed ESLint `no-unnecessary-condition` by reordering the nullish coalescing and type cast — `(process.env.NODE_ENV ?? "development") as ...` instead of casting before `??`
+
+### Migration Guide
+
+Replace `HealthConfig` with `ReadinessConfig`:
+```typescript
+// Before (v1.x)
+import { ConnectionStateManager, type ServiceClient } from 'mcp-server-framework/connection';
+
+health: {
+  connectionManager: myManager,
+  isApiConfigured: () => !!process.env.API_URL,
+  apiLabel: 'my-api',
+}
+
+// After (v1.0.3)
+health: {
+  readinessCheck: () => myManager.isConnected() || 'API not connected',
+  serviceLabel: 'my-api',
+}
+```
+
+Connection management should now be handled locally in consumer code:
+```typescript
+// Simple local connection tracking (replaces ~565 LOC ConnectionStateManager)
+let client: MyApiClient | null = null;
+let connected = false;
+
+export function isConnected(): boolean { return connected; }
+export function getClient(): MyApiClient | null { return client; }
+```
+
 ## [1.0.2] - fix: license format, logging improvements, session-not-found response
 
 ### Fixed

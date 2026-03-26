@@ -9,8 +9,6 @@
 
 import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { HandlersConfig } from "../mcp/types/index.js";
-import type { ConnectionStateManager } from "../connection/index.js";
-import type { ServiceClient } from "../connection/types.js";
 import type { SessionStore } from "./session/index.js";
 import type { ServerCapabilities } from "../mcp/capabilities/server-capabilities.js";
 import type { TransportOptions } from "./transport-options.js";
@@ -38,17 +36,15 @@ export {
 export { type ServerCapabilities, DEFAULT_CAPABILITIES } from "../mcp/capabilities/server-capabilities.js";
 
 // ============================================================================
-// Health Configuration
+// Readiness Configuration
 // ============================================================================
 
 /**
- * Health endpoint configuration for API connectivity monitoring.
+ * Readiness endpoint configuration.
  *
- * Allows consumers to wire their {@link ConnectionStateManager} to the
- * `/ready` endpoint so readiness probes reflect the actual API connection state.
- *
- * Without this configuration, the `/ready` endpoint reports
- * `api: { configured: false, state: 'unknown', connected: false }`.
+ * Provides a generic readiness check hook for the `/ready` endpoint.
+ * Consumers implement their own readiness logic (API connectivity,
+ * database health, external service checks, etc.).
  *
  * @example
  * ```typescript
@@ -57,31 +53,30 @@ export { type ServerCapabilities, DEFAULT_CAPABILITIES } from "../mcp/capabiliti
  *   version: '1.0.0',
  *   transport: { mode: 'http' },
  *   health: {
- *     connectionManager: myConnectionManager,
- *     isApiConfigured: () => !!process.env.MY_API_URL,
- *     apiLabel: 'my-api',
+ *     readinessCheck: async () => {
+ *       const ok = await myApi.ping();
+ *       return ok || 'API not reachable';
+ *     },
+ *     serviceLabel: 'my-api',
  *   },
  * });
  * ```
  */
-export interface HealthConfig<TService extends ServiceClient = ServiceClient> {
+export interface ReadinessConfig {
   /**
-   * Connection state manager for API health checks.
-   * If not provided, API connectivity checks are skipped.
+   * Custom readiness check. Called on every `GET /ready` request.
+   *
+   * - Return `true` (or `undefined`/no check configured) → 200 (ready)
+   * - Return `false` → 503 (not ready)
+   * - Return a `string` → 503 with the string as reason
    */
-  readonly connectionManager?: ConnectionStateManager<TService>;
+  readonly readinessCheck?: () => boolean | string | Promise<boolean | string>;
 
   /**
-   * Function to check if the API is configured.
-   * If not provided, defaults to checking for `API_URL` env var.
+   * Label for the service in health responses.
+   * @default 'service'
    */
-  readonly isApiConfigured?: () => boolean;
-
-  /**
-   * Label for the API in health responses (e.g., 'my-api', 'docker').
-   * @default 'api'
-   */
-  readonly apiLabel?: string;
+  readonly serviceLabel?: string;
 }
 
 // ============================================================================
@@ -290,12 +285,12 @@ export interface ServerOptions {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Health endpoint configuration for API connectivity monitoring.
+   * Readiness endpoint configuration.
    *
-   * Wires a {@link ConnectionStateManager} to the `/ready` endpoint so
-   * readiness probes reflect the actual API connection state.
+   * Provides a generic readiness check hook for the `/ready` endpoint.
+   * Consumers supply their own check logic.
    */
-  health?: HealthConfig | undefined;
+  health?: ReadinessConfig | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Session Configuration (Optional)
