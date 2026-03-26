@@ -59,7 +59,7 @@ import {
 } from "../transport/constants.js";
 import type { SessionFactory } from "../transport/types.js";
 import type { StreamableHttpTransportOptions } from "../transport/streamable-http/index.js";
-import type { HealthConfig } from "../server-options.js";
+import type { ReadinessConfig } from "../server-options.js";
 import type { EventStore } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 const logger = baseLogger.child({
@@ -128,8 +128,8 @@ export interface ExpressAppOptions {
   /** Prefer JSON responses over SSE for simple request-response. Default: true */
   readonly enableJsonResponse?: boolean | undefined;
 
-  /** Health endpoint configuration for API connectivity monitoring */
-  readonly health?: HealthConfig | undefined;
+  /** Readiness endpoint configuration */
+  readonly health?: ReadinessConfig | undefined;
 
   /**
    * Resolved trust proxy value for Express.
@@ -518,9 +518,8 @@ export function createExpressApp(
   app.use(
     createHealthRouter({
       sessionManager,
-      connectionManager: options?.health?.connectionManager,
-      isApiConfigured: options?.health?.isApiConfigured,
-      apiLabel: options?.health?.apiLabel,
+      readinessCheck: options?.health?.readinessCheck,
+      serviceLabel: options?.health?.serviceLabel,
       sseInfo: {
         enabled: isSseEnabled(),
         getSessionCount: getSseSessionCount,

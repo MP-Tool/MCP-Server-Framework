@@ -6,7 +6,7 @@
  * @module server/types
  */
 
-import type { TransportOptions, ServerCapabilities, HealthConfig, SessionConfigOptions } from "./server-options.js";
+import type { TransportOptions, ServerCapabilities, ReadinessConfig, SessionConfigOptions } from "./server-options.js";
 import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { AuthOptions } from "./auth/types.js";
 
@@ -96,14 +96,14 @@ export interface CreateServerOptions {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Health endpoint configuration for API connectivity monitoring.
+   * Readiness endpoint configuration.
    *
-   * Wires a {@link ConnectionStateManager} to the `/ready` endpoint so
-   * readiness probes reflect the actual API connection state.
+   * Provides a generic readiness check hook for the `/ready` endpoint.
+   * Consumers supply their own check logic.
    *
-   * @see HealthConfig
+   * @see ReadinessConfig
    */
-  health?: HealthConfig;
+  health?: ReadinessConfig;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Session Configuration (Optional)

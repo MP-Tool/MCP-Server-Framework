@@ -33,6 +33,12 @@ export function mapServerOptionsToOverrides(
   // Always bridge version — createServer({ version }) is the canonical source
   overrides.VERSION = options.version;
 
+  // Bridge transport mode → MCP_TRANSPORT so logger, middleware, and session
+  // management know the active transport from the start.
+  if (options.transport) {
+    overrides.MCP_TRANSPORT = options.transport.mode;
+  }
+
   // Bridge server name as OTEL service name default.
   // The MCP server name is the natural default — env var or config file
   // can override it for deployment-specific naming (e.g. 'my-app-prod').

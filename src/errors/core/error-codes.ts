@@ -41,8 +41,6 @@ export const ErrorCodes = {
   // ─────────────────────────────────────────────────────────────────────────
   /** API communication error */
   API_ERROR: "API_ERROR",
-  /** Network connection failed */
-  CONNECTION_ERROR: "CONNECTION_ERROR",
   /** Request timeout */
   TIMEOUT_ERROR: "TIMEOUT_ERROR",
   /** Internal server error */
@@ -87,8 +85,6 @@ export const ErrorCategory = {
   VALIDATION: "validation",
   /** Configuration errors */
   CONFIGURATION: "configuration",
-  /** Connection/network errors */
-  CONNECTION: "connection",
   /** Operation lifecycle errors */
   OPERATION: "operation",
   /** Internal system errors */

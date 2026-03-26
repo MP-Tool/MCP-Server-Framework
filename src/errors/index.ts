@@ -91,8 +91,6 @@ export {
   // Operation
   OperationError,
   OperationCancelledError,
-  // Connection
-  ConnectionError,
   // Auth
   AuthenticationError,
   AuthorizationError,

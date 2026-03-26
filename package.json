@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-framework",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Production-ready MCP Server Framework with built-in logging, metrics, sessions, and multi-transport support.",
   "license": "LGPL-3.0",
   "author": "Marcel Pfennig",
@@ -30,10 +30,6 @@
     "./config": {
       "types": "./build/config/index.d.ts",
       "import": "./build/config/index.js"
-    },
-    "./connection": {
-      "types": "./build/connection/index.d.ts",
-      "import": "./build/connection/index.js"
     },
     "./errors": {
       "types": "./build/errors/index.d.ts",

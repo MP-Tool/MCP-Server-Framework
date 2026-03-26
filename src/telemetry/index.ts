@@ -108,9 +108,3 @@ export {
 // Type-only re-exports remain zero-cost.
 export { FrameworkSpanKind as SpanKind, FrameworkSpanStatusCode as SpanStatusCode } from "./tracing.js";
 export type { Span, Attributes, Context, Tracer } from "@opentelemetry/api";
-
-// ============================================================================
-// Connection Telemetry Bridge
-// ============================================================================
-
-export { createConnectionTelemetry } from "./connection-telemetry-bridge.js";
