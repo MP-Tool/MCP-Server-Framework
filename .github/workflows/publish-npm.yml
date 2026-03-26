@@ -90,7 +90,7 @@ jobs:
           echo "✅ Main entry point exists"
           
           # Verify key subpath exports exist
-          SUBPATHS=("config/index.js" "errors/index.js" "logger/index.js" "connection/index.js" "server/http/index.js" "server/session/index.js" "telemetry/index.js")
+          SUBPATHS=("config/index.js" "errors/index.js" "logger/index.js" "server/http/index.js" "server/session/index.js" "telemetry/index.js")
           for subpath in "${SUBPATHS[@]}"; do
             if [ ! -f "build/${subpath}" ]; then
               echo "❌ Missing subpath export: build/${subpath}"
