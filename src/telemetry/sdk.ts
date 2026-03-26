@@ -585,7 +585,11 @@ function buildMetricReaders(config: TelemetryConfig, otel: OtelModules): MetricR
         prometheusExporter = new otel.PrometheusExporter({
           preventServerStart: true,
         });
-        readers.push(prometheusExporter);
+        // @type-variance — PrometheusExporter and MetricReader each declare
+        // _shutdown as a private property, causing TypeScript structural
+        // incompatibility despite identical runtime shape (version skew between
+        // @opentelemetry/exporter-prometheus and @opentelemetry/sdk-metrics).
+        readers.push(prometheusExporter as unknown as MetricReader);
         logger.debug(SdkLogMessages.PROMETHEUS_EXPORTER_ADDED);
         break;
       }

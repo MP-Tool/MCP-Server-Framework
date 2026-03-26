@@ -3,7 +3,6 @@
   "entryPoints": [
     "src/index.ts",
     "src/logger/index.ts",
-    "src/connection/index.ts",
     "src/server/session/index.ts",
     "src/telemetry/index.ts",
     "src/errors/index.ts",
@@ -99,7 +98,8 @@
       "Tracer": "https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_api.Tracer.html",
       "Tracer.startSpan": "https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_api.Tracer.html",
       "Baggage": "https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_api.Baggage.html",
-      "TraceFlags": "https://open-telemetry.github.io/opentelemetry-js/enums/_opentelemetry_api.TraceFlags.html"
+      "TraceFlags": "https://open-telemetry.github.io/opentelemetry-js/enums/_opentelemetry_api.TraceFlags.html",
+      "SpanStatus": "https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_api.SpanStatus.html"
     }
   },
   "gitRemote": "origin",
