@@ -36,6 +36,8 @@ export const TRANSPORT_LOG_COMPONENTS = {
   SECURITY: "Security",
   /** TLS certificate operations @public — available for consumer transport implementations */
   TLS: "Tls",
+  /** SSE stream keepalive (shared across Streamable HTTP and SSE transports) */
+  SSE_KEEPALIVE: "SseKeepalive",
 } as const;
 
 // ============================================================================
@@ -89,6 +91,30 @@ export const MCP_HEADERS = {
  * Uses a single canonical name to minimize attack surface (DD-023).
  */
 export const SESSION_ID_QUERY_PARAMS = ["sessionId"] as const;
+
+// ============================================================================
+// SSE Keepalive
+// ============================================================================
+
+/**
+ * SSE stream keepalive configuration.
+ *
+ * Idle SSE streams (GET /mcp, GET /sse) are terminated by TCP/proxy idle
+ * timeouts (typically ~5 minutes). Periodic SSE comments prevent this.
+ *
+ * Per WHATWG SSE Spec Section 9.2.7:
+ * "Legacy proxy servers are known to drop HTTP connections after a short timeout.
+ *  Authors can include a comment line (one starting with ':') every 15 seconds or so."
+ *
+ * SSE comments (lines starting with ':') are silently discarded by the parser
+ * (Section 9.2.6) — no impact on MCP protocol or client behavior.
+ */
+export const SSE_KEEPALIVE = {
+  /** SSE comment written to keep the stream alive. Spec-compliant ':' prefix. */
+  COMMENT: ":keepalive\n\n",
+  /** Interval between keepalive comments (ms). 30s balances spec guidance (15s) with modern stacks. */
+  INTERVAL_MS: 30_000,
+} as const;
 
 // ============================================================================
 // SSE Events

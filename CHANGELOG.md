@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SSE stream keepalive**: Idle SSE streams (GET `/mcp`, GET `/sse`) are now kept alive with periodic SSE comment lines (`:keepalive`) every 30 seconds. Prevents TCP/proxy idle timeouts from terminating long-lived server-to-client notification streams. Affects both Streamable HTTP (stateful) and legacy SSE transports. Per WHATWG SSE Spec Section 9.2.7.
+
 ## [1.0.3] - BREAKING: Remove connection module, add ReadinessConfig
 
 ### Added
