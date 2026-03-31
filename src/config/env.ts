@@ -123,14 +123,14 @@ export const frameworkEnvSchema = z
      * responses (e.g. tools/list, resources/list) instead of wrapping them
      * in a `text/event-stream` SSE envelope.
      *
-     * The MCP specification recommends: "If the server is only sending one
-     * response with no notifications, it SHOULD prefer application/json."
+     * **Warning**: JSON mode silently drops all in-flight notifications
+     * (progress, logging) because the SDK response stream has no SSE
+     * controller. Only the final tool result reaches the client.
+     * Enable only if your server never sends progress or log notifications.
      *
-     * Streaming responses (progress, notifications) always use SSE regardless.
-     *
-     * @default true (spec-compliant JSON responses)
+     * @default false (SSE streaming — supports progress and notifications)
      */
-    MCP_JSON_RESPONSE: booleanFromEnv(true),
+    MCP_JSON_RESPONSE: booleanFromEnv(false),
 
     // ==========================================================================
     // TLS Configuration (HTTPS mode)

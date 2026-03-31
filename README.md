@@ -238,7 +238,7 @@ Defaults → .env file → Config file → Environment variables → Programmati
 | `MCP_BIND_HOST` | `127.0.0.1` | Host to bind to |
 | `MCP_PORT` | `8000` | Port to listen on |
 | `MCP_STATELESS` | `false` | Stateless mode (no sessions) |
-| `MCP_JSON_RESPONSE` | `true` | Prefer JSON over SSE for non-streaming responses |
+| `MCP_JSON_RESPONSE` | `false` | Prefer JSON over SSE for non-streaming responses |
 | `MCP_BODY_SIZE_LIMIT` | `1mb` | Max request body size |
 | `LOG_LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing & metrics |

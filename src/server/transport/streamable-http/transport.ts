@@ -145,7 +145,7 @@ export class StreamableHttpTransport {
     options: StreamableHttpTransportOptions = {},
   ) {
     this.sessionManager = sessionManager;
-    const enableJsonResponse = options.enableJsonResponse ?? true;
+    const enableJsonResponse = options.enableJsonResponse ?? false;
 
     this.handler = options.stateless
       ? new StatelessHandler(sessionFactory, enableJsonResponse)
