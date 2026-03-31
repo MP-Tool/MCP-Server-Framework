@@ -104,11 +104,15 @@ function discoverConfigFile(): string | undefined {
 /**
  * Resolve an explicitly specified config file path.
  *
- * An explicit path MUST exist and MUST have a supported extension.
- * This is strict by design — if the user explicitly points to a file,
- * a missing file or wrong extension is always an error.
+ * An explicit path MUST have a supported extension — an unsupported
+ * extension is always a hard error (typo in env var).
+ *
+ * A missing file is treated as a soft warning: the consumer may have
+ * set `MCP_CONFIG_FILE_PATH` for a file that doesn't exist yet in
+ * the current environment (e.g. Docker volume not mounted). The server
+ * continues without config-file values.
  */
-function resolveExplicitPath(rawPath: string): string {
+function resolveExplicitPath(rawPath: string): string | undefined {
   const absolutePath = resolve(rawPath);
   const ext = extname(absolutePath).toLowerCase();
 
@@ -116,18 +120,21 @@ function resolveExplicitPath(rawPath: string): string {
     throw ConfigurationError.unsupportedFormat(ext);
   }
 
-  if (!existsSync(absolutePath)) {
-    throw ConfigurationError.fileNotFound(absolutePath);
+  // Check existence and file-type
+  let isFile = false;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- config path from trusted env var
+    isFile = statSync(absolutePath).isFile();
+  } catch {
+    // file doesn't exist or is inaccessible — handled below
   }
 
-  try {
-    const stat = statSync(absolutePath);
-    if (!stat.isFile()) {
-      throw ConfigurationError.fileNotFound(absolutePath);
-    }
-  } catch (error) {
-    if (error instanceof ConfigurationError) throw error;
-    throw ConfigurationError.fileNotFound(absolutePath);
+  if (!isFile) {
+    addStartupWarning(
+      `Config file not found: ${absolutePath} (set via ${CONFIG_FILE_ENV_VAR}). ` +
+        `Continuing without config file — using environment variables only.`,
+    );
+    return undefined;
   }
 
   return absolutePath;
@@ -146,8 +153,10 @@ function autoDiscover(): string | undefined {
   for (const filename of DISCOVERY_FILENAMES) {
     const candidate = resolve(cwd, filename);
 
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- candidate is resolved from safe DISCOVERY_FILENAMES list
     if (existsSync(candidate)) {
       try {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- same as above
         const stat = statSync(candidate);
         if (stat.isFile()) {
           return candidate;
@@ -195,6 +204,7 @@ function parseConfigFile(filePath: string): {
 /** Read file content with error wrapping */
 function readFileSafe(filePath: string): string {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is pre-validated by resolveExplicitPath / autoDiscover
     return readFileSync(filePath, "utf-8");
   } catch (cause) {
     throw ConfigurationError.fileReadFailed(filePath, cause instanceof Error ? cause : undefined);

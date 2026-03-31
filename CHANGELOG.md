@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.4] - Improvements, and security hardening
+## [1.0.5] - unreleased
+
+### Fixed
+
+- **Graceful handling of missing `MCP_CONFIG_FILE_PATH`**: If `MCP_CONFIG_FILE_PATH` points to a file that doesn't exist (e.g. Docker volume not mounted, wrong path in env), the server no longer crashes with `ConfigurationError`. Instead a startup warning is buffered and the server continues using environment variables only. An unsupported file extension remains a hard error (typo in env var).
+
+ - Improvements, and security hardening
+
+## [1.0.4] - fix: SSE keepalive, log notification wiring, session logging, security improvements
 
 ### Added
 
