@@ -304,6 +304,39 @@ export interface ToolContext {
   ) => Promise<ElicitResult> | undefined;
 
   /**
+   * Sends a raw MCP server notification to the connected client.
+   *
+   * **MCP Protocol**: Sends an arbitrary `ServerNotification` through the
+   * current request's transport. This is the low-level escape hatch for
+   * sending any notification type defined by the MCP specification.
+   *
+   * Common notification types:
+   * - `notifications/message` — Log messages (prefer using the logger pipeline instead)
+   * - `notifications/resources/updated` — Signal that a resource has changed
+   * - `notifications/resources/list_changed` — Signal that the resource list has changed
+   * - `notifications/tools/list_changed` — Signal that the tool list has changed
+   * - `notifications/prompts/list_changed` — Signal that the prompt list has changed
+   *
+   * @param notification - A valid MCP `ServerNotification` object
+   *
+   * @example
+   * ```typescript
+   * // Send a resource-updated notification
+   * await context.sendNotification({
+   *   method: 'notifications/resources/updated',
+   *   params: { uri: 'file:///config.json' },
+   * });
+   *
+   * // Send a custom log message (prefer logger pipeline for standard logging)
+   * await context.sendNotification({
+   *   method: 'notifications/message',
+   *   params: { level: 'info', data: 'Custom notification payload' },
+   * });
+   * ```
+   */
+  readonly sendNotification: (notification: ServerNotification) => Promise<void>;
+
+  /**
    * Authentication context for the current request.
    *
    * Available when auth middleware is configured on the server.

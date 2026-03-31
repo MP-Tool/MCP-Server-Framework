@@ -252,6 +252,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
     stateless: boolean,
   ): {
     reportProgress: TaskCreateContext["reportProgress"];
+    sendNotification: TaskCreateContext["sendNotification"];
     abortSignal: AbortSignal;
     requestId: string | number;
     sessionId?: string | undefined;
@@ -262,6 +263,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
 
     return {
       reportProgress,
+      sendNotification: extra.sendNotification.bind(extra),
       abortSignal: extra.signal,
       requestId: extra.requestId,
       sessionId: extra.sessionId,

@@ -299,6 +299,12 @@ export class McpNotificationLogger {
    */
   public createContextLogger(handler: LogNotificationHandler): (level: LogLevel, message: string) => void {
     return (level: LogLevel, message: string): void => {
+      // Trace-level is too verbose for MCP client notifications.
+      // It's intended for local debugging (file/console writers), not the protocol layer.
+      if (level === "trace") {
+        return;
+      }
+
       const mcpLevel = LOG_LEVEL_MAP[level];
       const sanitized = this.injectionGuard.sanitize(message);
       const safeMessage = this.secretScrubber.scrub(sanitized);

@@ -466,6 +466,7 @@ export class Logger implements LoggerInterface {
   private log(level: LogLevel, message: string, ...args: unknown[]): void {
     // Step 1: Level filtering (fast path for disabled levels)
     if (LOG_LEVELS[level] < this.level) {
+      this.forwardToMcpBridge(level, message, args);
       return;
     }
 
@@ -528,6 +529,42 @@ export class Logger implements LoggerInterface {
         // Silently ignore — MCP client notification is best-effort.
         // A throwing callback must never crash the caller's logging call.
       }
+    }
+  }
+
+  /**
+   * Forward a below-server-level message to the MCP notification bridge.
+   *
+   * MCP clients may request a lower log level via `logging/setLevel` than
+   * the server's configured level. This method ensures those messages still
+   * reach the MCP client without running the full writer pipeline (Steps 2–10).
+   *
+   * No-op when no `sendMcpLog` callback is present in the AsyncLocalStorage
+   * context (i.e. outside of tool execution or when no session is attached).
+   */
+  private forwardToMcpBridge(level: LogLevel, message: string, args: unknown[]): void {
+    // Trace-level messages are never forwarded to MCP clients (too verbose).
+    // The filter is also enforced in createContextLogger(), but we short-circuit
+    // here to avoid unnecessary string formatting work.
+    if (level === "trace") {
+      return;
+    }
+
+    const mcpLog = getContext()?.sendMcpLog;
+    if (!mcpLog) {
+      return;
+    }
+
+    const { formatArgs } = this.extractMetadata(args);
+    let formatted = util.format(message, ...formatArgs);
+    if (formatted.length > MAX_MESSAGE_LENGTH) {
+      formatted = formatted.slice(0, MAX_MESSAGE_LENGTH - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX;
+    }
+
+    try {
+      mcpLog(level, this.sanitizeOutput(formatted));
+    } catch {
+      // Best-effort — a throwing MCP callback must never crash the logging call.
     }
   }
 

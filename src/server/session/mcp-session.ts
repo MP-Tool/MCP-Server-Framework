@@ -40,6 +40,7 @@ import {
 import { hasAllRequiredScopes } from "../../mcp/capabilities/registry/scope-enforcement.js";
 import { logger as frameworkLogger } from "../../logger/index.js";
 import type { LogNotificationHandler, McpLogLevel } from "../../logger/index.js";
+import { MCP_LEVEL_ORDER } from "../../logger/core/constants.js";
 
 // ============================================================================
 // Types
@@ -145,6 +146,9 @@ export class McpSession implements LogNotificationHandler {
 
   /** URIs this session has subscribed to for resource update notifications */
   private readonly subscribedURIs = new Set<string>();
+
+  /** Client-requested minimum log level for notifications/message (per-session, per MCP spec) */
+  private mcpLogMinLevel: McpLogLevel = "debug";
 
   private readonly logger = frameworkLogger.child({ component: LOG_COMPONENT });
 
@@ -255,6 +259,7 @@ export class McpSession implements LogNotificationHandler {
     ToolRegistry.bindToSdk(this.sdk, tools, {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
+      logNotificationHandler: this,
     });
   }
 
@@ -358,8 +363,14 @@ export class McpSession implements LogNotificationHandler {
    * Sends a log notification to the connected MCP client.
    * Implements {@link LogNotificationHandler} so this session can be
    * registered directly with the MCP notification logger.
+   *
+   * Respects the per-session minimum level set by the client via `logging/setLevel`.
+   * Messages below the requested level are silently dropped.
    */
   async sendLogNotification(level: McpLogLevel, message: string): Promise<void> {
+    if (MCP_LEVEL_ORDER.indexOf(level) < MCP_LEVEL_ORDER.indexOf(this.mcpLogMinLevel)) {
+      return;
+    }
     await this.sdk.server.sendLoggingMessage({ level, data: message });
   }
 
@@ -372,16 +383,20 @@ export class McpSession implements LogNotificationHandler {
    *
    * Per MCP Spec: When the server declares `logging: {}` capability, clients
    * can send `logging/setLevel` to control which log notifications they receive.
-   * The handler updates the McpNotificationLogger's minimum level so that
-   * only messages at or above the requested level are forwarded.
+   * The handler stores the requested level per-session so that each client
+   * independently controls its own notification verbosity.
    *
-   * @param onSetLevel - Callback to apply the requested level (typically mcpLogger.setMinLevel)
+   * @param defaultMinLevel - Initial minimum level (defaults to "debug" = send all)
    */
-  registerSetLevelHandler(onSetLevel: (level: McpLogLevel) => void): void {
+  registerSetLevelHandler(defaultMinLevel?: McpLogLevel): void {
+    if (defaultMinLevel !== undefined) {
+      this.mcpLogMinLevel = defaultMinLevel;
+    }
+
     this.sdk.server.setRequestHandler(SetLevelRequestSchema, async (request) => {
       // @type-narrowing — SDK validates params against SetLevelRequestParamsSchema
       const level = request.params.level as McpLogLevel;
-      onSetLevel(level);
+      this.mcpLogMinLevel = level;
       this.logger.debug(LogMessages.LOG_LEVEL_SET, level);
       return {};
     });
