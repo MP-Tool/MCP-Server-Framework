@@ -199,13 +199,15 @@ export interface BaseHttpTransportOptions {
    *
    * - `'DENY'` — Never allow framing (most secure)
    * - `'SAMEORIGIN'` — Allow from same origin
-   * - `'false'` — Disable X-Frame-Options header
+   *
+   * To allow framing from specific origins, use CSP `frame-ancestors`
+   * via `helmetCsp` instead.
    *
    * Can also be configured via `MCP_HELMET_FRAME_OPTIONS` env var.
    *
    * @default 'DENY'
    */
-  helmetFrameOptions?: "DENY" | "SAMEORIGIN" | "false";
+  helmetFrameOptions?: "DENY" | "SAMEORIGIN";
 }
 
 // ── Discriminated Union Members ──────────────────────────────────────────────

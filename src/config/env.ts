@@ -246,11 +246,13 @@ export const frameworkEnvSchema = z
      * Controls whether the server can be embedded in frames.
      * - `'DENY'`: Never allow framing (most secure)
      * - `'SAMEORIGIN'`: Allow framing from same origin
-     * - `'false'`: Disable X-Frame-Options header
+     *
+     * To allow framing from specific origins, use CSP `frame-ancestors`
+     * via {@link MCP_HELMET_CSP} instead.
      *
      * @default 'DENY'
      */
-    MCP_HELMET_FRAME_OPTIONS: z.enum(["DENY", "SAMEORIGIN", "false"]).default("DENY"),
+    MCP_HELMET_FRAME_OPTIONS: z.enum(["DENY", "SAMEORIGIN"]).default("DENY"),
 
     // ==========================================================================
     // Authentication
