@@ -19,6 +19,7 @@
  */
 
 import { logger as baseLogger } from "../../logger/index.js";
+import { stripTrailingSlashes } from "../../utils/string-helpers.js";
 
 // ============================================================================
 // Logger
@@ -186,7 +187,7 @@ function validateDiscoveryUrl(url: string): void {
  * @throws If the fetch fails or required fields are missing
  */
 export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscoveryDocument> {
-  const normalizedIssuer = issuerUrl.replace(/\/+$/, "");
+  const normalizedIssuer = stripTrailingSlashes(issuerUrl);
   const discoveryUrl = `${normalizedIssuer}${WELL_KNOWN_PATH}`;
 
   // SSRF protection: validate URL before fetching (CWE-918)
@@ -250,7 +251,7 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
   };
 
   // RFC 8414: issuer in the discovery document MUST match the requested issuer URL
-  if (document.issuer && document.issuer.replace(/\/+$/, "") !== normalizedIssuer) {
+  if (document.issuer && stripTrailingSlashes(document.issuer) !== normalizedIssuer) {
     logger.error(LogMessages.ISSUER_MISMATCH, normalizedIssuer, document.issuer);
     throw new Error(
       `OIDC discovery issuer mismatch: requested ${normalizedIssuer} but document declares ${document.issuer}. ` +
@@ -282,7 +283,7 @@ export async function getOidcDiscovery(
   issuerUrl: string,
   ttlMs: number = DEFAULT_DISCOVERY_TTL_MS,
 ): Promise<OidcDiscoveryDocument> {
-  const normalizedIssuer = issuerUrl.replace(/\/+$/, "");
+  const normalizedIssuer = stripTrailingSlashes(issuerUrl);
   const cached = discoveryCache.get(normalizedIssuer);
 
   if (cached) {

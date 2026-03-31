@@ -74,6 +74,7 @@ import { logger as baseLogger } from "../logger/index.js";
 import { setTraceContextExtractor } from "../logger/core/index.js";
 import type { TraceContextExtractor, TraceContext } from "../logger/core/index.js";
 import { getFrameworkConfig } from "../config/index.js";
+import { stripTrailingSlashes } from "../utils/string-helpers.js";
 import {
   getTelemetryConfig,
   TELEMETRY_LOG_COMPONENTS,
@@ -349,7 +350,7 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
         // (health probes, readiness checks, Prometheus scrapes).
         // These fire frequently and produce low-value trace data.
         ignoreIncomingRequestHook: (request: IncomingMessage) => {
-          const path = (request.url?.split("?")[0] ?? "").replace(/\/+$/, "");
+          const path = stripTrailingSlashes(request.url?.split("?")[0] ?? "");
           return TRACE_IGNORED_ROUTES.has(path);
         },
         // Prevent recursive instrumentation of OTLP exporter HTTP calls.
