@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-framework",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Production-ready MCP Server Framework with built-in logging, metrics, sessions, and multi-transport support.",
   "license": "LGPL-3.0",
   "author": "Marcel Pfennig",
