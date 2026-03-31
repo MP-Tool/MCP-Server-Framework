@@ -197,6 +197,7 @@ export type {
   ElicitRequestFormParams,
   ElicitRequestURLParams,
   ElicitResult,
+  ServerNotification,
 } from "@modelcontextprotocol/sdk/types.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════

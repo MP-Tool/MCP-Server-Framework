@@ -340,3 +340,22 @@ export function isLocalHost(host: string): boolean {
     cleanHost === "[::1]"
   );
 }
+
+/**
+ * Removes trailing slash characters from a string.
+ *
+ * Uses a linear scan instead of regex to avoid polynomial ReDoS
+ * on attacker-controlled input (CWE-1333).
+ *
+ * @example
+ * ```typescript
+ * stripTrailingSlashes('https://example.com/');   // 'https://example.com'
+ * stripTrailingSlashes('https://example.com///'); // 'https://example.com'
+ * stripTrailingSlashes('https://example.com');    // 'https://example.com'
+ * ```
+ */
+export function stripTrailingSlashes(str: string): string {
+  let end = str.length;
+  while (end > 0 && str.charCodeAt(end - 1) === 47) end--; // 47 = '/'
+  return end === str.length ? str : str.slice(0, end);
+}

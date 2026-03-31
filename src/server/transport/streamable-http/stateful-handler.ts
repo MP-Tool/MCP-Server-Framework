@@ -20,6 +20,7 @@ import type { SessionFactory } from "../types.js";
 import { JsonRpcErrorCode, HttpStatus, TransportErrorMessage } from "../../../errors/index.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 import { TRANSPORT_LOG_COMPONENTS, MCP_HEADERS, SESSION_ID_QUERY_PARAMS } from "../constants.js";
+import { startSseKeepalive } from "../sse-keepalive.js";
 import type { TransportRequestHandler } from "./transport.js";
 import { sendError, shortId } from "./transport.js";
 
@@ -125,7 +126,16 @@ export class StatefulHandler implements TransportRequestHandler {
     /* v8 ignore start - SDK SSE stream handling */
     try {
       this.injectSessionIdHeader(req, sessionId);
-      await transport.handleRequest(req, res);
+
+      // Start keepalive BEFORE awaiting — the SDK's handleRequest() resolves only
+      // when the SSE stream closes (Hono adapter blocks on ReadableStream completion).
+      // First keepalive fires after 30s, long after SDK has set SSE headers (<1ms).
+      const stopKeepalive = startSseKeepalive(res);
+      try {
+        await transport.handleRequest(req, res);
+      } finally {
+        stopKeepalive();
+      }
     } catch (error) {
       logger.error(LogMessages.GET_ERROR, sessionId, error);
       sendError(

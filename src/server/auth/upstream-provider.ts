@@ -55,6 +55,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { OAuthTokenRevocationRequest } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { logger as baseLogger } from "../../logger/index.js";
+import { stripTrailingSlashes } from "../../utils/string-helpers.js";
 
 // ============================================================================
 // Logger
@@ -252,7 +253,7 @@ export function createUpstreamOAuthProvider(options: UpstreamOAuthOptions): Upst
   } = options;
 
   const logger = baseLogger.child({ component: LOG_COMPONENT });
-  const serverCallbackUrl = `${serverUrl.replace(/\/+$/, "")}/callback`;
+  const serverCallbackUrl = `${stripTrailingSlashes(serverUrl)}/callback`;
 
   // ── State Maps ──────────────────────────────────────────────────────────
 

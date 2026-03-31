@@ -18,7 +18,7 @@ It's opinionated where it matters (security defaults, structured logging, transp
 
 ## Disclaimer
 
-This framework is a personal project built with best effort and care. AI tools (GitHub Copilot, Claude) were used extensively during development — for code generation, architecture exploration, and documentation. All AI-generated code and documentation has been critically reviewed, tested, and refined by me.
+This framework is a personal project built with best effort and care. AI tools (GitHub Copilot, Claude) were used during development — for code generation, architecture exploration, and documentation. All AI-generated code and documentation has been critically reviewed, tested, and refined by me.
 
 That said: this software is provided **as-is, without warranty of any kind**. See the [license](LICENSE.txt) for the full legal terms. If you find bugs or have ideas, [issues](https://github.com/MP-Tool/mcp-server-framework/issues) and contributions are always welcome.
 
@@ -238,7 +238,7 @@ Defaults → .env file → Config file → Environment variables → Programmati
 | `MCP_BIND_HOST` | `127.0.0.1` | Host to bind to |
 | `MCP_PORT` | `8000` | Port to listen on |
 | `MCP_STATELESS` | `false` | Stateless mode (no sessions) |
-| `MCP_JSON_RESPONSE` | `true` | Prefer JSON over SSE for non-streaming responses |
+| `MCP_JSON_RESPONSE` | `false` | Prefer JSON over SSE for non-streaming responses |
 | `MCP_BODY_SIZE_LIMIT` | `1mb` | Max request body size |
 | `LOG_LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing & metrics |

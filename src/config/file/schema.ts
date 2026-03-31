@@ -157,8 +157,8 @@ const securitySection = z
     helmet_hsts: z.boolean(),
     /** Content Security Policy: custom string, or 'false' to disable */
     helmet_csp: z.string().min(1),
-    /** X-Frame-Options: DENY, SAMEORIGIN, or 'false' to disable */
-    helmet_frame_options: z.enum(["DENY", "SAMEORIGIN", "false"]),
+    /** X-Frame-Options: DENY or SAMEORIGIN */
+    helmet_frame_options: z.enum(["DENY", "SAMEORIGIN"]),
     /** Maximum request body size for express.json() (e.g. '1mb', '500kb') */
     body_size_limit: z.string().regex(BYTE_SIZE_REGEX),
   })

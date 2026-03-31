@@ -123,14 +123,14 @@ export const frameworkEnvSchema = z
      * responses (e.g. tools/list, resources/list) instead of wrapping them
      * in a `text/event-stream` SSE envelope.
      *
-     * The MCP specification recommends: "If the server is only sending one
-     * response with no notifications, it SHOULD prefer application/json."
+     * **Warning**: JSON mode silently drops all in-flight notifications
+     * (progress, logging) because the SDK response stream has no SSE
+     * controller. Only the final tool result reaches the client.
+     * Enable only if your server never sends progress or log notifications.
      *
-     * Streaming responses (progress, notifications) always use SSE regardless.
-     *
-     * @default true (spec-compliant JSON responses)
+     * @default false (SSE streaming — supports progress and notifications)
      */
-    MCP_JSON_RESPONSE: booleanFromEnv(true),
+    MCP_JSON_RESPONSE: booleanFromEnv(false),
 
     // ==========================================================================
     // TLS Configuration (HTTPS mode)
@@ -246,11 +246,13 @@ export const frameworkEnvSchema = z
      * Controls whether the server can be embedded in frames.
      * - `'DENY'`: Never allow framing (most secure)
      * - `'SAMEORIGIN'`: Allow framing from same origin
-     * - `'false'`: Disable X-Frame-Options header
+     *
+     * To allow framing from specific origins, use CSP `frame-ancestors`
+     * via {@link MCP_HELMET_CSP} instead.
      *
      * @default 'DENY'
      */
-    MCP_HELMET_FRAME_OPTIONS: z.enum(["DENY", "SAMEORIGIN", "false"]).default("DENY"),
+    MCP_HELMET_FRAME_OPTIONS: z.enum(["DENY", "SAMEORIGIN"]).default("DENY"),
 
     // ==========================================================================
     // Authentication
@@ -382,9 +384,9 @@ export const frameworkEnvSchema = z
      * SDK diagnostic log level.
      *
      * Standard OTEL env var. Activates diag logging on the OTEL SDK.
-     * Values: 'NONE', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'VERBOSE', 'ALL'.
+     * Values: 'none', 'error', 'warn', 'info', 'debug', 'verbose', 'all'.
      */
-    OTEL_LOG_LEVEL: z.string().min(1).optional(),
+    OTEL_LOG_LEVEL: z.string().min(1).max(7).optional().default("none"),
 
     /**
      * Periodic metric export interval.

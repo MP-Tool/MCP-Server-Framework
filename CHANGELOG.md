@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - Improvements, and security hardening
+
+### Added
+
+- **SSE stream keepalive**: Idle SSE streams (GET `/mcp`, GET `/sse`) are now kept alive with periodic SSE comment lines (`:keepalive`) every 30 seconds. Prevents TCP/proxy idle timeouts from terminating long-lived server-to-client notification streams. Affects both Streamable HTTP (stateful) and legacy SSE transports. Per WHATWG SSE Spec Section 9.2.7.
+- **MCP log notification wiring**: Framework logger calls during tool execution are now forwarded as `notifications/message` to the connected MCP client. Uses AsyncLocalStorage context injection so any `logger.*()` call inside a tool handler automatically reaches the client — no manual notification code needed.
+- **`sendNotification` on `ToolContext`**: Tool handlers can now send arbitrary MCP server notifications (e.g. `notifications/resources/updated`) via `context.sendNotification()`. Re-exports `ServerNotification` type from the SDK.
+- **Per-session `logging/setLevel`**: Each MCP client session independently controls its own log notification verbosity via the `logging/setLevel` request. Previously, `setLevel` was global across all sessions.
+- **Progress reporter logging**: `createProgressReporter()` now logs trace/debug messages for rate-limiting, successful sends, and failures — aids debugging without flooding MCP clients.
+
+### Changed
+
+- **`MCP_JSON_RESPONSE` default changed to `false`**: SSE streaming is now the default for all responses. JSON mode silently drops in-flight notifications (progress, logging) because the SDK response stream has no SSE controller — only the final tool result reaches the client. Updated JSDoc with explicit warning.
+
+### Fixed
+
+- **Trace-level MCP notification spam**: `logger.trace()` calls (e.g. progress rate-limiting diagnostics) were being forwarded as MCP `debug` notifications because `trace` mapped to `"debug"` in `LOG_LEVEL_TO_MCP`. Now filtered at both `createContextLogger()` and `forwardToMcpBridge()` entry points — trace stays local.
+
+### Security
+
+- **CWE-770: Rate limiter before auth** (CodeQL #1): Moved rate limiter middleware before authentication middleware in Express pipeline. Previous order allowed unauthenticated clients to bypass rate limiting and brute-force auth endpoints. New order: DNS Rebinding → Rate Limiter → Auth → Protocol Version.
+- **CWE-693: Remove `frameguard: false` option** (CodeQL #2): Removed the ability to disable X-Frame-Options entirely via `MCP_HELMET_FRAME_OPTIONS=false`. Disabling clickjacking protection is a security misconfiguration. Only `DENY` and `SAMEORIGIN` are now allowed. For granular framing control, use CSP `frame-ancestors` via `MCP_HELMET_CSP`.
+- **CWE-1333: ReDoS in URL trailing-slash removal** (CodeQL #3/#4/#5): Replaced polynomial-time regex `/\/+$/` with linear `stripTrailingSlashes()` utility using `charCodeAt` loop. Fixed in `oidc-discovery.ts` (3 occurrences), `upstream-provider.ts` (1), and `telemetry/sdk.ts` (1).
+- **`eslint-plugin-security` integration**: Added Node.js security linting rules (OWASP patterns: eval injection, child_process, unsafe regex, non-literal require, object injection). Custom overrides for framework-specific patterns (File-Writer, ESM-only).
+- **Pinned npm version in publish workflow** (Scorecard #7): Changed `npm install -g npm@latest` to `npm@11.12.1` in `publish-npm.yml` for reproducible builds and supply-chain integrity.
+
 ## [1.0.3] - BREAKING: Remove connection module, add ReadinessConfig
 
 ### Added

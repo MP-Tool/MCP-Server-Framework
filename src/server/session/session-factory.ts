@@ -28,7 +28,7 @@ import {
 } from "@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js";
 import { buildCapabilities } from "../../mcp/capabilities/index.js";
 import { McpSession } from "./mcp-session.js";
-import { logger as frameworkLogger, mcpLogger } from "../../logger/index.js";
+import { logger as frameworkLogger } from "../../logger/index.js";
 
 // ============================================================================
 // Constants
@@ -232,7 +232,7 @@ export class McpSessionFactory {
     // Register logging/setLevel handler when logging capability is enabled
     const hasLogging = "logging" in this.computedCapabilities && this.computedCapabilities.logging != null;
     if (hasLogging) {
-      session.registerSetLevelHandler((level) => mcpLogger.setMinLevel(level));
+      session.registerSetLevelHandler();
     }
 
     // Install scope-filtered list handlers (opt-in via auth.scopeFilterCapabilities)

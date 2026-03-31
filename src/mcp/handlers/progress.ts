@@ -12,7 +12,17 @@
  * @module mcp/handlers/progress
  */
 
+import { logger as baseLogger } from "../../logger/index.js";
 import type { ProgressData, ProgressReporter, SendNotificationFn, ProgressToken } from "../types/index.js";
+
+const logger = baseLogger.child({ component: "progress" });
+
+const LogMessages = {
+  NO_TOKEN: "Progress reporter not created: no progressToken in request _meta",
+  RATE_LIMITED: "Progress notification skipped: rate-limited (min interval %dms)",
+  SENT: "Progress notification sent: token=%s progress=%d/%s",
+  SEND_FAILED: "Progress notification failed (best-effort, ignored): %s",
+} as const;
 
 // ============================================================================
 // Constants
@@ -58,6 +68,7 @@ export function createProgressReporter(
   progressToken: ProgressToken | undefined,
 ): ProgressReporter | undefined {
   if (progressToken === undefined) {
+    logger.trace(LogMessages.NO_TOKEN);
     return undefined;
   }
 
@@ -68,6 +79,7 @@ export function createProgressReporter(
 
     // Rate-limit: skip if too soon after last notification
     if (now - lastNotificationTime < PROGRESS_MIN_INTERVAL_MS) {
+      logger.trace(LogMessages.RATE_LIMITED, PROGRESS_MIN_INTERVAL_MS);
       return false;
     }
 
@@ -83,9 +95,11 @@ export function createProgressReporter(
           ...(data.message !== undefined && { message: data.message }),
         },
       });
+      logger.trace(LogMessages.SENT, progressToken, data.progress, data.total ?? "?");
       return true;
-    } catch {
+    } catch (error) {
       // Progress notifications are best-effort per MCP specification
+      logger.debug(LogMessages.SEND_FAILED, error instanceof Error ? error.message : String(error));
       return false;
     }
   };

@@ -105,14 +105,14 @@ export interface BaseHttpTransportOptions {
    * responses (e.g. tools/list, resources/list) instead of wrapping them
    * in a `text/event-stream` SSE envelope.
    *
-   * The MCP specification recommends: "If the server is only sending one
-   * response with no notifications, it SHOULD prefer application/json."
-   *
-   * Streaming responses (progress, notifications) always use SSE regardless.
+   * **Warning**: JSON mode silently drops all in-flight notifications
+   * (progress, logging) because the SDK response stream has no SSE
+   * controller. Only the final tool result reaches the client.
+   * Enable only if your server never sends progress or log notifications.
    *
    * Can also be configured via `MCP_JSON_RESPONSE` env var or config file.
    *
-   * @default true (spec-compliant JSON responses)
+   * @default false (SSE streaming — supports progress and notifications)
    */
   enableJsonResponse?: boolean;
 
@@ -199,13 +199,15 @@ export interface BaseHttpTransportOptions {
    *
    * - `'DENY'` — Never allow framing (most secure)
    * - `'SAMEORIGIN'` — Allow from same origin
-   * - `'false'` — Disable X-Frame-Options header
+   *
+   * To allow framing from specific origins, use CSP `frame-ancestors`
+   * via `helmetCsp` instead.
    *
    * Can also be configured via `MCP_HELMET_FRAME_OPTIONS` env var.
    *
    * @default 'DENY'
    */
-  helmetFrameOptions?: "DENY" | "SAMEORIGIN" | "false";
+  helmetFrameOptions?: "DENY" | "SAMEORIGIN";
 }
 
 // ── Discriminated Union Members ──────────────────────────────────────────────

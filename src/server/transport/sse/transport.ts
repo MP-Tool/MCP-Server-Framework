@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { HttpStatus, TransportError, TransportErrorMessage } from "../../../errors/index.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 import { TRANSPORT_LOG_COMPONENTS, SSE_EVENTS, SESSION_ID_DISPLAY_LENGTH } from "../constants.js";
+import { startSseKeepalive } from "../sse-keepalive.js";
 
 /**
  * Response object that may have a flush method added by middleware.
@@ -53,6 +54,7 @@ export class SseTransport implements Transport {
   private _messageEndpoint: string;
   private _started = false;
   private _closed = false;
+  private _stopKeepalive: (() => void) | null = null;
 
   onclose?: () => void;
   onerror?: (error: Error) => void;
@@ -110,6 +112,9 @@ export class SseTransport implements Transport {
     const query = new URLSearchParams({ sessionId: this._sessionId });
     const endpointUrl = `${this._messageEndpoint}?${query.toString()}`;
     this._sendSseEvent(SSE_EVENTS.ENDPOINT, endpointUrl);
+
+    // Start SSE keepalive to prevent idle stream termination
+    this._stopKeepalive = startSseKeepalive(this._res);
   }
 
   /**
@@ -133,6 +138,10 @@ export class SseTransport implements Transport {
     if (this._closed) return;
 
     this._closed = true;
+
+    // Stop keepalive before ending the stream
+    this._stopKeepalive?.();
+    this._stopKeepalive = null;
 
     // End the SSE stream
     if (!this._res.writableEnded) {

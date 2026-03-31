@@ -216,15 +216,9 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
     cspOption = { directives };
   }
 
-  // Build frameguard option
-  let frameguardOption: { action: "deny" | "sameorigin" } | boolean;
-  if (options?.helmetFrameOptions === "false") {
-    frameguardOption = false;
-  } else if (options?.helmetFrameOptions === "SAMEORIGIN") {
-    frameguardOption = { action: "sameorigin" };
-  } else {
-    frameguardOption = { action: "deny" };
-  }
+  // Build frameguard option (CWE-693: disabling X-Frame-Options is not allowed)
+  const frameguardOption: { action: "deny" | "sameorigin" } =
+    options?.helmetFrameOptions === "SAMEORIGIN" ? { action: "sameorigin" } : { action: "deny" };
 
   app.use(
     helmet({
@@ -389,8 +383,14 @@ function setupMcpRoutes(
   // Streamable HTTP transport on /mcp endpoint
   // Security middleware (Express level — not handled by SDK)
   app.use(TRANSPORT_ROUTES.MCP, dnsRebindingProtection); // 1. DNS Rebinding Protection (MUST)
+  app.use(
+    TRANSPORT_ROUTES.MCP,
+    createRateLimiter({
+      trustProxyConfigured: options?.trustProxy !== undefined,
+    }),
+  ); // 2. Rate Limiting (before auth to mitigate brute-force, CWE-770)
 
-  // 2. Bearer Auth / Custom Header Auth (only when auth is configured)
+  // 3. Bearer Auth / Custom Header Auth (only when auth is configured)
   if (options?.auth) {
     if (options.auth.headerName && !isFullOAuthProvider(options.auth.provider)) {
       // Custom header auth (e.g. X-API-Key) — only with TokenVerifier
@@ -422,12 +422,6 @@ function setupMcpRoutes(
     }
   }
 
-  app.use(
-    TRANSPORT_ROUTES.MCP,
-    createRateLimiter({
-      trustProxyConfigured: options?.trustProxy !== undefined,
-    }),
-  ); // 3. Rate Limiting
   app.use(TRANSPORT_ROUTES.MCP, validateProtocolVersion); // 4. Protocol Version (early rejection)
   // Note: Content-Type, Accept, and JSON-RPC validation are handled by the SDK
   // transport internally — no need to duplicate here.

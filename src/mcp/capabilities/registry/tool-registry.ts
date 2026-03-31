@@ -19,7 +19,9 @@ import type { z } from "zod";
 
 import type { ToolDefinition, ToolContext, ToolProvider } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
-import type { Logger } from "../../../logger/index.js";
+import type { Logger, LogNotificationHandler } from "../../../logger/index.js";
+import { mcpLogger } from "../../../logger/index.js";
+import { withExtendedContext } from "../../../logger/core/context.js";
 import { JsonRpcErrorCode, AppError } from "../../../errors/index.js";
 import { withSpan, getServerMetrics, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
@@ -52,6 +54,8 @@ const SdkBindingMessages = {
 export interface ToolBindOptions {
   readonly logger: Logger;
   readonly stateless: boolean;
+  /** Session-level notification handler for bridging framework logs → MCP notifications/message */
+  readonly logNotificationHandler?: LogNotificationHandler | undefined;
 }
 
 // ============================================================================
@@ -151,7 +155,12 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
    * @internal
    */
   static bindToSdk(sdk: McpServer, tools: readonly ToolDefinition[], options: ToolBindOptions): void {
-    const { logger, stateless } = options;
+    const { logger, stateless, logNotificationHandler } = options;
+
+    // Bridge framework logger → MCP notifications/message for this session.
+    // When set, any logger.*() call during tool execution is also forwarded
+    // to the connected MCP client as a notifications/message notification.
+    const sendMcpLog = logNotificationHandler ? mcpLogger.createContextLogger(logNotificationHandler) : undefined;
 
     if (tools.length === 0) {
       logger.trace(SdkBindingMessages.NO_TOOLS);
@@ -201,22 +210,27 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           const elicitInput =
             isStateful && clientCaps?.elicitation ? sdk.server.elicitInput.bind(sdk.server) : undefined;
 
-          return ToolRegistry.executeToolCall(
-            tool,
-            args,
-            {
-              reportProgress,
-              abortSignal,
-              requestId,
-              sessionId,
-              stateless,
-              ...(auth && { auth }),
-              ...(createMessage && { createMessage }),
-              ...(listRoots && { listRoots }),
-              ...(elicitInput && { elicitInput }),
-            },
-            logger,
-          );
+          const toolContext: ToolContext = {
+            reportProgress,
+            abortSignal,
+            requestId,
+            sessionId,
+            stateless,
+            sendNotification: extra.sendNotification.bind(extra),
+            ...(auth && { auth }),
+            ...(createMessage && { createMessage }),
+            ...(listRoots && { listRoots }),
+            ...(elicitInput && { elicitInput }),
+          };
+
+          // Wrap tool execution in AsyncLocalStorage context so that all
+          // logger.*() calls during the handler are forwarded as MCP
+          // notifications/message to the connected client (Logger Step 11).
+          return sendMcpLog
+            ? withExtendedContext({ sendMcpLog, requestId: String(requestId), ...(sessionId && { sessionId }) }, () =>
+                ToolRegistry.executeToolCall(tool, args, toolContext, logger),
+              )
+            : ToolRegistry.executeToolCall(tool, args, toolContext, logger);
         },
       );
 

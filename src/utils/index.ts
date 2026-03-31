@@ -31,6 +31,7 @@ export {
   type MessageParams,
   truncateId,
   isLocalHost,
+  stripTrailingSlashes,
   parseByteSize,
   BYTE_SIZE_REGEX,
   parseDuration,
