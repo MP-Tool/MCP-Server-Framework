@@ -60,7 +60,8 @@ jobs:
         run: |
           echo "Current npm version: $(npm --version)"
           # Trusted Publishing requires npm 11.5.1+
-          npm install -g npm@latest
+          # Pinned to specific version for reproducibility (Scorecard: Pinned-Dependencies)
+          npm install -g npm@11.12.1
           echo "Upgraded npm version: $(npm --version)"
 
       - name: Install dependencies

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CWE-770: Rate limiter before auth** (CodeQL #1): Moved rate limiter middleware before authentication middleware in Express pipeline. Previous order allowed unauthenticated clients to bypass rate limiting and brute-force auth endpoints. New order: DNS Rebinding → Rate Limiter → Auth → Protocol Version.
 - **CWE-693: Remove `frameguard: false` option** (CodeQL #2): Removed the ability to disable X-Frame-Options entirely via `MCP_HELMET_FRAME_OPTIONS=false`. Disabling clickjacking protection is a security misconfiguration. Only `DENY` and `SAMEORIGIN` are now allowed. For granular framing control, use CSP `frame-ancestors` via `MCP_HELMET_CSP`.
 - **CWE-1333: ReDoS in URL trailing-slash removal** (CodeQL #3/#4/#5): Replaced polynomial-time regex `/\/+$/` with linear `stripTrailingSlashes()` utility using `charCodeAt` loop. Fixed in `oidc-discovery.ts` (3 occurrences), `upstream-provider.ts` (1), and `telemetry/sdk.ts` (1).
+- **Pinned npm version in publish workflow** (Scorecard #7): Changed `npm install -g npm@latest` to `npm@11.12.1` in `publish-npm.yml` for reproducible builds and supply-chain integrity.
 
 ## [1.0.3] - BREAKING: Remove connection module, add ReadinessConfig
 
