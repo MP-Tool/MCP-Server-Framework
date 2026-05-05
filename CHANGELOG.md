@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6]
+
+### Changed
+
+- **Dependency updates**: Bumped all direct and transitive dependencies to their latest versions.
+  - `@opentelemetry/resources`, `@opentelemetry/sdk-metrics`, `@opentelemetry/sdk-trace-base`: `2.6.1` → `2.7.1`
+  - `@types/node`: `25.5.0` → `25.6.0`
+  - `@typescript-eslint/*`: `8.58.0` → `8.59.2`
+  - `dotenv`: `17.3.1` → `17.4.2`
+  - `eslint`: `10.1.0` → `10.3.0`
+  - `express-rate-limit`: `8.3.2` → `8.5.0`
+  - `prettier`: `3.8.1` → `3.8.3`
+  - `typedoc`: `0.28.18` → `0.28.19`
+  - `typescript-eslint`: `8.58.0` → `8.59.2`
+  - `vitest`: `4.1.2` → `4.1.5`
+  - `yaml`: `2.8.3` → `2.8.4`
+
+### Security
+
+- **Token permissions hardened across all workflows** (Scorecard #16): Top-level `permissions` in all GitHub Actions workflows are now set to `contents: read` (read-only). Write permissions are scoped to the specific job that requires them. Affected workflows: `docs.yml` (`contents: write` moved to `deploy-docs` job), `publish-npm.yml` (`id-token: write` moved to `publish-npm` job).
+- **Eliminated `actions: write` permission in release workflow**: The `publish` job in `release.yml` previously used `gh workflow run` to trigger `publish-npm.yml`, which required `actions: write`. Replaced with a reusable workflow call (`workflow_call`) — `publish-npm.yml` now exposes a `workflow_call` trigger, so `release.yml` invokes it directly without any elevated permissions.
+
 ## [1.0.5]
 
 ### Fixed

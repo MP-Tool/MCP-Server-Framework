@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: gh-pages
@@ -24,6 +24,8 @@ jobs:
   deploy-docs:
     name: Build & Deploy TypeDoc
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to push generated docs to gh-pages branch
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

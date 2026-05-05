@@ -131,13 +131,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish:
-    name: Trigger npm Publish
+  summary:
+    name: Release Summary
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [check-version, release]
     permissions:
-      actions: write  # Required for triggering workflows
+      contents: read
     steps:
       - name: Summary
         env:
@@ -155,15 +155,16 @@ jobs:
           [View Release](https://github.com/${{ github.repository }}/releases/tag/${VERSION})
           EOF
 
-      # Trigger npm publish after successful release.
-      # Note: The 'release: [published]' event may not fire when the release is created
-      # by the same workflow, so we trigger publish-npm.yml explicitly.
-      - name: Trigger npm publish workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🚀 Triggering npm publish workflow..."
-          gh workflow run publish-npm.yml \
-            --repo ${{ github.repository }} \
-            --ref main
-          echo "✅ npm publish workflow triggered"
+  # Trigger npm publish after successful release via reusable workflow call.
+  # Using workflow_call (instead of `gh workflow run`) avoids the need for
+  # an 'actions: write' permission and the 'release: [published]' event
+  # would not fire when the release is created by the same workflow.
+  publish-npm:
+    name: Publish to npm
+    needs: [check-version, release]
+    uses: ./.github/workflows/publish-npm.yml
+    permissions:
+      id-token: write  # Required for OIDC/Trusted Publishing on npm
+      contents: read   # Required for checkout
+    with:
+      dry_run: false
