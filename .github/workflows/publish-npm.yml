@@ -29,10 +29,19 @@ on:
         required: false
         type: boolean
         default: false
+  # Allow other workflows (e.g. release.yml) to call this workflow directly
+  # so we don't need 'actions: write' permission to trigger via gh CLI.
+  workflow_call:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (test without publishing)'
+        required: false
+        type: boolean
+        default: false
 
+# Top-level permissions are read-only; write permissions are scoped to jobs.
 permissions:
-  id-token: write  # Required for OIDC/Trusted Publishing
-  contents: read   # Required for checkout
+  contents: read
 
 env:
   NODE_OPTIONS: '--max-old-space-size=4096'
@@ -43,6 +52,9 @@ jobs:
     name: Publish to npm Registry
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      id-token: write  # Required for OIDC/Trusted Publishing on npm
+      contents: read   # Required for checkout
 
     steps:
       - name: Checkout code
