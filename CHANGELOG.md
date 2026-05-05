@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs deployment switched to GitHub Actions Pages**: `docs.yml` no longer pushes to a `gh-pages` branch via `peaceiris/actions-gh-pages`. It now uses the official `actions/upload-pages-artifact` + `actions/deploy-pages` flow with two jobs (`build`, `deploy`). Eliminates the Jekyll build error from the GitHub Pages "Deploy from branch" source and removes the deprecated Node.js 20 actions warning.
+
 - **Dependency updates**: Bumped all direct and transitive dependencies to their latest versions.
   - `@opentelemetry/resources`, `@opentelemetry/sdk-metrics`, `@opentelemetry/sdk-trace-base`: `2.6.1` → `2.7.1`
   - `@types/node`: `25.5.0` → `25.6.0`

@@ -1,8 +1,10 @@
 name: Deploy API Docs
 
-# Generates TypeDoc API documentation and deploys to a dedicated `gh-pages` branch.
-# The branch contains ONLY the generated docs — no source code.
-# GitHub Pages serves from `gh-pages` branch root (`/`).
+# Generates TypeDoc API documentation and deploys it to GitHub Pages
+# using the official Pages deployment workflow (no gh-pages branch).
+#
+# Repository setting required:
+#   Settings → Pages → Source: "GitHub Actions"
 #
 # Triggers:
 # - Automatically when a GitHub Release is published
@@ -13,19 +15,22 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Top-level permissions are read-only; write permissions are scoped to jobs.
 permissions:
   contents: read
 
+# Allow only one concurrent deployment, but do not cancel in-progress runs
+# (recommended by actions/deploy-pages so production deployments finish).
 concurrency:
-  group: gh-pages
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  deploy-docs:
-    name: Build & Deploy TypeDoc
+  build:
+    name: Build TypeDoc
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Required to push generated docs to gh-pages branch
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -42,15 +47,26 @@ jobs:
       - name: Generate API docs
         run: npx typedoc
 
-      # Prevent GitHub Pages from running Jekyll on the gh-pages branch
+      # Prevent GitHub Pages from running Jekyll on the published artifact
       - name: Add .nojekyll
         run: touch docs/api/.nojekyll
 
-      - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/api
-          publish_branch: gh-pages
-          force_orphan: true
-          commit_message: "docs: update API documentation from ${{ github.ref_name }}"
+          path: docs/api
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write       # Required to deploy to GitHub Pages
+      id-token: write    # Required for OIDC verification of the deployment
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
