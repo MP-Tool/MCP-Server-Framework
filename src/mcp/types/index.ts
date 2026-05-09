@@ -83,6 +83,7 @@ export type {
   ResponseOptions,
   TextResponseOptions,
   JsonResponseOptions,
+  StructuredResponseOptions,
   ErrorResponseOptions,
   ImageMimeType,
   ImageResponseOptions,

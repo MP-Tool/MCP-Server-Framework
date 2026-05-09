@@ -68,6 +68,32 @@ export interface JsonResponseOptions extends ResponseOptions {
 }
 
 /**
+ * Options for structured responses (`structured()` helper).
+ *
+ * In addition to the base response options, callers may provide a custom
+ * `text` representation that replaces the default JSON serialization in the
+ * `TextContent` block. This lets typed tools render a human-readable view
+ * (e.g. Markdown) for client UIs while keeping `structuredContent` as the
+ * single source of truth for the LLM and programmatic consumers.
+ */
+export interface StructuredResponseOptions extends ResponseOptions {
+  /**
+   * Custom text representation for the `TextContent` block.
+   *
+   * When set, the framework uses this string verbatim instead of serializing
+   * `data` to JSON. Modern clients still consume `structuredContent`; legacy
+   * clients and human readers see this rendering. Recommended for
+   * Markdown summaries, ASCII tables, or other display-oriented formats.
+   */
+  readonly text?: string;
+  /**
+   * Number of spaces for JSON indentation when no `text` override is given
+   * (default: 2, use 0 for compact).
+   */
+  readonly indent?: number;
+}
+
+/**
  * Options for error responses.
  */
 export interface ErrorResponseOptions extends ResponseOptions {

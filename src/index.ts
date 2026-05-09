@@ -59,7 +59,7 @@ export { defineTask } from "./mcp/capabilities/tasks/index.js";
 export { z } from "zod";
 
 // Response helpers
-export { text, json, error, image, audio, multi } from "./mcp/responses/index.js";
+export { text, json, structured, error, image, audio, multi } from "./mcp/responses/index.js";
 
 // Type guards
 export { isHttpTransport } from "./server/index.js";

@@ -12,6 +12,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type {
   TextResponseOptions,
   JsonResponseOptions,
+  StructuredResponseOptions,
   ErrorResponseOptions,
   ImageResponseOptions,
   AudioResponseOptions,
@@ -110,6 +111,81 @@ export function json(data: unknown, options?: JsonResponseOptions): CallToolResu
   }
 
   return buildResponse([withAnnotations({ type: "text" as const, text: serialized }, options?.annotations)], options);
+}
+
+// ============================================================================
+// Structured Response
+// ============================================================================
+
+/**
+ * Create a spec-compliant structured response for tools that declare an
+ * `output` schema.
+ *
+ * Per MCP 2025-06-18 ("Structured Content"), tools that return
+ * `structuredContent` SHOULD also serialize the same payload into a
+ * `TextContent` block for backwards compatibility with clients that do not
+ * yet read `outputSchema` / `structuredContent`. Modern clients prefer
+ * `structuredContent` for typed access while the `TextContent` block stays
+ * available for display-oriented rendering and legacy consumers.
+ *
+ * By default the helper serializes `data` as pretty-printed JSON into the
+ * `TextContent` block — a safe, schema-faithful fallback. Pass
+ * {@link StructuredResponseOptions.text | options.text} to override the
+ * `TextContent` with a human-readable rendering (Markdown, ASCII table,
+ * etc.). The `structuredContent` payload remains the single source of
+ * truth in either case.
+ *
+ * For tools without an output schema (state-change confirmations, free-form
+ * messages), use {@link text} instead.
+ *
+ * @param data - The structured payload (must conform to the tool's output schema)
+ * @param options - Optional `text` override, indent (default 2), annotations, and metadata
+ * @returns A CallToolResult with both `structuredContent` and a `TextContent` block
+ *
+ * @example JSON fallback (default)
+ * ```typescript
+ * defineTool({
+ *   name: 'my_tool',
+ *   output: mySchema,
+ *   handler: async () => {
+ *     const result = { ok: true, count: 42 };
+ *     return structured(result);
+ *   },
+ * });
+ * ```
+ *
+ * @example Custom Markdown rendering for UI clients
+ * ```typescript
+ * defineTool({
+ *   name: 'list_items',
+ *   output: listSchema,
+ *   handler: async () => {
+ *     const payload = { items: [...] };
+ *     return structured(payload, {
+ *       text: `### Items (${payload.items.length})\n\n${renderTable(payload.items)}`,
+ *     });
+ *   },
+ * });
+ * ```
+ */
+export function structured(data: unknown, options?: StructuredResponseOptions): CallToolResult {
+  let displayText: string;
+  if (options?.text !== undefined) {
+    displayText = options.text;
+  } else {
+    const indent = options?.indent ?? 2;
+    try {
+      displayText = JSON.stringify(data, null, indent);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "JSON serialization failed";
+      return error(`Failed to serialize structured response: ${msg}`, options);
+    }
+  }
+
+  return buildResponse([withAnnotations({ type: "text" as const, text: displayText }, options?.annotations)], {
+    ...options,
+    structuredContent: data as Record<string, unknown>,
+  });
 }
 
 // ============================================================================
