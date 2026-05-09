@@ -21,6 +21,8 @@ import type {
   ResourceStaticDefinition,
   ResourceTemplateDefinition,
   ResourceProvider,
+  ResourceContext,
+  ResourceReadResult,
   CompletionCallback,
 } from "../../types/index.js";
 import type { Logger } from "../../../logger/index.js";
@@ -331,7 +333,7 @@ export class ResourceRegistry implements ResourceProvider {
         resource.name,
         resource.uri,
         { description: resource.description, mimeType: resource.mimeType },
-        async (_uri: URL, extra: { authInfo?: { scopes?: readonly string[] } }) => {
+        async (_uri: URL, extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string }) => {
           // Scope enforcement (RBAC)
           enforceScopeOrThrow(resource.requiredScopes, extra.authInfo, "Resource", resource.uri, logger);
 
@@ -346,14 +348,19 @@ export class ResourceRegistry implements ResourceProvider {
               logger.trace(SdkBindingMessages.RESOURCE_READING, resource.uri);
 
               try {
-                const content = await resource.read();
+                const ctx: ResourceContext = {
+                  ...(extra.sessionId !== undefined && { sessionId: extra.sessionId }),
+                  ...(extra.authInfo && { authInfo: extra.authInfo }),
+                };
+                const raw = await resource.read(ctx);
+                const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, resource.mimeType);
 
                 if (typeof content === "string") {
                   return {
                     contents: [
                       {
                         uri: resource.uri,
-                        mimeType: resource.mimeType,
+                        ...(mimeType && { mimeType }),
                         text: content,
                       },
                     ],
@@ -364,7 +371,7 @@ export class ResourceRegistry implements ResourceProvider {
                     contents: [
                       {
                         uri: resource.uri,
-                        mimeType: resource.mimeType,
+                        ...(mimeType && { mimeType }),
                         blob: base64,
                       },
                     ],
@@ -419,7 +426,7 @@ export class ResourceRegistry implements ResourceProvider {
         async (
           _uri: URL,
           variables: Record<string, string | string[]>,
-          extra: { authInfo?: { scopes?: readonly string[] } },
+          extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string },
         ) => {
           // Scope enforcement (RBAC)
           enforceScopeOrThrow(template.requiredScopes, extra.authInfo, "Resource", template.uriTemplate, logger);
@@ -455,19 +462,24 @@ export class ResourceRegistry implements ResourceProvider {
               }
 
               try {
-                const content = await template.read(params);
+                const ctx: ResourceContext = {
+                  ...(extra.sessionId !== undefined && { sessionId: extra.sessionId }),
+                  ...(extra.authInfo && { authInfo: extra.authInfo }),
+                };
+                const raw = await template.read(params, ctx);
+                const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, template.mimeType);
 
                 // Construct URI from template for the response
                 const uri = template.uriTemplate.replace(/\{(\w+)\}/g, (_, key) => params[key] ?? `{${key}}`);
 
                 if (typeof content === "string") {
                   return {
-                    contents: [{ uri, mimeType: template.mimeType, text: content }],
+                    contents: [{ uri, ...(mimeType && { mimeType }), text: content }],
                   };
                 } else {
                   const base64 = Buffer.from(content).toString("base64");
                   return {
-                    contents: [{ uri, mimeType: template.mimeType, blob: base64 }],
+                    contents: [{ uri, ...(mimeType && { mimeType }), blob: base64 }],
                   };
                 }
               } catch (error) {
@@ -487,6 +499,22 @@ export class ResourceRegistry implements ResourceProvider {
   // ──────────────────────────────────────────────────────────────────────────
   // Private SDK Binding Helpers
   // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Normalizes a resource read return value into a `{ content, mimeType }` pair.
+   *
+   * Handlers may return either a raw `string | Uint8Array` (legacy) or a
+   * `ResourceReadResult` object that overrides the static `mimeType`.
+   */
+  private static normalizeReadReturn(
+    raw: string | Uint8Array | ResourceReadResult,
+    fallbackMimeType: string | undefined,
+  ): { content: string | Uint8Array; mimeType: string | undefined } {
+    if (typeof raw === "string" || raw instanceof Uint8Array) {
+      return { content: raw, mimeType: fallbackMimeType };
+    }
+    return { content: raw.content, mimeType: raw.mimeType ?? fallbackMimeType };
+  }
 
   /**
    * Extracts variable names from a URI template string (RFC 6570).

@@ -298,7 +298,7 @@ const KNOWN_KEYS: Readonly<Record<string, ReadonlySet<string>>> = Object.freeze(
 function extractShapeKeys(schema: z.ZodTypeAny): Set<string> {
   if ("shape" in schema && typeof schema.shape === "object" && schema.shape !== null) {
     // @type-narrowing — runtime check validates shape is a non-null object; Zod exposes shape as untyped
-    return new Set(Object.keys(schema.shape as Record<string, unknown>));
+    return new Set(Object.keys(schema.shape));
   }
   return new Set();
 }
@@ -329,7 +329,7 @@ function warnUnknownKeys(data: unknown, filePath: string): void {
       if (!knownKeys || knownKeys.size === 0) continue;
 
       // @type-narrowing — section type-checked to be a non-null object above
-      for (const sectionKey of Object.keys(section as Record<string, unknown>)) {
+      for (const sectionKey of Object.keys(section)) {
         if (!knownKeys.has(sectionKey)) {
           addStartupWarning(`[config] Unknown key '${sectionKey}' in [${key}] section of ${filePath} — ignored`);
         }

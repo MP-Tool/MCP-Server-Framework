@@ -55,11 +55,28 @@ export { definePrompt } from "./mcp/capabilities/prompts/index.js";
 export { defineApp } from "./mcp/capabilities/apps/index.js";
 export { defineTask } from "./mcp/capabilities/tasks/index.js";
 
+// Dynamic (ephemeral, session-bound) resources
+export {
+  DynamicResourceRegistry,
+  getDynamicResourceRegistry,
+  configureDynamicResourceRegistry,
+  resetDynamicResourceRegistry,
+  defineDynamicResourceTemplate,
+} from "./mcp/capabilities/resources/index.js";
+export type {
+  DynamicResourceEntry,
+  DynamicResourceRegistryOptions,
+  RegisterDynamicResourceOptions,
+  RegisterDynamicResourceResult,
+  ReadDynamicResourceResult,
+  DefineDynamicResourceTemplateOptions,
+} from "./mcp/capabilities/resources/index.js";
+
 // Schema validation (Zod re-export — see DD-011)
 export { z } from "zod";
 
 // Response helpers
-export { text, json, structured, error, image, audio, multi } from "./mcp/responses/index.js";
+export { text, json, structured, error, image, audio, multi, resourceLink } from "./mcp/responses/index.js";
 
 // Type guards
 export { isHttpTransport } from "./server/index.js";
@@ -137,6 +154,9 @@ export type {
   ResourceStaticDefinition,
   ResourceTemplateDefinition,
   ResourceDefinition,
+  ResourceContext,
+  ResourceReadResult,
+  ResourceReadReturn,
   TextResourceContent,
   BlobResourceContent,
   ResourceContent,
@@ -172,6 +192,7 @@ export type {
   ToolResponse,
   ContentAudience,
   ContentAnnotations,
+  ResourceLinkSpec,
   ResponseOptions,
   TextResponseOptions,
   JsonResponseOptions,

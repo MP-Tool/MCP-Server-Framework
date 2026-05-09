@@ -63,5 +63,5 @@ export function validateBuilderState(state: BuilderState, built: boolean): Valid
   }
 
   // @type-narrowing — validated above, but TS doesn't narrow through conditionals on readonly props
-  return state.options as ValidatedServerOptions;
+  return state.options;
 }

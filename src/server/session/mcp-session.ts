@@ -395,7 +395,7 @@ export class McpSession implements LogNotificationHandler {
 
     this.sdk.server.setRequestHandler(SetLevelRequestSchema, async (request) => {
       // @type-narrowing — SDK validates params against SetLevelRequestParamsSchema
-      const level = request.params.level as McpLogLevel;
+      const level = request.params.level;
       this.mcpLogMinLevel = level;
       this.logger.debug(LogMessages.LOG_LEVEL_SET, level);
       return {};

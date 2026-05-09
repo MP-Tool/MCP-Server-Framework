@@ -31,6 +31,9 @@ export type {
   ResourceStaticDefinition,
   ResourceTemplateDefinition,
   ResourceDefinition,
+  ResourceContext,
+  ResourceReadResult,
+  ResourceReadReturn,
   TextResourceContent,
   BlobResourceContent,
   ResourceContent,
@@ -80,6 +83,7 @@ export type { PingHandler, HandlersConfig } from "./handler.js";
 export type {
   ContentAudience,
   ContentAnnotations,
+  ResourceLinkSpec,
   ResponseOptions,
   TextResponseOptions,
   JsonResponseOptions,

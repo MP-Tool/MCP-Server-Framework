@@ -177,7 +177,7 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
       // @sdk-constraint — registerPrompt generic requires PromptArgsRawShape; config carries extracted shape
       sdk.registerPrompt(
         prompt.name,
-        config as Parameters<typeof sdk.registerPrompt>[1],
+        config,
         async (args: unknown, extra: { authInfo?: { scopes?: readonly string[] } }) => {
           // Scope enforcement (RBAC)
           enforceScopeOrThrow(prompt.requiredScopes, extra.authInfo, "Prompt", prompt.name, logger);

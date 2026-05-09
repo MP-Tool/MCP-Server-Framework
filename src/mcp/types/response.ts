@@ -30,6 +30,29 @@ export interface ContentAnnotations {
   readonly lastModified?: string;
 }
 
+/**
+ * Reference to a server-exposed resource appended to a tool response.
+ *
+ * Tool helpers (`text()`, `json()`, `structured()`) accept a `links` option
+ * that emits one `resource_link` content block per entry. Clients can then
+ * call `resources/read` with the URI to retrieve the full payload without
+ * inlining it in the tool result.
+ */
+export interface ResourceLinkSpec {
+  /** Resource URI (must be readable via `resources/read`) */
+  readonly uri: string;
+  /** Human-readable resource name */
+  readonly name: string;
+  /** Optional MIME type of the linked resource */
+  readonly mimeType?: string;
+  /** Optional short description */
+  readonly description?: string;
+  /** Optional title (display label preferred by clients) */
+  readonly title?: string;
+  /** Optional content annotations */
+  readonly annotations?: ContentAnnotations;
+}
+
 // ============================================================================
 // Response Options
 // ============================================================================
@@ -50,6 +73,13 @@ export interface ResponseOptions {
    * result while the human-readable `content` array stays unchanged.
    */
   readonly structuredContent?: Record<string, unknown>;
+  /**
+   * Resource references to append to the response as `resource_link`
+   * content blocks. One block is appended per entry, in the given order,
+   * after the primary content. Useful for pointing at large payloads
+   * stored as readable resources without inlining them.
+   */
+  readonly links?: readonly ResourceLinkSpec[];
 }
 
 /**

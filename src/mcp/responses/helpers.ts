@@ -17,12 +17,30 @@ import type {
   ImageResponseOptions,
   AudioResponseOptions,
   ContentAnnotations,
+  ResourceLinkSpec,
   ResponseOptions,
 } from "../types/index.js";
 
 // ============================================================================
 // Internal Helpers
 // ============================================================================
+
+/**
+ * Build a `resource_link` content item from a {@link ResourceLinkSpec}.
+ */
+function buildResourceLinkItem(spec: ResourceLinkSpec): CallToolResult["content"][number] {
+  return withAnnotations(
+    {
+      type: "resource_link" as const,
+      uri: spec.uri,
+      name: spec.name,
+      ...(spec.mimeType !== undefined && { mimeType: spec.mimeType }),
+      ...(spec.description !== undefined && { description: spec.description }),
+      ...(spec.title !== undefined && { title: spec.title }),
+    },
+    spec.annotations,
+  );
+}
 
 /**
  * Build a CallToolResult from content items and options.
@@ -32,8 +50,9 @@ function buildResponse(
   content: CallToolResult["content"],
   options?: ResponseOptions & { isError?: boolean },
 ): CallToolResult {
+  const fullContent = options?.links?.length ? [...content, ...options.links.map(buildResourceLinkItem)] : content;
   return {
-    content,
+    content: fullContent,
     ...(options?.isError && { isError: true }),
     ...(options?._meta && { _meta: options._meta }),
     ...(options?.structuredContent && { structuredContent: options.structuredContent }),
@@ -313,7 +332,7 @@ export function multi(
         annotations?: ContentAnnotations;
       }
   >,
-  options?: { _meta?: Record<string, unknown> },
+  options?: { _meta?: Record<string, unknown>; links?: readonly ResourceLinkSpec[] },
 ): CallToolResult {
   if (items.length === 0) {
     throw new TypeError("multi() requires at least one content item");
@@ -322,4 +341,37 @@ export function multi(
     items.map((item) => withAnnotations({ ...item }, item.annotations)),
     options,
   );
+}
+
+// ============================================================================
+// Resource Link Response
+// ============================================================================
+
+/**
+ * Create a response that consists of a single `resource_link` content block.
+ *
+ * Tools that point at large or out-of-band payloads (logs, inspect dumps,
+ * compose files) emit a resource link instead of inlining the payload.
+ * Clients call `resources/read` with the URI to retrieve the content.
+ *
+ * For most tools, prefer attaching links via the `links` option of
+ * {@link text}, {@link json} or {@link structured} so the response keeps a
+ * human-readable summary alongside the link. Use this helper when the link
+ * is the entire response.
+ *
+ * @param spec - Resource link specification (URI, name, optional MIME / description / title)
+ * @param options - Optional metadata, annotations, structured content
+ * @returns A CallToolResult containing a single `resource_link` content block
+ *
+ * @example
+ * ```typescript
+ * return resourceLink({
+ *   uri: 'ephemeral://logs/abc123',
+ *   name: 'container.log',
+ *   mimeType: 'text/plain',
+ * });
+ * ```
+ */
+export function resourceLink(spec: ResourceLinkSpec, options?: ResponseOptions): CallToolResult {
+  return buildResponse([buildResourceLinkItem(spec)], options);
 }

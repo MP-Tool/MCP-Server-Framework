@@ -112,7 +112,7 @@ const noopSpan: Span = {
   isRecording: () => false,
   recordException: () => {},
   // @ts-limitation — object literal satisfies Span contract but TS cannot infer structural compatibility
-} as Span;
+};
 
 /**
  * Get the tracer instance for the MCP Server.
