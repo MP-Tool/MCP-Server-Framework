@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0]
+
+### Added
+
+- **`output` schema on `defineTool()`**: `ToolDefinition` now accepts an optional `output: ZodTypeAny` field. The framework forwards it to the MCP SDK as `outputSchema`, so it appears in `tools/list` responses and the SDK validates the handler's `structuredContent` against it on every call. Enables typed structured tool results per MCP 2025-06-18 spec without bypassing `defineTool()`.
+- **`structuredContent` on response helpers**: `ResponseOptions` exposes an optional `structuredContent` field that `text()`, `json()`, `error()`, `image()`, `audio()` and `multi()` forward onto the resulting `CallToolResult`. Tool handlers can now return both a human-readable `content` array and a typed payload that mirrors the tool's `output` schema in a single call.
+
 ## [1.0.6]
 
 ### Changed

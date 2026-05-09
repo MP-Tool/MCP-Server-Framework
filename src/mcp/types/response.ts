@@ -42,6 +42,14 @@ export interface ResponseOptions {
   readonly annotations?: ContentAnnotations;
   /** Custom metadata */
   readonly _meta?: Record<string, unknown>;
+  /**
+   * Structured payload that mirrors the tool's `outputSchema`.
+   *
+   * When set, the framework forwards it on the `CallToolResult` as
+   * `structuredContent`. Clients use it for typed access to the tool's
+   * result while the human-readable `content` array stays unchanged.
+   */
+  readonly structuredContent?: Record<string, unknown>;
 }
 
 /**

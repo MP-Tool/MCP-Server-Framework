@@ -96,7 +96,10 @@ export interface ToolAnnotations {
  * });
  * ```
  */
-export interface ToolDefinition<TInput extends z.ZodTypeAny = z.ZodTypeAny> {
+export interface ToolDefinition<
+  TInput extends z.ZodTypeAny = z.ZodTypeAny,
+  TOutput extends z.ZodTypeAny = z.ZodTypeAny,
+> {
   /** Unique tool name (e.g., 'greet', 'list_servers') */
   readonly name: string;
 
@@ -105,6 +108,18 @@ export interface ToolDefinition<TInput extends z.ZodTypeAny = z.ZodTypeAny> {
 
   /** Zod schema for input validation */
   readonly input: TInput;
+
+  /**
+   * Optional Zod schema for the tool's structured output.
+   *
+   * When set, the framework forwards the schema to the MCP SDK as
+   * `outputSchema`. Clients can then read the schema from `tools/list`
+   * and the SDK validates that the handler returns `structuredContent`
+   * matching this shape on every call.
+   *
+   * @see https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content
+   */
+  readonly output?: TOutput;
 
   /**
    * Optional annotations providing hints about tool behavior.

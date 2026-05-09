@@ -117,8 +117,10 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
    *
    * @internal Used by defineTool() — prefer registerOrReplace() for non-generic usage.
    */
-  registerFromFactory<TInput extends z.ZodTypeAny>(tool: ToolDefinition<TInput>): boolean {
-    // @type-variance — Generic input erased for homogeneous storage; SDK validates at runtime
+  registerFromFactory<TInput extends z.ZodTypeAny, TOutput extends z.ZodTypeAny>(
+    tool: ToolDefinition<TInput, TOutput>,
+  ): boolean {
+    // @type-variance — Generic input/output erased for homogeneous storage; SDK validates at runtime
     return this.registerOrReplace(tool as unknown as ToolDefinition);
   }
 
@@ -175,6 +177,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
         {
           description: tool.description,
           inputSchema: tool.input,
+          ...(tool.output && { outputSchema: tool.output }),
           ...(tool.annotations && { annotations: tool.annotations }),
           ...(tool._meta && { _meta: tool._meta }),
         },

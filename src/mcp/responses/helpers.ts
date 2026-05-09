@@ -35,6 +35,7 @@ function buildResponse(
     content,
     ...(options?.isError && { isError: true }),
     ...(options?._meta && { _meta: options._meta }),
+    ...(options?.structuredContent && { structuredContent: options.structuredContent }),
   };
 }
 
