@@ -30,6 +30,7 @@ import { DEFAULT_SHUTDOWN_CONFIG } from "./lifecycle.js";
 import type { McpSessionFactory } from "./session/session-factory.js";
 import { applyConfigOverrides, getFrameworkConfig, flushStartupWarnings, setConfigLogger } from "../config/index.js";
 import { isFullOAuthProvider } from "./auth/types.js";
+import { getDynamicResourceRegistry } from "../mcp/capabilities/resources/index.js";
 
 // ============================================================================
 // Constants
@@ -395,13 +396,26 @@ export class McpServerInstance implements ServerInstance {
    */
   private createSessionManager(): SessionManager {
     const lifecycle = this.options.lifecycle;
-    const sessionLifecycle =
-      lifecycle?.onClientConnected || lifecycle?.onClientDisconnected
-        ? {
-            onClientConnected: lifecycle.onClientConnected,
-            onClientDisconnected: lifecycle.onClientDisconnected,
-          }
-        : undefined;
+    const userOnDisconnected = lifecycle?.onClientDisconnected;
+
+    // Always wrap onClientDisconnected so dynamic per-session resources are
+    // released regardless of whether the consumer provided a hook.
+    const wrappedOnClientDisconnected = async (sessionId: string): Promise<void> => {
+      try {
+        getDynamicResourceRegistry().unregisterBySession(sessionId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn("Dynamic resource cleanup failed for session %s: %s", sessionId, msg);
+      }
+      if (userOnDisconnected) {
+        await userOnDisconnected(sessionId);
+      }
+    };
+
+    const sessionLifecycle = {
+      ...(lifecycle?.onClientConnected && { onClientConnected: lifecycle.onClientConnected }),
+      onClientDisconnected: wrappedOnClientDisconnected,
+    };
 
     // Stdio: single session, no background tasks.
     // HTTP: merge programmatic session options with lifecycle hooks.

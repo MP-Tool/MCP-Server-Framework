@@ -67,10 +67,15 @@ import { validateDefinitionBase, validateFunction, validateZodSchema } from "../
  * });
  * ```
  */
-export function defineTool<TInput extends z.ZodTypeAny>(definition: ToolDefinition<TInput>): ToolDefinition<TInput> {
+export function defineTool<TInput extends z.ZodTypeAny, TOutput extends z.ZodTypeAny = z.ZodTypeAny>(
+  definition: ToolDefinition<TInput, TOutput>,
+): ToolDefinition<TInput, TOutput> {
   // Validate required fields (safety net for JS consumers and empty strings)
   validateDefinitionBase(definition, "Tool");
   validateZodSchema(definition.input, "Tool", "input");
+  if (definition.output !== undefined) {
+    validateZodSchema(definition.output, "Tool", "output");
+  }
   validateFunction(definition.handler, "Tool", "handler");
 
   // Auto-register in global registry (variance handled by registry)

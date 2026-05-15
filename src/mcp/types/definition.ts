@@ -96,7 +96,10 @@ export interface ToolAnnotations {
  * });
  * ```
  */
-export interface ToolDefinition<TInput extends z.ZodTypeAny = z.ZodTypeAny> {
+export interface ToolDefinition<
+  TInput extends z.ZodTypeAny = z.ZodTypeAny,
+  TOutput extends z.ZodTypeAny = z.ZodTypeAny,
+> {
   /** Unique tool name (e.g., 'greet', 'list_servers') */
   readonly name: string;
 
@@ -105,6 +108,18 @@ export interface ToolDefinition<TInput extends z.ZodTypeAny = z.ZodTypeAny> {
 
   /** Zod schema for input validation */
   readonly input: TInput;
+
+  /**
+   * Optional Zod schema for the tool's structured output.
+   *
+   * When set, the framework forwards the schema to the MCP SDK as
+   * `outputSchema`. Clients can then read the schema from `tools/list`
+   * and the SDK validates that the handler returns `structuredContent`
+   * matching this shape on every call.
+   *
+   * @see https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content
+   */
+  readonly output?: TOutput;
 
   /**
    * Optional annotations providing hints about tool behavior.
@@ -178,6 +193,50 @@ export interface BaseResourceDefinition {
 }
 
 /**
+ * Runtime context passed to resource `read()` handlers.
+ *
+ * Provides access to per-request information that the framework knows
+ * but the static resource definition does not — most notably the session
+ * identifier (for session-bound / ephemeral resources) and `authInfo`
+ * (for fine-grained authorization checks beyond `requiredScopes`).
+ *
+ * The argument is optional in handler signatures so existing handlers
+ * that ignore the context continue to compile without changes.
+ */
+export interface ResourceContext {
+  /** Session ID of the caller (undefined in stateless transports) */
+  readonly sessionId?: string;
+  /** Auth claims attached to the request (if any) */
+  readonly authInfo?: {
+    readonly scopes?: readonly string[];
+    readonly token?: string;
+  };
+}
+
+/**
+ * Per-call read result with optional MIME-type override.
+ *
+ * Use this return shape when a handler needs to override the static
+ * `mimeType` of the resource/template per call (for example a dynamic
+ * registry that stores entries with different MIME types under one
+ * template URI).
+ */
+export interface ResourceReadResult {
+  /** Content payload */
+  readonly content: string | Uint8Array;
+  /** Optional MIME type override (defaults to definition.mimeType) */
+  readonly mimeType?: string;
+}
+
+/**
+ * Return type for resource read handlers.
+ *
+ * Handlers may return a plain string/Uint8Array (the legacy shape) or a
+ * `ResourceReadResult` object to override the MIME type per call.
+ */
+export type ResourceReadReturn = string | Uint8Array | ResourceReadResult;
+
+/**
  * Static resource definition - for fixed URI resources.
  *
  * Use this for resources with a fixed URI that don't require parameters.
@@ -212,9 +271,12 @@ export interface ResourceStaticDefinition extends BaseResourceDefinition {
   /**
    * Content provider function.
    *
-   * @returns String content or Uint8Array for binary data
+   * @param ctx - Optional runtime context (sessionId, authInfo). Handlers that
+   *   don't need per-request information can ignore this argument.
+   * @returns String content, Uint8Array for binary data, or a
+   *   `ResourceReadResult` to override the MIME type per call.
    */
-  read: () => Promise<string | Uint8Array>;
+  read: (ctx?: ResourceContext) => Promise<ResourceReadReturn>;
 }
 
 /**
@@ -277,9 +339,12 @@ export interface ResourceTemplateDefinition<
    * Content provider function with template parameters.
    *
    * @param params - Parameters extracted from URI template (typed if input schema provided)
-   * @returns String content or Uint8Array for binary data
+   * @param ctx - Optional runtime context (sessionId, authInfo). Handlers that
+   *   don't need per-request information can ignore this argument.
+   * @returns String content, Uint8Array for binary data, or a
+   *   `ResourceReadResult` to override the MIME type per call.
    */
-  read: (params: z.infer<TInput>) => Promise<string | Uint8Array>;
+  read: (params: z.infer<TInput>, ctx?: ResourceContext) => Promise<ResourceReadReturn>;
 
   /**
    * Optional function to enumerate available resources.

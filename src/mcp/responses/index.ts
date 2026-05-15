@@ -10,4 +10,4 @@
 // Response Helpers (main entry points)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { text, json, error, image, audio, multi } from "./helpers.js";
+export { text, json, structured, error, image, audio, multi, resourceLink } from "./helpers.js";

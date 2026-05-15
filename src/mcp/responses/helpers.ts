@@ -12,16 +12,35 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type {
   TextResponseOptions,
   JsonResponseOptions,
+  StructuredResponseOptions,
   ErrorResponseOptions,
   ImageResponseOptions,
   AudioResponseOptions,
   ContentAnnotations,
+  ResourceLinkSpec,
   ResponseOptions,
 } from "../types/index.js";
 
 // ============================================================================
 // Internal Helpers
 // ============================================================================
+
+/**
+ * Build a `resource_link` content item from a {@link ResourceLinkSpec}.
+ */
+function buildResourceLinkItem(spec: ResourceLinkSpec): CallToolResult["content"][number] {
+  return withAnnotations(
+    {
+      type: "resource_link" as const,
+      uri: spec.uri,
+      name: spec.name,
+      ...(spec.mimeType !== undefined && { mimeType: spec.mimeType }),
+      ...(spec.description !== undefined && { description: spec.description }),
+      ...(spec.title !== undefined && { title: spec.title }),
+    },
+    spec.annotations,
+  );
+}
 
 /**
  * Build a CallToolResult from content items and options.
@@ -31,10 +50,12 @@ function buildResponse(
   content: CallToolResult["content"],
   options?: ResponseOptions & { isError?: boolean },
 ): CallToolResult {
+  const fullContent = options?.links?.length ? [...content, ...options.links.map(buildResourceLinkItem)] : content;
   return {
-    content,
+    content: fullContent,
     ...(options?.isError && { isError: true }),
     ...(options?._meta && { _meta: options._meta }),
+    ...(options?.structuredContent && { structuredContent: options.structuredContent }),
   };
 }
 
@@ -109,6 +130,81 @@ export function json(data: unknown, options?: JsonResponseOptions): CallToolResu
   }
 
   return buildResponse([withAnnotations({ type: "text" as const, text: serialized }, options?.annotations)], options);
+}
+
+// ============================================================================
+// Structured Response
+// ============================================================================
+
+/**
+ * Create a spec-compliant structured response for tools that declare an
+ * `output` schema.
+ *
+ * Per MCP 2025-06-18 ("Structured Content"), tools that return
+ * `structuredContent` SHOULD also serialize the same payload into a
+ * `TextContent` block for backwards compatibility with clients that do not
+ * yet read `outputSchema` / `structuredContent`. Modern clients prefer
+ * `structuredContent` for typed access while the `TextContent` block stays
+ * available for display-oriented rendering and legacy consumers.
+ *
+ * By default the helper serializes `data` as pretty-printed JSON into the
+ * `TextContent` block — a safe, schema-faithful fallback. Pass
+ * {@link StructuredResponseOptions.text | options.text} to override the
+ * `TextContent` with a human-readable rendering (Markdown, ASCII table,
+ * etc.). The `structuredContent` payload remains the single source of
+ * truth in either case.
+ *
+ * For tools without an output schema (state-change confirmations, free-form
+ * messages), use {@link text} instead.
+ *
+ * @param data - The structured payload (must conform to the tool's output schema)
+ * @param options - Optional `text` override, indent (default 2), annotations, and metadata
+ * @returns A CallToolResult with both `structuredContent` and a `TextContent` block
+ *
+ * @example JSON fallback (default)
+ * ```typescript
+ * defineTool({
+ *   name: 'my_tool',
+ *   output: mySchema,
+ *   handler: async () => {
+ *     const result = { ok: true, count: 42 };
+ *     return structured(result);
+ *   },
+ * });
+ * ```
+ *
+ * @example Custom Markdown rendering for UI clients
+ * ```typescript
+ * defineTool({
+ *   name: 'list_items',
+ *   output: listSchema,
+ *   handler: async () => {
+ *     const payload = { items: [...] };
+ *     return structured(payload, {
+ *       text: `### Items (${payload.items.length})\n\n${renderTable(payload.items)}`,
+ *     });
+ *   },
+ * });
+ * ```
+ */
+export function structured(data: unknown, options?: StructuredResponseOptions): CallToolResult {
+  let displayText: string;
+  if (options?.text !== undefined) {
+    displayText = options.text;
+  } else {
+    const indent = options?.indent ?? 2;
+    try {
+      displayText = JSON.stringify(data, null, indent);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "JSON serialization failed";
+      return error(`Failed to serialize structured response: ${msg}`, options);
+    }
+  }
+
+  return buildResponse([withAnnotations({ type: "text" as const, text: displayText }, options?.annotations)], {
+    ...options,
+    structuredContent: data as Record<string, unknown>,
+  });
 }
 
 // ============================================================================
@@ -236,7 +332,7 @@ export function multi(
         annotations?: ContentAnnotations;
       }
   >,
-  options?: { _meta?: Record<string, unknown> },
+  options?: { _meta?: Record<string, unknown>; links?: readonly ResourceLinkSpec[] },
 ): CallToolResult {
   if (items.length === 0) {
     throw new TypeError("multi() requires at least one content item");
@@ -245,4 +341,37 @@ export function multi(
     items.map((item) => withAnnotations({ ...item }, item.annotations)),
     options,
   );
+}
+
+// ============================================================================
+// Resource Link Response
+// ============================================================================
+
+/**
+ * Create a response that consists of a single `resource_link` content block.
+ *
+ * Tools that point at large or out-of-band payloads (logs, inspect dumps,
+ * compose files) emit a resource link instead of inlining the payload.
+ * Clients call `resources/read` with the URI to retrieve the content.
+ *
+ * For most tools, prefer attaching links via the `links` option of
+ * {@link text}, {@link json} or {@link structured} so the response keeps a
+ * human-readable summary alongside the link. Use this helper when the link
+ * is the entire response.
+ *
+ * @param spec - Resource link specification (URI, name, optional MIME / description / title)
+ * @param options - Optional metadata, annotations, structured content
+ * @returns A CallToolResult containing a single `resource_link` content block
+ *
+ * @example
+ * ```typescript
+ * return resourceLink({
+ *   uri: 'ephemeral://logs/abc123',
+ *   name: 'container.log',
+ *   mimeType: 'text/plain',
+ * });
+ * ```
+ */
+export function resourceLink(spec: ResourceLinkSpec, options?: ResponseOptions): CallToolResult {
+  return buildResponse([buildResourceLinkItem(spec)], options);
 }
