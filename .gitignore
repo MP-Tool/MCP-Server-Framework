@@ -29,7 +29,6 @@ coverage/
 
 # npm
 *.tgz
-.npmrc
 
 # Debug
 npm-debug.log*

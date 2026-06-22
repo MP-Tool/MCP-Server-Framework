@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2]
+
+### Changed
+- tightened the npm publish workflow, including a production TypeScript build config (`tsconfig.prod.json`) in the publish path
+- added a hardened repo-level `.npmrc` with documented defaults for stricter, reproducible installs
+
+## [1.1.1]
+
+### Changed
+- updated OTEL dependencies to `0.219.0` to pick up bug fixes and improvements in the OTEL SDKs
+
 ## [1.1.0]
 
 ### Added
