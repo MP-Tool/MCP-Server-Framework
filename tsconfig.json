@@ -16,8 +16,8 @@
     "outDir": "./build",
     "rootDir": "./src",
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    "declarationMap": false,
+    "sourceMap": false,
 
     // ── Type Checking (Strict) ─────────────────────────────────────────
     "strict": true,
