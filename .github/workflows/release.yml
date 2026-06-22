@@ -4,7 +4,8 @@ name: Release
 # Triggers:
 # - Automatically on push/merge to main when package.json version changes
 # - Manually via workflow_dispatch
-# After a successful release, the npm publish workflow is triggered automatically.
+# After a successful release, the npm publish workflow is triggered automatically
+# via workflow_run in publish-npm.yml.
 
 on:
   push:
@@ -155,16 +156,3 @@ jobs:
           [View Release](https://github.com/${{ github.repository }}/releases/tag/${VERSION})
           EOF
 
-  # Trigger npm publish after successful release via reusable workflow call.
-  # Using workflow_call (instead of `gh workflow run`) avoids the need for
-  # an 'actions: write' permission and the 'release: [published]' event
-  # would not fire when the release is created by the same workflow.
-  publish-npm:
-    name: Publish to npm
-    needs: [check-version, release]
-    uses: ./.github/workflows/publish-npm.yml
-    permissions:
-      id-token: write  # Required for OIDC/Trusted Publishing on npm
-      contents: read   # Required for checkout
-    with:
-      dry_run: false

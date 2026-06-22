@@ -4,8 +4,13 @@ name: Publish to npm
 # Uses npm Trusted Publishing (OIDC) for secure, token-free authentication.
 #
 # Triggered:
-# - Automatically by the release workflow after a successful GitHub Release
+# - Automatically after the Release workflow completes successfully
+#   (via workflow_run)
+# - Also on GitHub Release publication as a safety net trigger
 # - Manually via workflow_dispatch (with optional dry-run)
+#
+# Duplicate workflow runs are safe: the publish step checks npm first and
+# skips versions that are already published.
 #
 # Trusted Publishing Setup Required:
 # 1. Go to https://www.npmjs.com/package/mcp-server-framework/access
@@ -22,16 +27,10 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Run in dry-run mode (test without publishing)'
-        required: false
-        type: boolean
-        default: false
-  # Allow other workflows (e.g. release.yml) to call this workflow directly
-  # so we don't need 'actions: write' permission to trigger via gh CLI.
-  workflow_call:
     inputs:
       dry_run:
         description: 'Run in dry-run mode (test without publishing)'
@@ -50,6 +49,9 @@ env:
 jobs:
   publish-npm:
     name: Publish to npm Registry
+    if: |
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -82,8 +84,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build (production config)
+        run: npm run build:prod
         env:
           NODE_ENV: production
 
@@ -93,6 +95,19 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Package version: $VERSION"
+
+      - name: Check publish eligibility
+        id: publish_check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "mcp-server-framework@${VERSION}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ Version ${VERSION} is already published on npm"
+          else
+            echo "already_published=false" >> $GITHUB_OUTPUT
+            echo "✅ Version ${VERSION} is not yet published on npm"
+          fi
 
       - name: Verify build artifacts
         run: |
@@ -120,7 +135,6 @@ jobs:
           echo "=== Build Summary ==="
           echo "Files: $(find build -name "*.js" | wc -l) JavaScript"
           echo "Types: $(find build -name "*.d.ts" | wc -l) Declaration files"
-          echo "Maps:  $(find build -name "*.js.map" | wc -l) Source maps"
           du -sh build/
 
       - name: Preview package contents
@@ -132,7 +146,8 @@ jobs:
           npm pack --json | jq '.[0] | {name, version, size, unpackedSize}'
 
       - name: Publish to npm (Trusted Publishing)
-        if: github.event.inputs.dry_run != 'true'
+        # Publish only when this is not a dry run AND the version is not already on npm.
+        if: github.event.inputs.dry_run != 'true' && steps.publish_check.outputs.already_published != 'true'
         run: |
           # Trusted Publishing uses OIDC for authentication
           # - No NPM_TOKEN or NODE_AUTH_TOKEN needed
@@ -141,6 +156,11 @@ jobs:
           # We invoke a pinned npm via npx to avoid the runner npm self-update bug.
           npx -y npm@11.12.1 publish --access public
 
+      - name: Skip publish (already published)
+        if: github.event.inputs.dry_run != 'true' && steps.publish_check.outputs.already_published == 'true'
+        run: |
+          echo "⏭️ Skipping npm publish because version ${{ steps.version.outputs.version }} already exists"
+
       - name: Dry run (skip publish)
         if: github.event.inputs.dry_run == 'true'
         run: |
@@ -148,7 +168,7 @@ jobs:
           npm pack --dry-run
 
       - name: Summary
-        if: success() && github.event.inputs.dry_run != 'true'
+        if: success() && github.event.inputs.dry_run != 'true' && steps.publish_check.outputs.already_published != 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           cat >> $GITHUB_STEP_SUMMARY << EOF
