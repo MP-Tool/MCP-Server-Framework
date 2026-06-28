@@ -83,21 +83,23 @@ export { isHttpTransport } from "./server/index.js";
 export { isStaticResource, isResourceTemplate } from "./mcp/types/index.js";
 export { isFullOAuthProvider } from "./server/auth/index.js";
 
-// Auth provider factories
-export { createUpstreamOAuthProvider } from "./server/auth/index.js";
-export { createOidcProvider } from "./server/auth/index.js";
+// Auth provider factory
+export { createOAuthProvider, authInfoExpiry } from "./server/auth/index.js";
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./server/auth/index.js";
 
 // Auth providers (re-export SDK types for consumer convenience)
 export { ProxyOAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";
 export type { ProxyOptions, ProxyEndpoints } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";
 
+// Auth context
+export { createAuthContext, ANONYMOUS_AUTH } from "./server/auth/index.js";
+
 // Auth guards
 export { requireAuth, requireScope, requireScopes, hasScope, hasAllScopes, hasAnyScope } from "./server/auth/index.js";
 
 // Auth middleware
-export { createBearerAuth, createCustomHeaderAuth } from "./server/middleware/index.js";
-export type { BearerAuthOptions, CustomHeaderAuthOptions } from "./server/middleware/index.js";
+export { createAuthMiddleware, extractBearerToken } from "./server/middleware/index.js";
+export type { AuthMiddlewareOptions, AuthTokenSource, AuthEnforcement } from "./server/middleware/index.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -106,15 +108,24 @@ export type { BearerAuthOptions, CustomHeaderAuthOptions } from "./server/middle
 // --- Auth types ---
 export type {
   AuthInfo,
+  AuthContext,
   OAuthServerProvider,
   TokenVerifier,
   AuthProvider,
   AuthenticatedExtra,
   AuthOptions,
-  UpstreamOAuthOptions,
-  UpstreamOAuthProviderResult,
+  OAuthProviderConfig,
+  GithubProviderConfig,
+  GoogleProviderConfig,
+  OidcProviderConfig,
+  OAuth2ProviderConfig,
+  CreateOAuthProviderOptions,
+  OAuthProviderResult,
+  OAuthProviderType,
+  ProviderContext,
+  MapUserInfo,
+  OnTokenExchanged,
   UpstreamEndpoints,
-  OidcProviderOptions,
   OidcDiscoveryDocument,
 } from "./server/auth/index.js";
 

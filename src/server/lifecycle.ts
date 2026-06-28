@@ -7,6 +7,8 @@
  * @module server/lifecycle
  */
 
+import type { AuthContext } from "./auth/auth-context.js";
+
 // ============================================================================
 // Lifecycle State Types
 // ============================================================================
@@ -100,8 +102,11 @@ export interface ServerLifecycleHooks {
    * handles requests, use the tool/resource handlers themselves.
    *
    * During session close, {@link onClientDisconnected} IS awaited.
+   *
+   * @param auth - Auth context for the session, if authentication was performed.
+   *   Populated when `options.auth` is configured; `undefined` for unauthenticated sessions.
    */
-  onClientConnected?: (sessionId: string) => void | Promise<void>;
+  onClientConnected?: (sessionId: string, auth?: AuthContext) => void | Promise<void>;
 
   /**
    * Called when a client disconnects from the server.

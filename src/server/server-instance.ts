@@ -516,6 +516,7 @@ export class McpServerInstance implements ServerInstance {
         enableJsonResponse: resolvedJsonResponse,
         health: this.options.health,
         auth: this.options.auth,
+        configureApp: this.options.configureHttpApp,
         trustProxy,
         corsOrigin: resolvedConfig.MCP_CORS_ORIGIN,
         corsCredentials: resolvedConfig.MCP_CORS_CREDENTIALS,

@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`configureHttpApp?: (app: Application) => void` on `CreateServerOptions` / `ServerOptions`**:
+  Optional hook to register additional Express routes on the MCP HTTP server. Runs after base
+  security middleware (Helmet, DNS rebinding, rate limiting) and before health, metrics, and MCP
+  transport routes are mounted. Useful for OAuth callback endpoints (`/auth/google/callback`),
+  custom health routes, or any server-side HTTP handler that shares the MCP host. Ignored in
+  stdio mode.
+- **`AuthContext`, `createAuthContext`, `ANONYMOUS_AUTH`** exported from the main package: The
+  auth context type and its factory are now part of the public API. `ANONYMOUS_AUTH` is the
+  canonical unauthenticated context sentinel. Previously these were only accessible via internal
+  subpaths.
+- **`onClientConnected` receives `auth?: AuthContext`**: The `ServerLifecycleHooks.onClientConnected`
+  callback now receives the session's `AuthContext` as an optional second argument. Populated
+  whenever `options.auth` is configured and the session was established with a valid token;
+  `undefined` for unauthenticated sessions or stdio mode. Existing zero-argument / one-argument
+  callbacks continue to work unchanged.
+
 - **`createOAuthProvider(config | config[], options)` — unified OAuth provider factory**: Replaces the two
   separate factories (`createUpstreamOAuthProvider`, `createOidcProvider`). Config is a discriminated
   union on `type`: `"github" | "google" | "oidc" | "oauth2"`. GitHub and Google require only a
@@ -47,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   valid session.
 - **`AuthTokenSource`, `AuthEnforcement`, `AuthMiddlewareOptions`**: New types exported from
   the main package for typed middleware configuration.
+
+### Fixed
+
+- **`AuthOptions.onAuthenticated` now actually called**: The hook was documented since 1.0.x but
+  was never invoked — its return value was silently discarded. It is now wired to the auth
+  middleware and called after every successful token verification. The result is merged into
+  `req.auth.extra` and flows through to `context.auth.extra` in tool handlers as documented.
 
 ### Changed
 

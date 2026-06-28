@@ -15,6 +15,7 @@ import { logger as baseLogger, mcpLogger } from "../../logger/index.js";
 
 import type { TransportType } from "../transport/transport-context.js";
 import type { Session, ReadonlySession, SessionCloseReason, CreateSessionOptions } from "./session.js";
+import type { AuthContext } from "../auth/auth-context.js";
 import { getServerMetrics } from "../../telemetry/index.js";
 import { InMemorySessionStore } from "./in-memory-store.js";
 import type { SessionStore, SessionStats } from "./session-store.js";
@@ -78,7 +79,7 @@ export type SessionConfigInput = Partial<SessionConfig> & {
  */
 export interface SessionLifecycleHooks {
   /** Called after a new session is successfully created */
-  readonly onClientConnected?: ((sessionId: string) => void | Promise<void>) | undefined;
+  readonly onClientConnected?: ((sessionId: string, auth?: AuthContext) => void | Promise<void>) | undefined;
   /** Called after a session is closed and cleaned up */
   readonly onClientDisconnected?: ((sessionId: string) => void | Promise<void>) | undefined;
 }
@@ -363,7 +364,7 @@ export class SessionManagerImpl implements SessionManager {
       getServerMetrics().recordSessionChange(session.transport.type, 1);
       logger.info(LogMessages.SESSION_CREATED, session.id, session.transport.type, this.store.size);
       void this.invokeLifecycleHook("onClientConnected", session.id, () =>
-        this.lifecycle?.onClientConnected?.(session.id),
+        this.lifecycle?.onClientConnected?.(session.id, session.auth),
       );
     }
     return session;

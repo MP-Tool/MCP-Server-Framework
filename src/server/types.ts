@@ -9,6 +9,7 @@
 import type { TransportOptions, ServerCapabilities, ReadinessConfig, SessionConfigOptions } from "./server-options.js";
 import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { AuthOptions } from "./auth/types.js";
+import type { Application } from "express";
 
 // ============================================================================
 // Create Server Options
@@ -132,6 +133,14 @@ export interface CreateServerOptions {
    * @see AuthOptions
    */
   auth?: AuthOptions;
+
+  /**
+   * Optional hook to customize the Express app for HTTP/HTTPS transports.
+   *
+   * Useful for registering additional callback endpoints on the MCP host
+   * (for example `/auth/google/callback`). Ignored in stdio mode.
+   */
+  configureHttpApp?: (app: Application) => void;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)

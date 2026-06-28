@@ -13,6 +13,7 @@ import type { SessionStore } from "./session/index.js";
 import type { ServerCapabilities } from "../mcp/capabilities/server-capabilities.js";
 import type { TransportOptions } from "./transport-options.js";
 import type { AuthOptions } from "./auth/types.js";
+import type { Application } from "express";
 
 // ============================================================================
 // Transport Configuration (canonical location: transport-options.ts)
@@ -353,6 +354,28 @@ export interface ServerOptions {
    * @see AuthOptions for all configuration options
    */
   auth?: AuthOptions | undefined;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // HTTP App Customization (Optional)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Optional hook to register additional Express routes for HTTP/HTTPS transports.
+   *
+   * Use this to mount routes (e.g. OAuth callback endpoints, custom webhooks) on
+   * the MCP host app without replacing framework middleware.
+   *
+   * The hook runs after global security headers (Helmet/CORS) and the OAuth router,
+   * but before health, metrics, and MCP transport routes.
+   *
+   * **Security note:** DNS-rebinding protection, rate limiting, and the auth
+   * middleware are all scoped to `/mcp` only. Routes registered via this hook are
+   * NOT protected by the framework's auth system — consumer is responsible for
+   * any authentication or authorization on those routes.
+   *
+   * Ignored in stdio mode.
+   */
+  configureHttpApp?: ((app: Application) => void) | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)

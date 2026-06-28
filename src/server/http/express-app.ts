@@ -38,8 +38,7 @@ import {
   createRateLimiter,
   validateProtocolVersion,
   dnsRebindingProtection,
-  createBearerAuth,
-  createCustomHeaderAuth,
+  createAuthMiddleware,
 } from "../middleware/index.js";
 
 // Auth
@@ -182,6 +181,19 @@ export interface ExpressAppOptions {
    * Health and metrics endpoints remain unauthenticated for probe access.
    */
   readonly auth?: AuthOptions | undefined;
+
+  /**
+   * Optional hook to register additional Express routes on the app.
+   *
+   * Runs after global security headers (Helmet/CORS/JSON) and the OAuth router,
+   * but **before** health, metrics, and MCP transport routes are mounted.
+   *
+   * Security scope: DNS-rebinding protection, rate limiting, and auth middleware
+   * are all scoped to `/mcp` only — they do NOT apply to routes registered here.
+   * Consumer is responsible for authenticating and protecting any routes added
+   * via this hook.
+   */
+  readonly configureApp?: ((app: express.Application) => void) | undefined;
 }
 
 // ============================================================================
@@ -390,36 +402,34 @@ function setupMcpRoutes(
     }),
   ); // 2. Rate Limiting (before auth to mitigate brute-force, CWE-770)
 
-  // 3. Bearer Auth / Custom Header Auth (only when auth is configured)
+  // 3. Auth (only when configured) — the framework always mounts mandatory ("required") auth on /mcp.
   if (options?.auth) {
-    if (options.auth.headerName && !isFullOAuthProvider(options.auth.provider)) {
-      // Custom header auth (e.g. X-API-Key) — only with TokenVerifier
-      app.use(
-        TRANSPORT_ROUTES.MCP,
-        createCustomHeaderAuth({
-          headerName: options.auth.headerName,
-          verifier: options.auth.provider,
-          requiredScopes: options.auth.requiredScopes,
-        }),
-      );
-    } else {
-      // Auto-derive resourceMetadataUrl from issuerUrl when using a full OAuth provider (RFC 9728)
-      const resourceMetadataUrl =
-        options.auth.resourceMetadataUrl ??
-        (isFullOAuthProvider(options.auth.provider) && options.auth.issuerUrl
-          ? `${options.auth.issuerUrl.origin}/.well-known/oauth-protected-resource`
-          : undefined);
-
-      // Standard Bearer auth (OAuth or TokenVerifier without custom header)
-      app.use(
-        TRANSPORT_ROUTES.MCP,
-        createBearerAuth({
-          provider: options.auth.provider,
-          requiredScopes: options.auth.requiredScopes,
-          resourceMetadataUrl,
-        }),
+    const { provider, headerName, requiredScopes, onAuthenticated } = options.auth;
+    if (headerName !== undefined && headerName === "") {
+      logger.warn(
+        "AuthOptions.headerName is an empty string — falling back to Bearer auth. Set a non-empty header name or remove the option.",
       );
     }
+    const useCustomHeader = headerName !== undefined && headerName !== "" && !isFullOAuthProvider(provider);
+
+    // Auto-derive resourceMetadataUrl from issuerUrl for full OAuth providers (RFC 9728); N/A for custom headers.
+    const resourceMetadataUrl = useCustomHeader
+      ? undefined
+      : (options.auth.resourceMetadataUrl ??
+        (isFullOAuthProvider(provider) && options.auth.issuerUrl
+          ? `${options.auth.issuerUrl.origin}/.well-known/oauth-protected-resource`
+          : undefined));
+
+    app.use(
+      TRANSPORT_ROUTES.MCP,
+      createAuthMiddleware({
+        provider,
+        ...(useCustomHeader && headerName ? { tokenSource: { header: headerName } } : {}),
+        requiredScopes,
+        resourceMetadataUrl,
+        onAuthenticated,
+      }),
+    );
   }
 
   app.use(TRANSPORT_ROUTES.MCP, validateProtocolVersion); // 4. Protocol Version (early rejection)
@@ -506,6 +516,11 @@ export function createExpressApp(
     if (options.auth.callbackHandler) {
       app.get("/callback", options.auth.callbackHandler);
     }
+  }
+
+  // ===== Consumer App Customization Hook =====
+  if (options?.configureApp) {
+    options.configureApp(app);
   }
 
   // ===== Health & Metrics Routes (exempt from auth and rate limiting) =====
