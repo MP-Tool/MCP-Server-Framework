@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0]
+
+### Added
+
+- **`createOAuthProvider(config | config[], options)` — unified OAuth provider factory**: Replaces the two
+  separate factories (`createUpstreamOAuthProvider`, `createOidcProvider`). Config is a discriminated
+  union on `type`: `"github" | "google" | "oidc" | "oauth2"`. GitHub and Google require only a
+  `clientId`/`clientSecret`; `"oidc"` performs automatic endpoint discovery from the issuer URL;
+  `"oauth2"` is the explicit-endpoints escape hatch for arbitrary providers. Pass an array of configs to
+  enable multi-provider mode — users see an auto-rendered provider-selection page when no `?provider=`
+  parameter is present.
+- **`ProviderContext` hook context**: `mapUserInfo` and `onTokenExchanged` now receive a `ProviderContext`
+  (`{ type, name, issuer? }`) as their first argument. `ctx.type` is a stable discriminant for switch
+  statements; `ctx.name` is the unique routing key. This fixes a latent bug where the internal
+  `oidc:<issuer>` routing name leaked into hook arguments when using `createOidcProvider`.
+- **`authInfoExpiry(ttlSeconds?, nowMs?)` helper**: Returns a correctly-shaped expiry timestamp in epoch
+  seconds, compatible with the SDK's bearer-auth token validation. Exported from the main package.
+- **New types**: `OAuthProviderConfig`, `GithubProviderConfig`, `GoogleProviderConfig`,
+  `OidcProviderConfig`, `OAuth2ProviderConfig`, `CreateOAuthProviderOptions`, `OAuthProviderResult`,
+  `OAuthProviderType`, `ProviderContext`, `MapUserInfo`, `OnTokenExchanged` — all exported from the main
+  package for fully typed consumer configuration.
+
+### Changed
+
+- **`mapUserInfo` and `onTokenExchanged` are now ctx-first**: Signature changed from `(token, data) => …`
+  to `(ctx: ProviderContext, token, data) => …`. The compiler catches every call site that needs updating.
+- **`serverUrl` replaces `serverCallbackUrl`**: The option key in `CreateOAuthProviderOptions` is now
+  `serverUrl` (the server base URL; `/callback` is appended internally). The old name is removed.
+- **`UpstreamEndpoints` moved to main package**: Previously only accessible as an internal type of
+  `upstream-provider.ts`; now a first-class export usable independently of the provider factory.
+- **OIDC discovery utilities promoted to first-class exports**: `fetchOidcDiscovery()`,
+  `getOidcDiscovery()`, `clearOidcDiscoveryCache()` were previously only reachable as a side-effect of
+  `createOidcProvider`. They are now exported from the main package and usable independently.
+
+### Removed
+
+- **`createUpstreamOAuthProvider`** and its types (`UpstreamOAuthOptions`, `UpstreamOAuthProviderResult`)
+  — replaced by `createOAuthProvider({ type: "oauth2", ... })`. Clean break; no compatibility aliases.
+- **`createOidcProvider`** and its type (`OidcProviderOptions`) — replaced by
+  `createOAuthProvider({ type: "oidc", ... })`. Clean break; no compatibility aliases.
+
+### Security
+
+- **`req.query` array-injection guard**: Query parameters in the OAuth authorize handler (`provider`,
+  `code`, `state`, `error`, `error_description`) are now validated with `typeof value === "string"`
+  before use. Express coerces repeated keys to arrays (`?provider=a&provider=b`); the previous casts
+  silently coerced `string[]` to `"[object Array]"`.
+- **PKCE authorization-code TTL**: `challengeForAuthorizationCode` now throws `InvalidGrantError` when
+  the stored PKCE context is older than `codeContextTtlMs`, preventing indefinite replay of stale codes.
+- **Provider name removed from 400 responses**: Unknown `?provider=` values are no longer reflected back
+  to the client (information disclosure); the value is logged server-side at `warn` level only.
+- **Discovery document element-type validation**: `scopes_supported` and
+  `token_endpoint_auth_methods_supported` fields from OIDC discovery documents are filtered to `string[]`
+  before use, preventing non-string elements from propagating into provider configuration.
+
 ## [1.1.2]
 
 ### Changed

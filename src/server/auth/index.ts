@@ -19,14 +19,23 @@ export { isFullOAuthProvider } from "./types.js";
 // Auth Guards
 export { requireAuth, requireScope, requireScopes, hasScope, hasAllScopes, hasAnyScope } from "./guards.js";
 
-// Upstream OAuth Provider (generic server-side callback pattern)
-export { createUpstreamOAuthProvider } from "./upstream-provider.js";
-export type { UpstreamOAuthOptions, UpstreamOAuthProviderResult, UpstreamEndpoints } from "./upstream-provider.js";
+// OAuth Provider
+export { createOAuthProvider, authInfoExpiry } from "./oauth/index.js";
+export type {
+  OAuthProviderConfig,
+  GithubProviderConfig,
+  GoogleProviderConfig,
+  OidcProviderConfig,
+  OAuth2ProviderConfig,
+  CreateOAuthProviderOptions,
+  OAuthProviderResult,
+  OAuthProviderType,
+  ProviderContext,
+  MapUserInfo,
+  OnTokenExchanged,
+  UpstreamEndpoints,
+} from "./oauth/index.js";
 
-// OIDC Provider (auto-discovery for OIDC-compliant providers)
-export { createOidcProvider } from "./oidc-provider.js";
-export type { OidcProviderOptions } from "./oidc-provider.js";
-
-// OIDC Discovery (for advanced use cases)
-export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./oidc-discovery.js";
-export type { OidcDiscoveryDocument } from "./oidc-discovery.js";
+// OAuth Discovery
+export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./oauth/index.js";
+export type { OidcDiscoveryDocument } from "./oauth/index.js";
