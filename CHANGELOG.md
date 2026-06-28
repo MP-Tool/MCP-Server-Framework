@@ -29,6 +29,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OAuthProviderType`, `ProviderContext`, `MapUserInfo`, `OnTokenExchanged` — all exported from the main
   package for fully typed consumer configuration.
 
+- **`createAuthMiddleware(options)` — unified auth middleware**: Replaces `createBearerAuth` and
+  `createCustomHeaderAuth` with a single factory driven by two orthogonal options. `tokenSource`
+  controls where the token is read from (`"bearer"` for `Authorization: Bearer` or
+  `{ header: "X-API-Key" }` for a custom header). `enforcement` controls what happens on
+  missing/invalid tokens: `"required"` (default) rejects with 401/403; `"optional"` calls
+  `next()` without setting `req.auth`, allowing anonymous access alongside authenticated
+  requests from one route definition. The `required` + `bearer` combination delegates to the
+  SDK's `requireBearerAuth` to keep RFC 6750 / RFC 9728 `WWW-Authenticate` discovery intact.
+- **`extractBearerToken(authHeader)` helper**: Extracts the token string from a well-formed
+  `Authorization: Bearer <token>` header value. Returns `undefined` for missing, malformed, or
+  non-Bearer headers. Exported from the main package.
+- **`onAuthenticated` hook on `AuthMiddlewareOptions`**: Optional async callback invoked after
+  successful token verification. Its return value is merged into `req.auth.extra`, making
+  consumer-specific context (user ID, role, tenant) available to route handlers without a
+  separate middleware. Hook errors are logged and swallowed — a failing hook never rejects a
+  valid session.
+- **`AuthTokenSource`, `AuthEnforcement`, `AuthMiddlewareOptions`**: New types exported from
+  the main package for typed middleware configuration.
+
 ### Changed
 
 - **`mapUserInfo` and `onTokenExchanged` are now ctx-first**: Signature changed from `(token, data) => …`
@@ -47,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — replaced by `createOAuthProvider({ type: "oauth2", ... })`. Clean break; no compatibility aliases.
 - **`createOidcProvider`** and its type (`OidcProviderOptions`) — replaced by
   `createOAuthProvider({ type: "oidc", ... })`. Clean break; no compatibility aliases.
+- **`createBearerAuth`** and `BearerAuthOptions` — replaced by
+  `createAuthMiddleware({ tokenSource: "bearer", ... })`. Clean break; no compatibility aliases.
+- **`createCustomHeaderAuth`** and `CustomHeaderAuthOptions` — replaced by
+  `createAuthMiddleware({ tokenSource: { header: "..." }, ... })`. Clean break; no compatibility
+  aliases.
 
 ### Security
 

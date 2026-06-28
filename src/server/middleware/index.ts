@@ -57,18 +57,12 @@ export { resolveTrustProxy, TRUST_PROXY_KEYWORDS } from "./trust-proxy.js";
 // ===== Authentication Middleware =====
 
 /**
- * Bearer Auth Middleware
- * Validates access tokens via OAuth provider or custom token verifier
+ * Unified Auth Middleware
+ * Validates access tokens from a Bearer or custom header, with required or optional
+ * enforcement, via an OAuth provider or token verifier. Sets `req.auth` on success.
  */
-export { createBearerAuth } from "./bearer-auth.js";
-export type { BearerAuthOptions } from "./bearer-auth.js";
-
-/**
- * Custom Header Auth Middleware
- * Extracts and validates tokens from custom headers (e.g. X-API-Key)
- */
-export { createCustomHeaderAuth } from "./custom-header-auth.js";
-export type { CustomHeaderAuthOptions } from "./custom-header-auth.js";
+export { createAuthMiddleware, extractBearerToken } from "./auth-middleware.js";
+export type { AuthMiddlewareOptions, AuthTokenSource, AuthEnforcement } from "./auth-middleware.js";
 
 // ===== Security Logging Utilities =====
 
