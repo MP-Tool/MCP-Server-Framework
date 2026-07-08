@@ -12,6 +12,7 @@
  * @module server/auth/oauth/presets
  */
 
+import { z } from "zod";
 import { authInfoExpiry } from "./core.js";
 import type { BoundMapUserInfo, OAuthProviderType, UpstreamEndpoints } from "./core.js";
 
@@ -38,21 +39,23 @@ export type PresetProviderType = Exclude<OAuthProviderType, "oauth2">;
 // ============================================================================
 
 /**
- * Standard OIDC UserInfo claims.
+ * Standard OIDC UserInfo claims (OIDC Core §5.1).
  * @see https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
  */
-interface OidcUserInfoClaims {
-  readonly sub: string;
-  readonly name?: string;
-  readonly preferred_username?: string;
-  readonly email?: string;
-  readonly email_verified?: boolean;
-  readonly picture?: string;
-}
+const OidcUserInfoSchema = z.object({
+  sub: z.string(),
+  name: z.string().optional(),
+  preferred_username: z.string().optional(),
+  email: z.string().optional(),
+  email_verified: z.boolean().optional(),
+  picture: z.string().optional(),
+});
+
+type OidcUserInfoClaims = z.infer<typeof OidcUserInfoSchema>;
 
 /**
- * Builds the default OIDC userinfo mapper. Validates the required `sub` claim
- * (OIDC Core §5.1) and maps standard claims into {@link AuthInfo}.
+ * Builds the default OIDC userinfo mapper. Validates claims at the system
+ * boundary via Zod (required `sub`, optional standard claims — OIDC Core §5.1).
  */
 function buildOidcMapUserInfo(
   providerType: "google" | "oidc",
@@ -60,13 +63,11 @@ function buildOidcMapUserInfo(
   grantedScopes: readonly string[] | undefined,
 ): BoundMapUserInfo {
   return async (token, data) => {
-    // @type-narrowing: OIDC UserInfo response contains standard claims
-    const claims = data as unknown as OidcUserInfoClaims;
-
-    // Validate required `sub` claim at system boundary
-    if (!claims.sub || typeof claims.sub !== "string") {
-      throw new Error("OIDC UserInfo response missing required 'sub' claim");
+    const result = OidcUserInfoSchema.safeParse(data);
+    if (!result.success) {
+      throw new Error(`OIDC UserInfo response invalid: ${result.error.message}`);
     }
+    const claims: OidcUserInfoClaims = result.data;
 
     return {
       token,
@@ -76,15 +77,9 @@ function buildOidcMapUserInfo(
       extra: {
         provider: providerType,
         ...(issuer !== undefined && { issuer }),
-        // Validate optional claim types at system boundary — providers may return non-string values
-        username: typeof claims.preferred_username === "string" ? claims.preferred_username : undefined,
-        displayName:
-          typeof claims.name === "string"
-            ? claims.name
-            : typeof claims.preferred_username === "string"
-              ? claims.preferred_username
-              : claims.sub,
-        email: typeof claims.email === "string" ? claims.email : undefined,
+        username: claims.preferred_username,
+        displayName: claims.name ?? claims.preferred_username ?? claims.sub,
+        email: claims.email,
       },
     };
   };

@@ -145,6 +145,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OIDC discovery utilities promoted to first-class exports**: `fetchOidcDiscovery()`,
   `getOidcDiscovery()`, `clearOidcDiscoveryCache()` were previously only reachable as a side-effect of
   `createOidcProvider`. They are now exported from the main package and usable independently.
+- **OIDC UserInfo claims validated via Zod**: the default `google`/`oidc` userinfo mapper now runs the
+  provider's response through a Zod schema instead of ad-hoc `typeof` casts. A response with a missing
+  or wrong-typed `sub`, or a wrong-typed optional claim, now fails with a clear validation error
+  instead of silently coercing to `undefined`.
 
 ### Removed
 
