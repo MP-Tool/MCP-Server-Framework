@@ -17,6 +17,7 @@ import type { TransportType } from "../transport/transport-context.js";
 import type { Session, ReadonlySession, SessionCloseReason, CreateSessionOptions } from "./session.js";
 import type { AuthContext } from "../auth/auth-context.js";
 import { getServerMetrics } from "../../telemetry/metrics.js";
+import { logAuditEvent } from "../../audit/index.js";
 import { InMemorySessionStore } from "./in-memory-store.js";
 import type { SessionStore, SessionStats } from "./session-store.js";
 import { SessionHousekeeper } from "./session-housekeeper.js";
@@ -225,7 +226,7 @@ const LOG_COMPONENT = "session-manager";
 
 const LogMessages = {
   MANAGER_STARTED: "Session manager started (timeout=%dmin, cleanup=%ds, heartbeat=%ds)",
-  SESSION_CREATED: "Session created: %s type=%s (active=%d)",
+  SESSION_CREATED: "Session created: %s type=%s user=%s (active=%d)",
   SESSION_CAPACITY_FULL: "Session capacity reached — rejecting new session (%d/%d)",
   SESSION_CLOSED: "Session closed: %s reason=%s (active=%d)",
   CLOSING_ALL: "Closing all sessions... (%d active)",
@@ -362,7 +363,21 @@ export class SessionManagerImpl implements SessionManager {
     if (session) {
       mcpLogger.addHandler(session.mcpSession);
       getServerMetrics().recordSessionChange(session.transport.type, 1);
-      logger.info(LogMessages.SESSION_CREATED, session.id, session.transport.type, this.store.size);
+      const username =
+        typeof session.auth.extra?.["username"] === "string" ? session.auth.extra["username"] : undefined;
+      const userLabel = username ?? session.auth.userId ?? "anonymous";
+      logger.info(LogMessages.SESSION_CREATED, session.id, session.transport.type, userLabel, this.store.size);
+      logAuditEvent({
+        category: "session",
+        action: "session.open",
+        outcome: "info",
+        actor: {
+          sessionId: session.id,
+          ...(username && { username }),
+          ...(session.auth.userId && { userId: session.auth.userId }),
+        },
+        detail: { transport: session.transport.type },
+      });
       void this.invokeLifecycleHook("onClientConnected", session.id, () =>
         this.lifecycle?.onClientConnected?.(session.id, session.auth),
       );
@@ -433,6 +448,21 @@ export class SessionManagerImpl implements SessionManager {
     getServerMetrics().recordSessionChange(session.transport.type, -1);
     mcpLogger.removeHandler(session.mcpSession);
     logger.info(LogMessages.SESSION_CLOSED, sessionId, reason, this.store.size);
+    {
+      const username =
+        typeof session.auth.extra?.["username"] === "string" ? session.auth.extra["username"] : undefined;
+      logAuditEvent({
+        category: "session",
+        action: "session.close",
+        outcome: "info",
+        actor: {
+          sessionId,
+          ...(username && { username }),
+          ...(session.auth.userId && { userId: session.auth.userId }),
+        },
+        detail: { reason },
+      });
+    }
 
     try {
       await session.transport.instance.close();

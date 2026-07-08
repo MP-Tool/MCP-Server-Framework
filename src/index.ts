@@ -101,6 +101,10 @@ export type {
 export { resolveAuthConfig } from "./server/auth/index.js";
 export type { ResolvedAuthConfig, AuthProviderInput } from "./server/auth/index.js";
 
+// Audit log (parallel JSON-Lines security/activity trail)
+export { logAuditEvent } from "./audit/index.js";
+export type { AuditEvent, AuditActor, AuditCategory, AuditOutcome } from "./audit/index.js";
+
 // Auth providers (re-export SDK types for consumer convenience)
 export { ProxyOAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";
 export type { ProxyOptions, ProxyEndpoints } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";

@@ -29,6 +29,7 @@ import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
 import { runWithToolContext } from "../../current-tool-context.js";
+import { logAuditEvent } from "../../../audit/index.js";
 
 /** Reads the conventional `username` label from an auth `extra` payload, if present. */
 function authUsername(extra: Record<string, unknown> | undefined): string | undefined {
@@ -340,6 +341,19 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           if (success) {
             logger.debug(SdkBindingMessages.TOOL_COMPLETED, tool.name, durationMs);
           }
+          // Audit trail: every tool invocation (actor ↔ session ↔ tool ↔ outcome).
+          logAuditEvent({
+            category: "tool",
+            action: "tool.call",
+            outcome: success ? "success" : "failure",
+            target: tool.name,
+            actor: {
+              ...(context.sessionId && { sessionId: context.sessionId }),
+              ...(context.auth?.authInfo.clientId && { userId: context.auth.authInfo.clientId }),
+              ...(authUsername(context.auth?.extra) && { username: authUsername(context.auth?.extra) }),
+            },
+            detail: { durationMs },
+          });
         }
       },
       { kind: SpanKind.SERVER },

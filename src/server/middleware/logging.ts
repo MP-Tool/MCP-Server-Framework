@@ -5,6 +5,7 @@
  */
 
 import { logger as baseLogger } from "../../logger/index.js";
+import { logAuditEvent } from "../../audit/index.js";
 import { TRANSPORT_LOG_COMPONENTS } from "../transport/constants.js";
 
 const logger = baseLogger.child({
@@ -36,4 +37,18 @@ export function sanitizeForLog(input: string | undefined | null): string {
  */
 export function logSecurityEvent(event: string, details?: unknown): void {
   logger.warn(LogMessages.SECURITY_EVENT, event, details || "");
+  // Mirror to the audit trail (no-op when no audit file is configured).
+  logAuditEvent({
+    category: "auth",
+    action: "security_event",
+    outcome: "denied",
+    detail: {
+      event,
+      ...(details !== undefined && typeof details === "object" && details !== null
+        ? (details as Record<string, unknown>)
+        : details !== undefined
+          ? { details }
+          : {}),
+    },
+  });
 }

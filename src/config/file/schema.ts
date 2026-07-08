@@ -193,6 +193,8 @@ const loggingSection = z
     component: z.boolean(),
     /** Directory for log files */
     dir: z.string().min(1),
+    /** Path to a dedicated audit-log file (JSON Lines), parallel to normal logs */
+    audit_file: z.string().min(1),
     /** Maximum log file size before rotation (e.g. "10mb", "500kb") */
     max_file_size: z.string().regex(BYTE_SIZE_REGEX),
     /** Maximum number of rotated log files to keep */
@@ -399,6 +401,7 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
     if (l.timestamp !== undefined) overrides.LOG_TIMESTAMP = l.timestamp;
     if (l.component !== undefined) overrides.LOG_COMPONENT = l.component;
     if (l.dir !== undefined) overrides.LOG_DIR = l.dir;
+    if (l.audit_file !== undefined) overrides.MCP_AUDIT_FILE = l.audit_file;
     if (l.max_file_size !== undefined) overrides.LOG_MAX_FILE_SIZE = parseByteSize(l.max_file_size);
     if (l.max_files !== undefined) overrides.LOG_MAX_FILES = l.max_files;
     if (l.retention_days !== undefined) overrides.LOG_RETENTION_DAYS = l.retention_days;

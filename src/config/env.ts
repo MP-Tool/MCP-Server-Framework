@@ -311,6 +311,12 @@ export const frameworkEnvSchema = z
     LOG_DIR: z.string().min(1).optional(),
 
     /**
+     * Path to a dedicated audit-log file (JSON Lines), written in parallel to the normal
+     * logs and independent of LOG_LEVEL. When unset, audit logging is disabled.
+     */
+    MCP_AUDIT_FILE: z.string().min(1).optional(),
+
+    /**
      * Maximum size of a single log file before rotation.
      *
      * Accepts human-readable size strings (e.g. `'10mb'`, `'500kb'`, `'1gb'`)

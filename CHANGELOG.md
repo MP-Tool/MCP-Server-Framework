@@ -128,6 +128,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Observability parity for task tools**: `createTask`/`getTask`/`getTaskResult` are now wrapped in
   the same tracing span, request-duration metric, and debug/error logging as regular tool calls —
   previously only synchronous tools had this instrumentation.
+- **`logAuditEvent()` — parallel JSON-Lines audit trail**: A security/activity log written to a
+  dedicated file (one JSON object per line), in parallel to the normal application logs and
+  independent of `LOG_LEVEL`. Enabled by pointing `MCP_AUDIT_FILE` (or `[logging].audit_file`) at a
+  path; a no-op when unset, so call sites can emit unconditionally. Emitted for tool calls
+  (`tool.call`), session lifecycle (`session.open`/`session.close`), and security events (denied
+  auth, DNS-rebinding rejections, rate-limit hits). Exposed via `AuditEvent`, `AuditActor`,
+  `AuditCategory`, `AuditOutcome`.
 
 ### Dependencies
 
