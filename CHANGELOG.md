@@ -103,6 +103,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config (`MCP_TRANSPORT`/`MCP_BIND_HOST`/`MCP_PORT`), rewriting a wildcard bind host to `localhost`.
 - **`jwks_uri` on `OidcDiscoveryDocument`**: The discovery document now carries the provider's JWKS
   URI, enabling ID-token signature validation.
+- **`defineAuthExtra<T>(guard)` — typed `auth.extra` binding**: A small read/write codec for the
+  consumer-defined `extra` payload carried on `AuthInfo` / `AuthContext` / `ToolContext.auth`.
+  Replaces ad-hoc `auth.extra["x"] as string` casts and reads uniformly across stateful
+  (`session.auth`) and stateless (`ToolContext.auth`) contexts. Exposed via `AuthExtraBinding`,
+  `HasAuthExtra`.
+- **`createIdentityStore<T>(options)` + `authIdentityKey(auth)` — identity-scoped binding**: A
+  get-or-create cache keyed by a stable user identity, for binding per-user state (e.g. a downstream
+  service connection) and reusing it across requests in **both stateful and stateless** transports.
+  Concurrent creates for one key share a single in-flight factory; entries fall out via idle TTL, LRU
+  cap, and explicit `evict()` (with an `onDispose` hook). `authIdentityKey()` derives a stable key
+  from an `AuthContext` or `ToolContext.auth`. Exposed via `IdentityStore`, `IdentityStoreOptions`,
+  `AuthIdentitySource`.
 
 ### Dependencies
 

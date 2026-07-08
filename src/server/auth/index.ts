@@ -53,6 +53,12 @@ export type {
   BrowserOAuthProvider,
 } from "./browser-login.js";
 
+// Session-auth binding (typed extra + identity-scoped store; stateful & stateless)
+export { defineAuthExtra } from "./auth-extra.js";
+export type { AuthExtraBinding, HasAuthExtra } from "./auth-extra.js";
+export { createIdentityStore, authIdentityKey } from "./identity-store.js";
+export type { IdentityStore, IdentityStoreOptions, AuthIdentitySource } from "./identity-store.js";
+
 // Declarative OAuth config resolution (generic [auth] section → provider configs)
 export { resolveAuthConfig, toOAuthProviderConfigs } from "./auth-config.js";
 export type { ResolvedAuthConfig, AuthProviderInput } from "./auth-config.js";
