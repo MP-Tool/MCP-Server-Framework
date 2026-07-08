@@ -18,4 +18,5 @@ export {
   type ConfigFileFormat,
   type ConfigFileResult,
   type ConfigSource,
+  type AuthSectionData,
 } from "./schema.js";

@@ -39,3 +39,7 @@ export type {
 // OAuth Discovery
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./oauth/index.js";
 export type { OidcDiscoveryDocument } from "./oauth/index.js";
+
+// Declarative OAuth config resolution (generic [auth] section → provider configs)
+export { resolveAuthConfig, toOAuthProviderConfigs } from "./auth-config.js";
+export type { ResolvedAuthConfig, AuthProviderInput } from "./auth-config.js";

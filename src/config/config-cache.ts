@@ -26,7 +26,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { parseFrameworkEnv, validateConfigConstraints, type FrameworkEnvConfig } from "./env.js";
-import { loadConfigFile, mapConfigToEnvKeys, type ConfigSource } from "./file/index.js";
+import { loadConfigFile, mapConfigToEnvKeys, type ConfigSource, type AuthSectionData } from "./file/index.js";
 import { addStartupWarning } from "./startup-warnings.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 // ============================================================================
@@ -84,6 +84,9 @@ let cachedConfig: FrameworkEnvConfig | undefined;
 /** Metadata about how the config was loaded */
 let configSource: ConfigSource | undefined;
 
+/** Parsed `[auth]` section from the config file (nested `providers` survive here). */
+let rawAuthConfig: AuthSectionData | undefined;
+
 /** Registered satellite cache reset functions */
 const satelliteResets: Array<() => void> = [];
 
@@ -130,6 +133,21 @@ export function getFrameworkConfig(): Readonly<FrameworkEnvConfig> {
  */
 export function getConfigSource(): ConfigSource | undefined {
   return configSource;
+}
+
+/**
+ * Returns the parsed `[auth]` config-file section, or `undefined` when no config
+ * file (or no `[auth]` section) was loaded.
+ *
+ * Exposed because the nested `[auth].providers` table cannot be represented in the
+ * flat `FrameworkEnvConfig`. Lazily triggers config initialization on first access.
+ *
+ * @internal — consumers use `resolveAuthConfig()` rather than this raw accessor.
+ */
+export function getRawAuthConfig(): AuthSectionData | undefined {
+  // Ensure the config file has been loaded (populates rawAuthConfig as a side effect).
+  getFrameworkConfig();
+  return rawAuthConfig;
 }
 
 /**
@@ -226,6 +244,9 @@ function initializeConfig(): FrameworkEnvConfig {
   if (fileResult) {
     validateMergedConfig(config);
   }
+
+  // Retain the parsed [auth] section (nested providers can't live in flat config).
+  rawAuthConfig = fileResult?.rawAuth;
 
   // Step 6: Record which config source is active
   configSource = fileResult

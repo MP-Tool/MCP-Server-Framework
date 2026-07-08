@@ -70,6 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delaying Graceful Shutdown. Defaults to `5000`ms.
 - **HTTPS server enforces a TLS 1.2 floor**: `startHttpsServer()` now sets `minVersion: "TLSv1.2"`
   on the TLS context, rejecting legacy TLS 1.0/1.1 handshakes.
+- **`resolveAuthConfig()` + `toOAuthProviderConfigs()` — declarative `[auth]` config-file support**:
+  Turns a config-file `[auth]` section (master switch + a `[auth.providers.<name>]` table) into the
+  `OAuthProviderConfig[]` consumed by `createOAuthProvider`, plus the resolved `enabled` flag and
+  `/mcp` enforcement metadata. The master switch honours `MCP_AUTH_ENABLED` (env) → `[auth].enabled`
+  (file) → "enabled when at least one provider is configured". Provider entries accept `id`/`secret`
+  aliases alongside `client_id`/`client_secret` and infer `type` from the table key when omitted.
+  Exposed via `ResolvedAuthConfig`, `AuthProviderInput`.
 
 ### Fixed
 

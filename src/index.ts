@@ -78,6 +78,10 @@ export { isStaticResource, isResourceTemplate } from "./mcp/types/index.js";
 export { createOAuthProvider } from "./server/auth/index.js";
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./server/auth/index.js";
 
+// Declarative OAuth config resolution (generic [auth] section → provider configs)
+export { resolveAuthConfig } from "./server/auth/index.js";
+export type { ResolvedAuthConfig, AuthProviderInput } from "./server/auth/index.js";
+
 // Auth providers (re-export SDK types for consumer convenience)
 export { ProxyOAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";
 export type { ProxyOptions, ProxyEndpoints } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";

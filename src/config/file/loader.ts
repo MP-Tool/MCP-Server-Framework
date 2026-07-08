@@ -74,7 +74,9 @@ export function loadConfigFile(): ConfigFileResult | undefined {
   // Step 6: Map to overrides
   const overrides = mapConfigToOverrides(parseResult.data);
 
-  return { overrides, sourcePath: filePath, format };
+  // Retain the nested [auth] section — its `providers` table cannot be flattened
+  // into env-style overrides, so resolveAuthConfig() reads it from here.
+  return { overrides, sourcePath: filePath, format, rawAuth: parseResult.data.auth };
 }
 
 // ============================================================================

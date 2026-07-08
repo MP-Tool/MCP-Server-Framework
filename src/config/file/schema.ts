@@ -83,6 +83,12 @@ export interface ConfigFileResult {
   readonly sourcePath: string;
   /** Format of the loaded file */
   readonly format: ConfigFileFormat;
+  /**
+   * The parsed `[auth]` section, retained verbatim because its nested `providers`
+   * table cannot be flattened into the env-style `overrides`. Consumed by
+   * `resolveAuthConfig()`. `undefined` when the file has no `[auth]` section.
+   */
+  readonly rawAuth?: AuthSectionData | undefined;
 }
 
 /**
@@ -220,14 +226,49 @@ const telemetrySection = z
   })
   .partial();
 
+/**
+ * One upstream OAuth provider entry under `[auth.providers.<name>]`.
+ *
+ * Generic across MCP servers. The table key (e.g. `google`, `github`, `acme`) is the
+ * routing name; `type` may be omitted when the key is a known preset. Accepts both the
+ * `id`/`secret` aliases (mirroring some IdP configs) and `client_id`/`client_secret`.
+ */
+const authProviderSection = z
+  .object({
+    /** Whether this provider is active. Defaults to true when omitted. */
+    enabled: z.boolean(),
+    /** Provider kind. Inferred from the table key when omitted (`google`/`github` presets, else `oidc`). */
+    type: z.enum(["google", "github", "oidc"]),
+    /** OAuth client ID (alias of `client_id`). */
+    id: z.string().min(1),
+    /** OAuth client ID. */
+    client_id: z.string().min(1),
+    /** OAuth client secret (alias of `secret`). */
+    client_secret: z.string().min(1),
+    /** OAuth client secret. */
+    secret: z.string().min(1),
+    /** OIDC issuer URL (required for `oidc`; optional override for `google`). */
+    issuer: z.string().url(),
+    /** Requested upstream scopes. */
+    scopes: z.array(z.string().min(1)),
+  })
+  .partial();
+
 const authSection = z
   .object({
+    /** Master switch for MCP-server user authentication. */
+    enabled: z.boolean(),
+    /** Upstream OAuth providers, keyed by routing name (`[auth.providers.<name>]`). */
+    providers: z.record(z.string(), authProviderSection),
     /** Required OAuth scopes for the /mcp endpoint (array of scope strings) */
     required_scopes: z.array(z.string().min(1)),
     /** Protected Resource Metadata URL (RFC 9728) */
     resource_metadata_url: z.string().url(),
   })
   .partial();
+
+/** Parsed `[auth]` section, retained for {@link ConfigFileResult.rawAuth}. */
+export type AuthSectionData = z.infer<typeof authSection>;
 
 // ============================================================================
 // Root Schema
