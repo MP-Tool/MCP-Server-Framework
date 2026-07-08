@@ -13,6 +13,7 @@
 
 import { z } from "zod";
 import { splitCommaSeparated, parseByteSize, parseDuration } from "./string-helpers.js";
+import { parseEnvBoolean } from "./env-helpers.js";
 
 // ============================================================================
 // Boolean Coercion
@@ -38,7 +39,7 @@ import { splitCommaSeparated, parseByteSize, parseDuration } from "./string-help
 export function booleanFromEnv(defaultValue: boolean) {
   return z
     .boolean()
-    .or(z.string().transform((val) => val.toLowerCase() === "true"))
+    .or(z.string().transform((val) => parseEnvBoolean(val)))
     .default(defaultValue);
 }
 

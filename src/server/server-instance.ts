@@ -381,7 +381,16 @@ export class McpServerInstance implements ServerInstance {
 
     await this.invokeLifecycleHook("onStopped", () => this.options.lifecycle?.onStopped?.());
 
+    // Log the final "stopped" message before closing streams so it is flushed
+    // to file-based log targets (N1: previously closeStreams ran first).
     logger.info(RuntimeLogMessages.SERVER_STOPPED);
+
+    try {
+      await Logger.closeStreams();
+    } catch (error) {
+      // Streams already closed or failed — nothing more we can log reliably.
+      console.error("[server] Logger.closeStreams() failed:", error instanceof Error ? error.message : String(error));
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

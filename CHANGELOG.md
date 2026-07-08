@@ -70,6 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was never invoked — its return value was silently discarded. It is now wired to the auth
   middleware and called after every successful token verification. The result is merged into
   `req.auth.extra` and flows through to `context.auth.extra` in tool handlers as documented.
+- **`McpSession.dispose()` no longer silently swallows `sdk.close()` errors**: if the SDK throws
+  before its `onerror` callback fires, the error is now logged as a fallback instead of being lost.
+- **Final "stopped" log message no longer dropped on shutdown**: `McpServerInstance.stop()` closed
+  log streams before logging `SERVER_STOPPED`, so file-based log targets never saw it. The message
+  is now logged before `Logger.closeStreams()` runs.
+- **`booleanFromEnv()` accepts more truthy spellings**: now uses `parseEnvBoolean()`
+  (`1`/`true`/`yes`/`on`, case-insensitive) instead of a bare `=== "true"` comparison.
 
 ### Changed
 

@@ -238,8 +238,10 @@ export class McpSession implements LogNotificationHandler {
       await this.sdk.close();
       // No logging here — sdk.close() triggers onclose/onerror callbacks
       // which are the canonical logging source (setupLifecycleCallbacks)
-    } catch {
-      // Swallowed — onerror callback already logs at ERROR level
+    } catch (err) {
+      // sdk.close() normally fires onerror before throwing, which logs at ERROR level.
+      // If it throws before onerror fires we'd lose the error silently — log here as fallback.
+      this.logger.error("McpSession dispose error during sdk.close()", err);
     } finally {
       // Release callback references to allow GC of captured closures
       this.onCloseCallback = undefined;
@@ -451,15 +453,19 @@ export class McpSession implements LogNotificationHandler {
       return;
     }
 
-    // @sdk-constraint — _requestHandlers is private on Protocol but accessible at runtime.
-    // We wrap the SDK's original list handlers to add scope-based filtering.
-    // Guard: if the SDK changes its internal structure, fail gracefully instead of crashing.
+    // @sdk-constraint — Scope-based list filtering relies on the private `_requestHandlers`
+    // Map on the SDK's Protocol class. This is NOT a public SDK API and may break on any
+    // SDK minor version bump. If the field is absent or renamed, filtering silently degrades
+    // to no-op (tools/resources/prompts are visible regardless of token scopes).
+    //
+    // Long-term fix: request a public `setListHandler` override API from the SDK maintainers.
     const rawHandlers = (this.sdk.server as unknown as Record<string, unknown>)._requestHandlers;
 
     if (!rawHandlers || !(rawHandlers instanceof Map)) {
       this.logger.error(
-        "Cannot install scope-filtered list handlers: SDK _requestHandlers is %s. " +
-          "This may indicate an incompatible SDK version — scope filtering is disabled.",
+        "Scope-filtered list handlers DISABLED: SDK _requestHandlers is %s — " +
+          "prompts will be visible to ALL authenticated sessions regardless of token scopes. " +
+          "This may indicate an incompatible SDK version.",
         rawHandlers === undefined ? "undefined" : typeof rawHandlers,
       );
       return;
