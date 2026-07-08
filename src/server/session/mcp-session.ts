@@ -39,7 +39,7 @@ import {
 } from "../../mcp/capabilities/registry/index.js";
 import { hasAllRequiredScopes } from "../../mcp/capabilities/registry/scope-enforcement.js";
 import { logger as frameworkLogger } from "../../logger/index.js";
-import type { LogNotificationHandler, McpLogLevel } from "../../logger/index.js";
+import type { LogNotificationHandler, McpLogLevel } from "../../logger/core/index.js";
 import { MCP_LEVEL_ORDER } from "../../logger/core/constants.js";
 
 // ============================================================================

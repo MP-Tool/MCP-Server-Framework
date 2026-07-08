@@ -173,14 +173,3 @@ export function setRegisteredSectionData(name: string, data: unknown): void {
     section.data = data;
   }
 }
-
-/**
- * Reset all registered config sections.
- *
- * Intended for testing — clears all registrations and data.
- *
- * @internal
- */
-export function resetConfigExtensions(): void {
-  registeredSections.clear();
-}

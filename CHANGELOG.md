@@ -108,6 +108,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`createCustomHeaderAuth`** and `CustomHeaderAuthOptions` — replaced by
   `createAuthMiddleware({ tokenSource: { header: "..." }, ... })`. Clean break; no compatibility
   aliases.
+- **Test-only reset hooks removed from the public API**: `resetConfigCache`, `resetConfigExtensions`,
+  `resetStartupWarnings`, `resetDynamicResourceRegistry`, `resetAllRegistries`. These existed only to
+  support test isolation and were never meant for application code.
+- **`LogEntryBuilder` / `createLogEntry` removed**: the deprecated fluent log-entry builder
+  (superseded by `buildLogEntry()`) had no remaining callers.
+- **Narrowed top-level package exports**: several internal/advanced symbols are no longer re-exported
+  from the main package entrypoint — `isFullOAuthProvider`, `authInfoExpiry`, `ServerState`,
+  `TaskToolRegistry`/`globalTaskToolRegistry`, `parseDuration`/`formatDuration`, and most of the config
+  barrel (`getConfigSource`, `CONFIG_FILE_ENV_VAR`, `DISCOVERY_FILENAMES`, `frameworkEnvSchema`,
+  `validateConfigConstraints`, `booleanFromEnv`, `commaSeparatedList`, `optionalCommaSeparatedList`,
+  `ConfigSource`, `ConfigFileFormat`). Most remain reachable via their internal module paths — this
+  only narrows what the top-level package surface promises to keep stable.
+- **`DynamicResource*` type exports narrowed**: only `DynamicResourceEntry` remains at the top level;
+  `DynamicResourceRegistryOptions`, `RegisterDynamicResourceOptions`, `RegisterDynamicResourceResult`,
+  `ReadDynamicResourceResult`, `DefineDynamicResourceTemplateOptions` are no longer re-exported from
+  the main package.
 
 ### Security
 

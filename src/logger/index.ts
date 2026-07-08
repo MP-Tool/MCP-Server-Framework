@@ -33,27 +33,9 @@
 // Core Types
 // =============================================================================
 
-export type {
-  LogLevel,
-  McpLogLevel,
-  TransportMode,
-  HttpContext,
-  EventContext,
-  LogContext,
-  LoggerInterface,
-  LogWriter,
-  LogFormatter,
-  LogEntryParams,
-  LoggerConfig,
-  LogNotificationHandler,
-} from "./core/index.js";
+export type { LogLevel, LoggerInterface, LoggerConfig } from "./core/index.js";
 
 export type { LoggerOptions } from "./logger.js";
-
-export { LoggerResources, type LoggerSystemConfig, type LoggerDependencies } from "./factory.js";
-
-export { SecretScrubber } from "./scrubbing/index.js";
-export { InjectionGuard } from "./scrubbing/index.js";
 
 // =============================================================================
 // Main Logger
@@ -61,10 +43,10 @@ export { InjectionGuard } from "./scrubbing/index.js";
 
 export { logger, Logger } from "./logger.js";
 
-export { configureLogger, getLoggerConfig, resetLoggerConfig, type GlobalLoggerConfig } from "./logger.js";
+export { configureLogger, getLoggerConfig } from "./logger.js";
 
 // =============================================================================
 // MCP Logger (notifications to connected clients)
 // =============================================================================
 
-export { mcpLogger, McpNotificationLogger, type McpLoggerConfig } from "./mcp-logger.js";
+export { mcpLogger } from "./mcp-logger.js";

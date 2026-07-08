@@ -28,7 +28,9 @@ import { Logger, logger as frameworkLogger, configureLogger } from "../logger/in
 import { initializeTelemetry, shutdownTelemetry } from "../telemetry/index.js";
 import { DEFAULT_SHUTDOWN_CONFIG } from "./lifecycle.js";
 import type { McpSessionFactory } from "./session/session-factory.js";
-import { applyConfigOverrides, getFrameworkConfig, flushStartupWarnings, setConfigLogger } from "../config/index.js";
+import { getFrameworkConfig } from "../config/index.js";
+import { applyConfigOverrides, setConfigLogger } from "../config/config-cache.js";
+import { flushStartupWarnings } from "../config/startup-warnings.js";
 import { isFullOAuthProvider } from "./auth/types.js";
 import { getDynamicResourceRegistry } from "../mcp/capabilities/resources/index.js";
 
@@ -363,16 +365,6 @@ export class McpServerInstance implements ServerInstance {
       logger.warn(
         RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
         "telemetry",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
-      await Logger.closeStreams();
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "logger",
         error instanceof Error ? error.message : String(error),
       );
     }

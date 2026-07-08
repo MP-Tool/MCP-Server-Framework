@@ -60,17 +60,9 @@ export {
   DynamicResourceRegistry,
   getDynamicResourceRegistry,
   configureDynamicResourceRegistry,
-  resetDynamicResourceRegistry,
   defineDynamicResourceTemplate,
 } from "./mcp/capabilities/resources/index.js";
-export type {
-  DynamicResourceEntry,
-  DynamicResourceRegistryOptions,
-  RegisterDynamicResourceOptions,
-  RegisterDynamicResourceResult,
-  ReadDynamicResourceResult,
-  DefineDynamicResourceTemplateOptions,
-} from "./mcp/capabilities/resources/index.js";
+export type { DynamicResourceEntry } from "./mcp/capabilities/resources/index.js";
 
 // Schema validation (Zod re-export — see DD-011)
 export { z } from "zod";
@@ -81,10 +73,9 @@ export { text, json, structured, error, image, audio, multi, resourceLink } from
 // Type guards
 export { isHttpTransport } from "./server/index.js";
 export { isStaticResource, isResourceTemplate } from "./mcp/types/index.js";
-export { isFullOAuthProvider } from "./server/auth/index.js";
 
 // Auth provider factory
-export { createOAuthProvider, authInfoExpiry } from "./server/auth/index.js";
+export { createOAuthProvider } from "./server/auth/index.js";
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./server/auth/index.js";
 
 // Auth providers (re-export SDK types for consumer convenience)
@@ -146,7 +137,6 @@ export type {
   SessionConfigOptions,
   ServerOptions,
   ServerInstance,
-  ServerState,
   ServerLifecycleHooks,
   ShutdownConfig,
 } from "./server/index.js";
@@ -240,21 +230,10 @@ export {
   ToolRegistry,
   ResourceRegistry,
   PromptRegistry,
-  TaskToolRegistry,
   globalToolRegistry,
   globalResourceRegistry,
   globalPromptRegistry,
-  globalTaskToolRegistry,
 } from "./mcp/capabilities/registry/index.js";
-
-/**
- * `resetAllRegistries` is re-exported from the registry module.
- * Import it directly from the main package:
- * ```typescript
- * import { resetAllRegistries } from 'mcp-server-framework';
- * ```
- */
-export { resetAllRegistries } from "./mcp/capabilities/registry/index.js";
 
 export type { RegistryItem } from "./mcp/capabilities/registry/index.js";
 
@@ -299,21 +278,9 @@ export type {
 // INFRASTRUCTURE — Config
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export {
-  getFrameworkConfig,
-  getConfigSource,
-  CONFIG_FILE_ENV_VAR,
-  DISCOVERY_FILENAMES,
-  registerConfigSection,
-  getAppConfig,
-  frameworkEnvSchema,
-  validateConfigConstraints,
-  booleanFromEnv,
-  commaSeparatedList,
-  optionalCommaSeparatedList,
-} from "./config/index.js";
+export { getFrameworkConfig, registerConfigSection, getAppConfig } from "./config/index.js";
 
-export type { ConfigSource, ConfigFileFormat, FrameworkEnvConfig, ConfigConstraintViolation } from "./config/index.js";
+export type { FrameworkEnvConfig, ConfigConstraintViolation } from "./config/index.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INFRASTRUCTURE — Telemetry
@@ -341,7 +308,5 @@ export {
   getEnvOptional,
   interpolate,
   type MessageParams,
-  parseDuration,
-  formatDuration,
   durationSchema,
 } from "./utils/index.js";

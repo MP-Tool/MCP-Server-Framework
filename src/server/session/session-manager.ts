@@ -16,7 +16,7 @@ import { logger as baseLogger, mcpLogger } from "../../logger/index.js";
 import type { TransportType } from "../transport/transport-context.js";
 import type { Session, ReadonlySession, SessionCloseReason, CreateSessionOptions } from "./session.js";
 import type { AuthContext } from "../auth/auth-context.js";
-import { getServerMetrics } from "../../telemetry/index.js";
+import { getServerMetrics } from "../../telemetry/metrics.js";
 import { InMemorySessionStore } from "./in-memory-store.js";
 import type { SessionStore, SessionStats } from "./session-store.js";
 import { SessionHousekeeper } from "./session-housekeeper.js";

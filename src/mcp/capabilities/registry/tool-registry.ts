@@ -19,11 +19,13 @@ import type { z } from "zod";
 
 import type { ToolDefinition, ToolContext, ToolProvider } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
-import type { Logger, LogNotificationHandler } from "../../../logger/index.js";
+import type { Logger } from "../../../logger/index.js";
 import { mcpLogger } from "../../../logger/index.js";
+import type { LogNotificationHandler } from "../../../logger/core/index.js";
 import { withExtendedContext } from "../../../logger/core/context.js";
 import { JsonRpcErrorCode, AppError } from "../../../errors/index.js";
-import { withSpan, getServerMetrics, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
+import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
+import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
 

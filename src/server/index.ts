@@ -40,7 +40,7 @@ export type {
 // Lifecycle Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type { ServerState, ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
+export type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Builder

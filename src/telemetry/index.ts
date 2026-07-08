@@ -48,7 +48,7 @@
 // SDK Lifecycle
 // ============================================================================
 
-export { initializeTelemetry, shutdownTelemetry, isSdkInitialized, getPrometheusExporter } from "./sdk.js";
+export { initializeTelemetry, shutdownTelemetry } from "./sdk.js";
 
 // ============================================================================
 // Configuration
@@ -80,31 +80,7 @@ export type { SpanOptions, TraceContext, SpanCallback, AsyncSpanCallback } from 
 // Metrics
 // ============================================================================
 
-export { ServerMetricsManager, createServerMetrics, getServerMetrics, resetServerMetrics } from "./metrics.js";
-export { METRIC_ATTRIBUTES } from "./core/index.js";
 export type { ServerMetrics, ServerStats } from "./core/index.js";
 
-// ============================================================================
-// Constants (for advanced usage)
-// ============================================================================
-
-export {
-  TELEMETRY_DEFAULTS,
-  TELEMETRY_ENV_VARS,
-  METRIC_NAMES,
-  METRIC_DESCRIPTIONS,
-  METRIC_UNITS,
-  TRANSPORT_TYPES,
-  TELEMETRY_LOG_COMPONENTS,
-  SdkLogMessages,
-} from "./core/index.js";
-
-// ============================================================================
-// OpenTelemetry-compatible Re-exports (framework-level, no static OTEL import)
-// ============================================================================
-
-// SpanKind & SpanStatusCode are re-exported as FrameworkSpanKind / FrameworkSpanStatusCode
-// from tracing.js above. For backward-compat, provide aliases with the original names.
-// Type-only re-exports remain zero-cost.
-export { FrameworkSpanKind as SpanKind, FrameworkSpanStatusCode as SpanStatusCode } from "./tracing.js";
-export type { Span, Attributes, Context, Tracer } from "@opentelemetry/api";
+// SpanKind alias for consumer convenience (FrameworkSpanKind is the canonical name).
+export { FrameworkSpanKind as SpanKind } from "./tracing.js";

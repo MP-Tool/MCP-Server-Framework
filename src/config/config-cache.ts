@@ -26,9 +26,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { parseFrameworkEnv, validateConfigConstraints, type FrameworkEnvConfig } from "./env.js";
-import { resetConfigExtensions } from "./extensions.js";
 import { loadConfigFile, mapConfigToEnvKeys, type ConfigSource } from "./file/index.js";
-import { addStartupWarning, resetStartupWarnings } from "./startup-warnings.js";
+import { addStartupWarning } from "./startup-warnings.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 // ============================================================================
 // Deferred Logger (injected after logger initialization)
@@ -41,7 +40,6 @@ const LogMessages = {
   DOTENV_NOT_FOUND: "No .env file found — using environment variables only",
   CONFIG_FILE_DETECTED: "Config file detected: %s (format: %s)",
   OVERRIDES_APPLIED: "Programmatic config overrides applied (%d key(s))",
-  CACHE_RESET: "Config cache reset (including %d satellite caches)",
 } as const;
 
 /**
@@ -148,26 +146,6 @@ export function registerCacheReset(resetFn: () => void): void {
   if (!satelliteResets.includes(resetFn)) {
     satelliteResets.push(resetFn);
   }
-}
-
-/**
- * Resets the framework config cache and all registered satellite caches.
- *
- * Intended for testing — forces re-parsing of environment
- * variables on the next `getFrameworkConfig()` call and
- * invalidates all derived caches.
- *
- * @internal
- */
-export function resetConfigCache(): void {
-  cachedConfig = undefined;
-  configSource = undefined;
-  resetConfigExtensions();
-  resetStartupWarnings();
-  for (const reset of satelliteResets) {
-    reset();
-  }
-  logger.debug(LogMessages.CACHE_RESET, satelliteResets.length);
 }
 
 /**

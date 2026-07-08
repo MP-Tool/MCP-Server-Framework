@@ -11,7 +11,8 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { getFrameworkConfig, registerCacheReset, type FrameworkEnvConfig } from "../../config/index.js";
+import { getFrameworkConfig, type FrameworkEnvConfig } from "../../config/index.js";
+import { registerCacheReset } from "../../config/config-cache.js";
 import { isLocalHost } from "../../utils/string-helpers.js";
 import { createJsonRpcError, HttpStatus, JsonRpcErrorCode, TransportErrorMessage } from "../../errors/index.js";
 import { logSecurityEvent, sanitizeForLog } from "./logging.js";
