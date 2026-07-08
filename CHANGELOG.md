@@ -77,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (file) → "enabled when at least one provider is configured". Provider entries accept `id`/`secret`
   aliases alongside `client_id`/`client_secret` and infer `type` from the table key when omitted.
   Exposed via `ResolvedAuthConfig`, `AuthProviderInput`.
+- **`AuthOptions.enabled` — master switch for authentication**: When `false`, the framework mounts
+  neither the auth middleware nor the OAuth routes on any transport route (SSE and `/mcp` share the
+  same auth middleware instance now, built once). Treated as `true` when omitted. Lets a consumer
+  pass a fully-resolved auth config but keep it inert, and guards against accidentally serving
+  authenticated routes when auth was meant to be off.
 
 ### Fixed
 

@@ -386,24 +386,11 @@ function setupMcpRoutes(
       TRANSPORT_ROUTES.SSE_MESSAGE,
     );
   }
-  // Always mount the router — returns 501 if feature is disabled
-  // Apply DNS rebinding protection to SSE routes (MCP spec MUST requirement)
-  app.use([TRANSPORT_ROUTES.SSE, TRANSPORT_ROUTES.SSE_MESSAGE, TRANSPORT_ROUTES.MCP_MESSAGE], dnsRebindingProtection);
-  app.use(createSseRouter(sessionFactory, sessionManager));
 
-  // ===== MCP Transport Routes =====
-  // Streamable HTTP transport on /mcp endpoint
-  // Security middleware (Express level — not handled by SDK)
-  app.use(TRANSPORT_ROUTES.MCP, dnsRebindingProtection); // 1. DNS Rebinding Protection (MUST)
-  app.use(
-    TRANSPORT_ROUTES.MCP,
-    createRateLimiter({
-      trustProxyConfigured: options?.trustProxy !== undefined,
-    }),
-  ); // 2. Rate Limiting (before auth to mitigate brute-force, CWE-770)
-
-  // 3. Auth (only when configured) — the framework always mounts mandatory ("required") auth on /mcp.
-  if (options?.auth) {
+  // ── Build auth middleware once — shared by SSE routes and /mcp ─────────────
+  // Building it once avoids duplicating the construction logic for two route groups.
+  let sharedAuthMiddleware: ReturnType<typeof createAuthMiddleware> | undefined;
+  if (options?.auth && options.auth.enabled !== false) {
     const { provider, headerName, requiredScopes, onAuthenticated } = options.auth;
     if (headerName !== undefined && headerName === "") {
       logger.warn(
@@ -411,7 +398,6 @@ function setupMcpRoutes(
       );
     }
     const useCustomHeader = headerName !== undefined && headerName !== "" && !isFullOAuthProvider(provider);
-
     // Auto-derive resourceMetadataUrl from issuerUrl for full OAuth providers (RFC 9728); N/A for custom headers.
     const resourceMetadataUrl = useCustomHeader
       ? undefined
@@ -419,17 +405,37 @@ function setupMcpRoutes(
         (isFullOAuthProvider(provider) && options.auth.issuerUrl
           ? `${options.auth.issuerUrl.origin}/.well-known/oauth-protected-resource`
           : undefined));
+    sharedAuthMiddleware = createAuthMiddleware({
+      provider,
+      ...(useCustomHeader && headerName ? { tokenSource: { header: headerName } } : {}),
+      requiredScopes,
+      resourceMetadataUrl,
+      onAuthenticated,
+    });
+  }
 
-    app.use(
-      TRANSPORT_ROUTES.MCP,
-      createAuthMiddleware({
-        provider,
-        ...(useCustomHeader && headerName ? { tokenSource: { header: headerName } } : {}),
-        requiredScopes,
-        resourceMetadataUrl,
-        onAuthenticated,
-      }),
-    );
+  // Single shared rate limiter for all MCP transport routes (SSE + /mcp).
+  // One instance = one shared bucket per client IP — prevents bypassing the
+  // limit by splitting requests between endpoints (CWE-770).
+  const mcpRateLimiter = createRateLimiter({ trustProxyConfigured: options?.trustProxy !== undefined });
+
+  // ── SSE routes: DNS rebinding + rate limiting + auth ───────────────────────
+  // Always mounted — returns 501 when SSE is disabled (ensures DNS rebinding protection).
+  const sseRoutes = [TRANSPORT_ROUTES.SSE, TRANSPORT_ROUTES.SSE_MESSAGE, TRANSPORT_ROUTES.MCP_MESSAGE];
+  app.use(sseRoutes, dnsRebindingProtection); // 1. DNS Rebinding Protection (MUST)
+  app.use(sseRoutes, mcpRateLimiter); // 2. Rate Limiting (shared bucket with /mcp)
+  if (sharedAuthMiddleware) {
+    app.use(sseRoutes, sharedAuthMiddleware); // 3. Auth (when configured)
+  }
+  app.use(createSseRouter(sessionFactory, sessionManager));
+
+  // ===== MCP Transport Routes =====
+  // Streamable HTTP transport on /mcp endpoint
+  // Security middleware (Express level — not handled by SDK)
+  app.use(TRANSPORT_ROUTES.MCP, dnsRebindingProtection); // 1. DNS Rebinding Protection (MUST)
+  app.use(TRANSPORT_ROUTES.MCP, mcpRateLimiter); // 2. Rate Limiting (shared bucket with SSE routes)
+  if (sharedAuthMiddleware) {
+    app.use(TRANSPORT_ROUTES.MCP, sharedAuthMiddleware); // 3. Auth (when configured)
   }
 
   app.use(TRANSPORT_ROUTES.MCP, validateProtocolVersion); // 4. Protocol Version (early rejection)
@@ -494,7 +500,7 @@ export function createExpressApp(
   setupSecurityMiddleware(app, options);
 
   // ===== OAuth Router (before health routes, needs express.json()) =====
-  if (options?.auth && isFullOAuthProvider(options.auth.provider)) {
+  if (options?.auth && options.auth.enabled !== false && isFullOAuthProvider(options.auth.provider)) {
     if (!options.auth.issuerUrl) {
       throw new Error("issuerUrl is required when using a full OAuth provider");
     }

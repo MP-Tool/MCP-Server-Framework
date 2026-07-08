@@ -163,6 +163,14 @@ export type AuthenticatedExtra = Record<string, unknown>;
  * ```
  */
 export interface AuthOptions {
+  /**
+   * Master switch for authentication. When `false`, the framework mounts neither the auth
+   * middleware nor the OAuth routes — the server runs open. Treated as `true` when omitted.
+   * Lets a consumer pass a fully-resolved auth config but keep it inert, and guards against
+   * accidentally serving authenticated routes when auth was meant to be off.
+   */
+  readonly enabled?: boolean;
+
   /** Authentication provider (full OAuth or token verifier) */
   readonly provider: AuthProvider;
 
