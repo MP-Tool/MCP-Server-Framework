@@ -150,6 +150,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Discovery document element-type validation**: `scopes_supported` and
   `token_endpoint_auth_methods_supported` fields from OIDC discovery documents are filtered to `string[]`
   before use, preventing non-string elements from propagating into provider configuration.
+- **`form-action 'self'` in the default CSP**: prevents login-CSRF (an attacker page submitting
+  credentials cross-origin to `/authorize/local`). A custom `MCP_HELMET_CSP` without `form-action`
+  now logs a warning explaining the gap instead of silently omitting it.
+- **HSTS-disabled warning in production**: logs a warning when `NODE_ENV=production` and
+  `MCP_HELMET_HSTS` is not enabled, so operators terminating TLS at a proxy are aware the header
+  isn't set at the app layer.
+- **Bounded `redirect_uris` per auto-registered OAuth client**: capped at 20 (CWE-770); further
+  updates are rejected with a warning instead of growing the array unboundedly.
+- **Dedicated rate limiter on auth endpoints**: `/authorize`, `/token`, `/register`, `/callback`, and
+  `/authorize/local` now sit behind their own low-capacity limiter (30 req / 15 min) and DNS-rebinding
+  protection, separate from the MCP transport limiter — mitigates auth brute-force (CWE-307).
 
 ## [1.1.2]
 

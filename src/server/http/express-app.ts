@@ -206,7 +206,7 @@ export interface ExpressAppOptions {
 function setupSecurityMiddleware(app: express.Application, options?: ExpressAppOptions): void {
   // ── Helmet (Security Headers) ──────────────────────────────────────────
   // Build CSP option
-  let cspOption: { directives: Record<string, string[]> } | boolean | undefined;
+  let cspOption: boolean | { directives: Record<string, string[]> } | undefined;
   if (options?.helmetCsp === "false") {
     cspOption = false;
     logger.warn("Content Security Policy (CSP) is disabled via configuration — this reduces XSS protection");
@@ -225,21 +225,51 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
         directives[name] = values;
       }
     }
+    if (!directives["form-action"]) {
+      logger.warn(
+        "Custom CSP (MCP_HELMET_CSP) does not include 'form-action' — login form submissions are unrestricted. " +
+          "Add \"form-action 'self'\" to restrict submissions to the same origin.",
+      );
+    }
     cspOption = { directives };
+  } else {
+    // No custom CSP — use Helmet defaults + form-action 'self'.
+    // Helmet omits form-action by default; without it, browsers allow form submissions to any
+    // origin, which enables login CSRF attacks (attacker submits credentials to /authorize/local).
+    cspOption = {
+      directives: {
+        // getDefaultDirectives() returns string-array values at runtime; cast is safe.
+        ...(helmet.contentSecurityPolicy.getDefaultDirectives() as Record<string, string[]>),
+        formAction: ["'self'"],
+      },
+    };
   }
 
-  // Build frameguard option (CWE-693: disabling X-Frame-Options is not allowed)
-  const frameguardOption: { action: "deny" | "sameorigin" } =
-    options?.helmetFrameOptions === "SAMEORIGIN" ? { action: "sameorigin" } : { action: "deny" };
+  // Build frameguard option. 'false' disables X-Frame-Options (not recommended).
+  const frameguardOption: { action: "deny" | "sameorigin" } | false =
+    options?.helmetFrameOptions === "SAMEORIGIN"
+      ? { action: "sameorigin" }
+      : options?.helmetFrameOptions === "false"
+        ? false
+        : { action: "deny" };
 
   app.use(
     helmet({
       strictTransportSecurity: options?.helmetHsts === true ? { maxAge: 15552000, includeSubDomains: true } : false,
-      ...(cspOption !== undefined && { contentSecurityPolicy: cspOption }),
-      frameguard: frameguardOption,
+      contentSecurityPolicy: cspOption,
+      ...(frameguardOption !== false ? { frameguard: frameguardOption } : { frameguard: false }),
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     }),
   );
+
+  // Warn in production when HSTS is disabled — operators running behind a TLS
+  // proxy must enable HSTS at the proxy level, but should be aware it is absent.
+  if (!options?.helmetHsts && process.env["NODE_ENV"] === "production") {
+    logger.warn(
+      "HSTS (Strict-Transport-Security) is disabled. " +
+        "Enable it with MCP_HELMET_HSTS=true or ensure your TLS proxy sets the header.",
+    );
+  }
 
   // ── CORS ────────────────────────────────────────────────────────────────
   if (options?.corsOrigin && options.corsOrigin.length > 0) {
@@ -320,6 +350,9 @@ function isValidRedirectUri(uri: string): boolean {
  *   does the same thing lazily. The SDK authorize handler then finds the client and
  *   proceeds normally.
  */
+/** Maximum redirect_uris stored per client — prevents unbounded accumulation (CWE-770). */
+const MAX_REDIRECT_URIS_PER_CLIENT = 20;
+
 function createClientAutoRegistration(provider: OAuthServerProvider): express.RequestHandler {
   return async (req, _res, next) => {
     try {
@@ -348,14 +381,22 @@ function createClientAutoRegistration(provider: OAuthServerProvider): express.Re
           redirect_uris: [redirectUri],
           client_id_issued_at: Math.floor(Date.now() / 1000),
         } as Parameters<typeof provider.clientsStore.registerClient>[0]);
-        logger.info("Auto-registered unknown client %s at /authorize", clientId);
+        logger.debug("Auto-registered unknown client %s at /authorize", clientId);
       } else if (!existing.redirect_uris.includes(redirectUri)) {
-        // Known client but new redirect_uri (e.g., VS Code with different port) — update
-        await provider.clientsStore.registerClient({
-          ...existing,
-          redirect_uris: [...existing.redirect_uris, redirectUri],
-        });
-        logger.debug("Updated client %s redirect_uris at /authorize", clientId);
+        if (existing.redirect_uris.length >= MAX_REDIRECT_URIS_PER_CLIENT) {
+          logger.warn(
+            "Rejected redirect_uri update for client %s: limit of %d reached",
+            clientId,
+            MAX_REDIRECT_URIS_PER_CLIENT,
+          );
+        } else {
+          // Known client but new redirect_uri (e.g., VS Code with different port) — update
+          await provider.clientsStore.registerClient({
+            ...existing,
+            redirect_uris: [...existing.redirect_uris, redirectUri],
+          });
+          logger.debug("Updated client %s redirect_uris at /authorize", clientId);
+        }
       }
     } catch (err) {
       // Non-fatal — let the SDK handler deal with the original request
@@ -504,6 +545,17 @@ export function createExpressApp(
     if (!options.auth.issuerUrl) {
       throw new Error("issuerUrl is required when using a full OAuth provider");
     }
+
+    // Dedicated low-capacity rate limiter for auth endpoints.
+    // Separate from the MCP transport limiter to prevent auth brute-force (CWE-307).
+    const authRateLimiter = createRateLimiter({
+      max: 30,
+      windowMs: 15 * 60 * 1000,
+      trustProxyConfigured: options?.trustProxy !== undefined,
+    });
+    const oauthRoutes = ["/authorize", "/token", "/register", "/callback", "/authorize/local"];
+    app.use(oauthRoutes, dnsRebindingProtection); // DNS Rebinding Protection on all auth endpoints
+    app.use(oauthRoutes, authRateLimiter);
 
     // Auto-register unknown clients at /authorize (before SDK router handles it).
     // Handles clients with cached credentials that skip /register.
