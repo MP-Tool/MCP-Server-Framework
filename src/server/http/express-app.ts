@@ -528,6 +528,7 @@ export function createExpressApp(
     createHealthRouter({
       sessionManager,
       readinessCheck: options?.health?.readinessCheck,
+      checkTimeoutMs: options?.health?.checkTimeoutMs,
       serviceLabel: options?.health?.serviceLabel,
       sseInfo: {
         enabled: isSseEnabled(),

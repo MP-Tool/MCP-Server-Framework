@@ -74,6 +74,18 @@ export interface ReadinessConfig {
   readonly readinessCheck?: () => boolean | string | Promise<boolean | string>;
 
   /**
+   * Maximum time in milliseconds to wait for `readinessCheck` to resolve.
+   *
+   * If the check does not complete within this window the endpoint returns 503
+   * and the pending check is effectively abandoned. This prevents a stalled
+   * external dependency (DB, API) from blocking `/ready` indefinitely and
+   * thereby delaying Graceful Shutdown (which waits for active HTTP connections).
+   *
+   * @default 5000
+   */
+  readonly checkTimeoutMs?: number;
+
+  /**
    * Label for the service in health responses.
    * @default 'service'
    */

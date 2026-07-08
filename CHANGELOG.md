@@ -64,6 +64,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`AuthTokenSource`, `AuthEnforcement`, `AuthMiddlewareOptions`**: New types exported from
   the main package for typed middleware configuration.
 
+- **`ReadinessConfig.checkTimeoutMs` / `HealthRouterOptions.checkTimeoutMs`**: Bounds how long
+  `/ready` waits for a consumer-provided `readinessCheck()` before returning `503`. Prevents a
+  stalled dependency (e.g. a hung DB connection) from blocking the endpoint indefinitely and
+  delaying Graceful Shutdown. Defaults to `5000`ms.
+- **HTTPS server enforces a TLS 1.2 floor**: `startHttpsServer()` now sets `minVersion: "TLSv1.2"`
+  on the TLS context, rejecting legacy TLS 1.0/1.1 handshakes.
+
 ### Fixed
 
 - **`AuthOptions.onAuthenticated` now actually called**: The hook was documented since 1.0.x but

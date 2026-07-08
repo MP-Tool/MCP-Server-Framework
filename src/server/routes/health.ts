@@ -78,6 +78,13 @@ export interface HealthRouterOptions {
   readinessCheck?: (() => boolean | string | Promise<boolean | string>) | undefined;
 
   /**
+   * Maximum ms to wait for `readinessCheck` to resolve before returning 503.
+   * Prevents a stalled check from blocking `/ready` and delaying Graceful Shutdown.
+   * @default 5000
+   */
+  checkTimeoutMs?: number | undefined;
+
+  /**
    * Label for the service in health responses.
    * @default 'service'
    */
@@ -116,8 +123,16 @@ export interface HealthRouterOptions {
  * });
  * ```
  */
+const DEFAULT_READINESS_TIMEOUT_MS = 5_000;
+
 export function createHealthRouter(options: HealthRouterOptions): Router {
-  const { sessionManager, readinessCheck, serviceLabel = "service", sseInfo } = options;
+  const {
+    sessionManager,
+    readinessCheck,
+    checkTimeoutMs = DEFAULT_READINESS_TIMEOUT_MS,
+    serviceLabel = "service",
+    sseInfo,
+  } = options;
 
   const router = Router();
 
@@ -172,9 +187,12 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
         reason = `SSE session limit reached (${sseSessionCount}/${maxSseSessions})`;
       }
     } else if (readinessCheck) {
-      // Run consumer-provided readiness check
+      // Run consumer-provided readiness check with a deadline.
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`readinessCheck timed out after ${checkTimeoutMs}ms`)), checkTimeoutMs),
+      );
       try {
-        const result = await readinessCheck();
+        const result = await Promise.race([readinessCheck(), timeoutPromise]);
         if (result === true) {
           status = ReadinessStatus.READY;
           reason = "Server is ready";

@@ -86,6 +86,7 @@ const HTTP_KEEP_ALIVE_TIMEOUT = 65_000;
  * @throws TransportError if file exceeds MAX_TLS_FILE_SIZE
  */
 function readTlsFile(filePath: string): string {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path from trusted server config
   const { size } = statSync(filePath);
   if (size === 0) {
     throw new TransportError(`TLS file is empty (0 bytes): ${filePath}`);
@@ -95,6 +96,7 @@ function readTlsFile(filePath: string): string {
       `TLS file exceeds maximum allowed size of ${MAX_TLS_FILE_SIZE} bytes: ${filePath} (${size} bytes)`,
     );
   }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path from trusted server config
   return readFileSync(filePath, "utf-8");
 }
 
@@ -142,6 +144,12 @@ function resolveOptions(options: HttpServerOptions = {}): {
 // HTTP Server
 // ============================================================================
 
+function applyServerTimeouts(server: Server): void {
+  server.requestTimeout = HTTP_REQUEST_TIMEOUT;
+  server.headersTimeout = HTTP_HEADERS_TIMEOUT;
+  server.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT;
+}
+
 /**
  * Creates and starts a plain HTTP server.
  *
@@ -156,9 +164,7 @@ export function startHttpServer(app: Application, options: HttpServerOptions = {
 
   return new Promise<Server>((resolve, reject) => {
     const server = createHttpServer(app);
-    server.requestTimeout = HTTP_REQUEST_TIMEOUT;
-    server.headersTimeout = HTTP_HEADERS_TIMEOUT;
-    server.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT;
+    applyServerTimeouts(server);
 
     server.on("error", (error: NodeJS.ErrnoException) => {
       reject(handleServerError(error, port, bindHost));
@@ -194,10 +200,8 @@ export function startHttpsServer(app: Application, options: HttpsServerOptions):
   const credentials = readTlsCredentials(options.tls);
 
   return new Promise<Server>((resolve, reject) => {
-    const server = createHttpsServer(credentials, app);
-    server.requestTimeout = HTTP_REQUEST_TIMEOUT;
-    server.headersTimeout = HTTP_HEADERS_TIMEOUT;
-    server.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT;
+    const server = createHttpsServer({ ...credentials, minVersion: "TLSv1.2" }, app);
+    applyServerTimeouts(server);
 
     server.on("error", (error: NodeJS.ErrnoException) => {
       reject(handleServerError(error, port, bindHost));
