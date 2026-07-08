@@ -125,6 +125,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ToolContext.auth.extra` is now populated for stateless tool calls**: previously hardcoded to
   `undefined`; now carries the same `onAuthenticated`-hook result as `session.auth.extra` does for
   stateful sessions.
+- **Observability parity for task tools**: `createTask`/`getTask`/`getTaskResult` are now wrapped in
+  the same tracing span, request-duration metric, and debug/error logging as regular tool calls —
+  previously only synchronous tools had this instrumentation.
 
 ### Dependencies
 
