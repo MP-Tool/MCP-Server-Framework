@@ -245,4 +245,12 @@ export interface AuthOptions {
    * Only effective when a full OAuth provider is configured.
    */
   readonly callbackHandler?: RequestHandler;
+
+  /**
+   * Express handler for the local username/password login route (`POST /authorize/local`).
+   *
+   * Provided by {@link createOAuthProvider} (as `localLoginHandler`) when a `localLogin`
+   * verifier is configured. Mounted only alongside a full OAuth provider.
+   */
+  readonly localLoginHandler?: RequestHandler;
 }

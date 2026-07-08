@@ -34,7 +34,11 @@ import {
   ServerError,
   UnsupportedGrantTypeError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
-import { renderSelectionPage } from "../login.js";
+import {
+  renderSelectionPage as defaultRenderSelectionPage,
+  renderSuccessRedirectPage as defaultRenderSuccessRedirectPage,
+} from "../login.js";
+import type { LoginPageRenderer } from "../login.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 import {
   assertJsonContentType,
@@ -132,6 +136,22 @@ export interface UpstreamEndpoints {
 }
 
 /**
+ * Local (username/password) login verifier — an alternative to upstream OAuth on the same
+ * unified login page. The MCP server verifies credentials against its own downstream
+ * service and issues a session through the same code/token machinery as OAuth, so a local
+ * login yields an identically-isolated session.
+ */
+export interface LocalLoginConfig {
+  /** Label for the local-login section of the login page. Defaults to "Username & password". */
+  readonly displayName?: string | undefined;
+  /**
+   * Verify credentials. Resolve {@link AuthInfo} for the authenticated user, or `null` to
+   * reject (invalid credentials). Throwing is treated as a server error.
+   */
+  readonly verify: (username: string, password: string) => Promise<AuthInfo | null>;
+}
+
+/**
  * Result of {@link createOAuthProvider}.
  *
  * Pass `provider` and `callbackHandler` to `AuthOptions`:
@@ -145,6 +165,12 @@ export interface OAuthProviderResult {
 
   /** Express handler for `GET /callback` — receives upstream redirects */
   readonly callbackHandler: RequestHandler;
+
+  /**
+   * Express handler for `POST /authorize/local` — present only when `localLogin` is
+   * configured. Verifies username/password and mints an authorization code.
+   */
+  readonly localLoginHandler?: RequestHandler;
 
   /** Release eviction timers. Call during server shutdown. */
   readonly dispose?: () => void;
@@ -183,7 +209,17 @@ export interface OAuthProviderCoreOptions {
   readonly maxPendingAuths?: number;
   readonly maxTokens?: number;
   readonly onTokenExchanged?: OnTokenExchanged;
+  /** Optional username/password login offered alongside OAuth on the unified login page. */
+  readonly localLogin?: LocalLoginConfig;
+  /**
+   * Custom login page renderer. Defaults to the framework's generic page.
+   * Pass an application-specific renderer (e.g. with product branding) here.
+   */
+  readonly renderLoginPage?: LoginPageRenderer;
 }
+
+/** Reserved routing name for local-login authorization codes/tokens. */
+const LOCAL_PROVIDER = "__local__";
 
 // ============================================================================
 // Internal State Types
@@ -199,11 +235,13 @@ interface PendingAuth {
 }
 
 interface CodeContext {
-  /** Provider routing name (== ResolvedProvider.ctx.name) */
+  /** Provider routing name (== ResolvedProvider.ctx.name), or {@link LOCAL_PROVIDER}. */
   readonly provider: string;
   readonly upstreamCode: string;
   readonly codeChallenge: string;
   readonly createdAt: number;
+  /** For local-login codes: the AuthInfo captured at credential-verification time. */
+  readonly localAuthInfo?: AuthInfo;
 }
 
 interface TokenEntry {
@@ -270,10 +308,6 @@ export function createOAuthProviderCore(
   providers: readonly ResolvedProvider[],
   options: OAuthProviderCoreOptions = {},
 ): OAuthProviderResult {
-  if (providers.length === 0) {
-    throw new Error("createOAuthProviderCore: at least one provider is required");
-  }
-
   const {
     pendingAuthTtlMs = DEFAULT_PENDING_AUTH_TTL_MS,
     codeContextTtlMs = DEFAULT_CODE_CONTEXT_TTL_MS,
@@ -282,10 +316,22 @@ export function createOAuthProviderCore(
     maxPendingAuths = DEFAULT_MAX_PENDING_AUTHS,
     maxTokens = DEFAULT_MAX_TOKENS,
     onTokenExchanged,
+    localLogin,
+    renderLoginPage,
   } = options;
 
+  const loginPage: LoginPageRenderer = renderLoginPage ?? {
+    renderSelectionPage: defaultRenderSelectionPage,
+    renderSuccessRedirectPage: defaultRenderSuccessRedirectPage,
+  };
+
+  if (providers.length === 0 && !localLogin) {
+    throw new Error("createOAuthProviderCore: at least one provider or a localLogin is required");
+  }
+
   const logger = baseLogger.child({ component: "oauth-core" });
-  const firstProvider = providers[0]!;
+  // May be undefined when only local login is configured (no upstream OAuth providers).
+  const firstProvider: ResolvedProvider | undefined = providers[0];
 
   // Build fast name → provider lookup
   const providerMap = new Map<string, ResolvedProvider>();
@@ -297,6 +343,8 @@ export function createOAuthProviderCore(
   // codeContexts is bounded by pendingAuths capacity (one code per auth flow)
   const codeContexts = new BoundedMap<string, CodeContext>(maxPendingAuths);
   const tokenRegistry = new BoundedMap<string, TokenEntry>(maxTokens);
+  // Local-login access tokens → captured AuthInfo with issue timestamp for server-side expiry.
+  const localTokens = new BoundedMap<string, { authInfo: AuthInfo; createdAt: number }>(maxTokens);
   const clients = new BoundedMap<string, OAuthClientInformationFull>(maxClients, (key) =>
     logger.warn(LogMessages.CLIENT_EVICTED, maxClients, key),
   );
@@ -309,6 +357,7 @@ export function createOAuthProviderCore(
     pendingAuths.evictExpired(pendingAuthTtlMs, (e) => e.createdAt);
     codeContexts.evictExpired(codeContextTtlMs, (e) => e.createdAt);
     tokenRegistry.evictExpired(tokenTtlMs, (e) => e.createdAt);
+    localTokens.evictExpired(tokenTtlMs, (e) => e.createdAt);
   }, EVICTION_INTERVAL_MS);
   evictionTimer.unref();
 
@@ -330,7 +379,7 @@ export function createOAuthProviderCore(
 
       registerClient: async (clientInfo: OAuthClientInformationFull): Promise<OAuthClientInformationFull> => {
         clients.set(clientInfo.client_id, clientInfo);
-        logger.info(LogMessages.REGISTERED_CLIENT, clientInfo.client_id);
+        logger.debug(LogMessages.REGISTERED_CLIENT, clientInfo.client_id);
         return clientInfo;
       },
     },
@@ -347,23 +396,36 @@ export function createOAuthProviderCore(
       if (!req) throw new Error("authorize() called without an attached Express request (res.req undefined)");
       const selectedProvider = typeof req.query["provider"] === "string" ? req.query["provider"] : undefined;
 
-      // Multiple providers and none selected → render selection page
-      if (!selectedProvider && providers.length > 1) {
+      // Render the unified login page when the user hasn't picked a method and there is a
+      // choice to make: more than one OAuth provider, or any local-login option.
+      if (!selectedProvider && (providers.length > 1 || localLogin)) {
         res.type("html").send(
-          renderSelectionPage(
+          loginPage.renderSelectionPage(
             req.originalUrl,
             providers.map((p) => ({ name: p.ctx.name, displayName: p.displayName })),
+            localLogin
+              ? {
+                  displayName: localLogin.displayName ?? "Username & password",
+                  redirectUri: params.redirectUri,
+                  state: params.state,
+                  codeChallenge: params.codeChallenge,
+                }
+              : undefined,
           ),
         );
         return;
       }
 
-      const providerName = selectedProvider ?? firstProvider.ctx.name;
-      const prov = providerMap.get(providerName);
+      const providerName = selectedProvider ?? firstProvider?.ctx.name;
+      const prov = providerName ? providerMap.get(providerName) : undefined;
 
       if (!prov) {
-        logger.warn("Authorize: unknown provider=%s (known: %s)", providerName, [...providerMap.keys()].join(", "));
-        res.status(400).json({ error: "invalid_request", error_description: "Unknown provider" });
+        logger.warn(
+          "Authorize: unknown provider=%s (known: %s)",
+          providerName ?? "(none)",
+          [...providerMap.keys()].join(", "),
+        );
+        res.status(400).json({ error: "invalid_request", error_description: "Unknown or unspecified provider" });
         return;
       }
 
@@ -377,13 +439,13 @@ export function createOAuthProviderCore(
 
       const upstreamState = crypto.randomUUID();
       pendingAuths.set(upstreamState, {
-        provider: providerName,
+        provider: prov.ctx.name,
         clientRedirectUri: params.redirectUri,
         clientState: params.state,
         codeChallenge: params.codeChallenge,
         createdAt: Date.now(),
       });
-      logger.info(LogMessages.AUTHORIZE, client.client_id, providerName, upstreamState);
+      logger.debug(LogMessages.AUTHORIZE, client.client_id, providerName, upstreamState);
 
       const authUrl = new URL(prov.endpoints.authorizationUrl);
       authUrl.searchParams.set("client_id", prov.clientId);
@@ -431,6 +493,15 @@ export function createOAuthProviderCore(
       }
       codeContexts.delete(authorizationCode);
 
+      // Local-login codes carry their verified AuthInfo directly — no upstream exchange.
+      if (ctx.provider === LOCAL_PROVIDER) {
+        if (!ctx.localAuthInfo) throw new InvalidGrantError("Local authorization code is missing its identity");
+        const accessToken = crypto.randomUUID();
+        localTokens.set(accessToken, { authInfo: ctx.localAuthInfo, createdAt: Date.now() });
+        logger.debug("Token exchange: provider=local (issued local session token)");
+        return { access_token: accessToken, token_type: "bearer", expires_in: AUTH_INFO_TTL_SECONDS };
+      }
+
       const prov = providerMap.get(ctx.provider);
       if (!prov) throw new InvalidGrantError(`Unknown provider in code context: ${ctx.provider}`);
 
@@ -470,6 +541,16 @@ export function createOAuthProviderCore(
     // ── Token Verification ──────────────────────────────────────────────────────
 
     async verifyAccessToken(token: string): Promise<AuthInfo> {
+      // Local-login tokens carry their AuthInfo in-process — no userinfo round-trip.
+      const localEntry = localTokens.get(token);
+      if (localEntry) {
+        if (Date.now() - localEntry.createdAt > tokenTtlMs) {
+          localTokens.delete(token);
+          throw new InvalidTokenError("Local session token has expired");
+        }
+        return localEntry.authInfo;
+      }
+
       const entry = tokenRegistry.get(token);
 
       let userinfoUrl: string;
@@ -480,7 +561,7 @@ export function createOAuthProviderCore(
         if (!prov) throw new InvalidTokenError("Token references unknown provider");
         userinfoUrl = entry.userinfoUrl;
         mapUserInfo = prov.mapUserInfo;
-      } else if (providers.length === 1 && firstProvider.endpoints.userinfoUrl) {
+      } else if (providers.length === 1 && firstProvider?.endpoints.userinfoUrl) {
         // Single-provider fallback: verify without registry entry.
         // Covers tokens issued before the registry existed, or tokens from refresh flows
         // where the new access token was not re-registered.
@@ -520,10 +601,10 @@ export function createOAuthProviderCore(
       // Refresh tokens are only supported for single-provider configurations that
       // explicitly opt in. Multi-provider setups cannot route refresh tokens to the
       // correct upstream without tracking which provider issued the original token.
-      if (providers.length !== 1 || !firstProvider.refreshTokenSupport) {
+      const prov = firstProvider;
+      if (providers.length !== 1 || !prov?.refreshTokenSupport) {
         throw new UnsupportedGrantTypeError("Refresh tokens are not supported by this provider");
       }
-      const prov = firstProvider;
       const response = await fetchToken(
         prov.endpoints.tokenUrl,
         {
@@ -544,6 +625,9 @@ export function createOAuthProviderCore(
     async revokeToken(_client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest): Promise<void> {
       const entry = tokenRegistry.get(request.token);
       tokenRegistry.delete(request.token);
+      // Also evict from localTokens — local tokens bypass the upstream provider
+      // and must be explicitly removed here to prevent post-revocation access.
+      localTokens.delete(request.token);
 
       // Route revocation to the correct upstream endpoint
       const prov = entry ? providerMap.get(entry.provider) : providers.length === 1 ? firstProvider : undefined;
@@ -626,16 +710,95 @@ export function createOAuthProviderCore(
       codeChallenge: pending.codeChallenge,
       createdAt: Date.now(),
     });
-    logger.info(LogMessages.CALLBACK_SUCCESS, pending.provider);
+    logger.debug(LogMessages.CALLBACK_SUCCESS, pending.provider);
 
     redirectUrl.searchParams.set("code", ourCode);
     redirectUrl.searchParams.set("state", pending.clientState);
-    res.redirect(redirectUrl.toString());
+    res.status(200).type("html").send(loginPage.renderSuccessRedirectPage(redirectUrl.toString()));
   };
+
+  // ── Local Login Handler (POST /authorize/local) ───────────────────────────────
+  // Verifies username/password via the configured verifier and mints an authorization
+  // code carrying the resulting AuthInfo. The client then exchanges it at /token exactly
+  // like an OAuth code (PKCE still enforced via challengeForAuthorizationCode).
+
+  const localLoginHandler: RequestHandler | undefined = localLogin
+    ? async (req: Request, res: Response): Promise<void> => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
+        const username = str(body["username"]);
+        const password = str(body["password"]);
+        const redirectUri = str(body["redirect_uri"]);
+        const state = str(body["state"]) ?? "";
+        const codeChallenge = str(body["code_challenge"]) ?? "";
+        // Only accept relative paths — prevents javascript:/data: XSS via CSRF-assisted POST
+        const rawAuthorizeUrl = str(body["authorize_url"]) ?? "/authorize";
+        const authorizeUrl = rawAuthorizeUrl.startsWith("/") ? rawAuthorizeUrl : "/authorize";
+
+        if (!redirectUri) {
+          res.status(400).send("Missing redirect URI");
+          return;
+        }
+        const redirectUrl = parseClientRedirectUri(redirectUri);
+        if (!redirectUrl) {
+          res.status(400).send("Invalid redirect URI");
+          return;
+        }
+
+        const reRender = (status: number, error: string): void => {
+          res
+            .status(status)
+            .type("html")
+            .send(
+              loginPage.renderSelectionPage(
+                authorizeUrl,
+                providers.map((p) => ({ name: p.ctx.name, displayName: p.displayName })),
+                { displayName: localLogin.displayName ?? "Username & password", redirectUri, state, codeChallenge },
+                error,
+              ),
+            );
+        };
+
+        if (!username || !password) {
+          reRender(400, "Enter both username and password.");
+          return;
+        }
+
+        let authInfo: AuthInfo | null;
+        try {
+          authInfo = await localLogin.verify(username, password);
+        } catch (err) {
+          logger.error("Local login verification error: %s", err instanceof Error ? err.message : String(err));
+          reRender(500, "Login is temporarily unavailable. Please try again.");
+          return;
+        }
+
+        if (!authInfo) {
+          logger.debug("Local login rejected for user=%s", username);
+          reRender(401, "Invalid username or password.");
+          return;
+        }
+
+        const ourCode = crypto.randomUUID();
+        codeContexts.set(ourCode, {
+          provider: LOCAL_PROVIDER,
+          upstreamCode: "",
+          codeChallenge,
+          createdAt: Date.now(),
+          localAuthInfo: authInfo,
+        });
+
+        redirectUrl.searchParams.set("code", ourCode);
+        redirectUrl.searchParams.set("state", state);
+        logger.debug("Local login accepted for user=%s; redirecting to client", username);
+        res.status(200).type("html").send(loginPage.renderSuccessRedirectPage(redirectUrl.toString()));
+      }
+    : undefined;
 
   return {
     provider,
     callbackHandler,
+    ...(localLoginHandler && { localLoginHandler }),
     dispose: () => clearInterval(evictionTimer),
   };
 }

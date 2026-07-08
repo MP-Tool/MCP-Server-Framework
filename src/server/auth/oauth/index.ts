@@ -28,6 +28,7 @@ export type {
   MapUserInfo,
   OnTokenExchanged,
   UpstreamEndpoints,
+  LocalLoginConfig,
 } from "./core.js";
 
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./discovery.js";

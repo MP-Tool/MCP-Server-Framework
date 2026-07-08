@@ -34,7 +34,11 @@ export type {
   MapUserInfo,
   OnTokenExchanged,
   UpstreamEndpoints,
+  LocalLoginConfig,
 } from "./oauth/index.js";
+
+// Login page rendering (custom branding via LoginPageRenderer)
+export type { LoginPageRenderer, SelectableProvider, LocalLoginForm } from "./login.js";
 
 // OAuth Discovery
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./oauth/index.js";

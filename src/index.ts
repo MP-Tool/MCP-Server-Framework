@@ -121,7 +121,11 @@ export type {
   MapUserInfo,
   OnTokenExchanged,
   UpstreamEndpoints,
+  LocalLoginConfig,
   OidcDiscoveryDocument,
+  LoginPageRenderer,
+  SelectableProvider,
+  LocalLoginForm,
 } from "./server/auth/index.js";
 
 // --- Server creation ---

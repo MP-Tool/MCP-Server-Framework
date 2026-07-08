@@ -359,3 +359,16 @@ export function stripTrailingSlashes(str: string): string {
   while (end > 0 && str.charCodeAt(end - 1) === 47) end--; // 47 = '/'
   return end === str.length ? str : str.slice(0, end);
 }
+
+/**
+ * Escapes HTML special characters to prevent XSS when embedding text in HTML.
+ * Covers the five characters that can break out of HTML attribute and text contexts.
+ */
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

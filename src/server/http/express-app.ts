@@ -574,6 +574,12 @@ export function createExpressApp(
     if (options.auth.callbackHandler) {
       app.get("/callback", options.auth.callbackHandler);
     }
+
+    // Optional local username/password login (unified login page → isolated session).
+    // Needs urlencoded form-body parsing for the POSTed credentials.
+    if (options.auth.localLoginHandler) {
+      app.post("/authorize/local", express.urlencoded({ extended: false }), options.auth.localLoginHandler);
+    }
   }
 
   // ===== Consumer App Customization Hook =====

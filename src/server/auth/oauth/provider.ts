@@ -36,6 +36,7 @@
 import { createOAuthProviderCore } from "./core.js";
 import type {
   BoundMapUserInfo,
+  LocalLoginConfig,
   MapUserInfo,
   OAuthProviderCoreOptions,
   OAuthProviderResult,
@@ -44,6 +45,7 @@ import type {
   ResolvedProvider,
   UpstreamEndpoints,
 } from "./core.js";
+import type { LoginPageRenderer } from "../login.js";
 import { OAUTH_PRESETS } from "./presets.js";
 import { resolveOidcEndpoints } from "./discovery.js";
 import { stripTrailingSlashes } from "../../../utils/string-helpers.js";
@@ -57,8 +59,10 @@ export type {
   OnTokenExchanged,
   OAuthProviderResult,
   UpstreamEndpoints,
+  LocalLoginConfig,
 } from "./core.js";
 export { authInfoExpiry } from "./core.js";
+export type { LoginPageRenderer, SelectableProvider, LocalLoginForm } from "../login.js";
 
 const logger = baseLogger.child({ component: "oauth-provider" });
 
@@ -166,6 +170,19 @@ export interface CreateOAuthProviderOptions {
   /** TTL for the cached OIDC discovery document(s), in milliseconds. @default 3600000 (1 hour) */
   readonly discoveryTtlMs?: number;
 
+  /**
+   * Optional username/password login offered alongside OAuth providers on the unified
+   * login page. Verified credentials mint a session through the same code/token flow,
+   * so a local login is as isolated as an OAuth login. May be the only method (no OAuth).
+   */
+  readonly localLogin?: LocalLoginConfig;
+
+  /**
+   * Custom login page renderer with application-specific branding.
+   * Defaults to the framework's generic built-in page when omitted.
+   */
+  readonly renderLoginPage?: LoginPageRenderer;
+
   // ── timing / capacity ──
   readonly pendingAuthTtlMs?: number;
   readonly codeContextTtlMs?: number;
@@ -209,7 +226,7 @@ async function resolvePresetProvider(
     if (!issuer) {
       throw new Error(`createOAuthProvider: '${cfg.type}' provider requires an issuer URL`);
     }
-    logger.info("Resolving %s provider via OIDC discovery (issuer %s)", cfg.type, issuer);
+    logger.debug("Resolving %s provider via OIDC discovery (issuer %s)", cfg.type, issuer);
     const ep = await resolveOidcEndpoints(issuer, options.discoveryTtlMs);
     endpoints = {
       authorizationUrl: ep.authorizationUrl,
@@ -295,8 +312,8 @@ export async function createOAuthProvider(
   options: CreateOAuthProviderOptions,
 ): Promise<OAuthProviderResult> {
   const configs: readonly OAuthProviderConfig[] = Array.isArray(providers) ? providers : [providers];
-  if (configs.length === 0) {
-    throw new Error("createOAuthProvider: at least one provider config is required");
+  if (configs.length === 0 && !options.localLogin) {
+    throw new Error("createOAuthProvider: at least one provider config or a localLogin is required");
   }
 
   const serverCallbackUrl = `${stripTrailingSlashes(options.serverUrl)}/callback`;
@@ -316,6 +333,8 @@ export async function createOAuthProvider(
 
   const coreOptions: OAuthProviderCoreOptions = {
     ...(options.onTokenExchanged !== undefined && { onTokenExchanged: options.onTokenExchanged }),
+    ...(options.localLogin !== undefined && { localLogin: options.localLogin }),
+    ...(options.renderLoginPage !== undefined && { renderLoginPage: options.renderLoginPage }),
     ...(options.pendingAuthTtlMs !== undefined && { pendingAuthTtlMs: options.pendingAuthTtlMs }),
     ...(options.codeContextTtlMs !== undefined && { codeContextTtlMs: options.codeContextTtlMs }),
     ...(options.tokenTtlMs !== undefined && { tokenTtlMs: options.tokenTtlMs }),

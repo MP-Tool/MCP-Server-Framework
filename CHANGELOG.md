@@ -82,6 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same auth middleware instance now, built once). Treated as `true` when omitted. Lets a consumer
   pass a fully-resolved auth config but keep it inert, and guards against accidentally serving
   authenticated routes when auth was meant to be off.
+- **`localLogin` — username/password login alongside OAuth on the unified login page**: Configure a
+  `verify(username, password)` callback on `CreateOAuthProviderOptions.localLogin`; a successful
+  verification mints a session through the same authorization-code/PKCE machinery as an OAuth login,
+  so a local login is exactly as isolated as an OAuth one. May be the only login method (no OAuth
+  providers required). Mounted at `POST /authorize/local` (via `AuthOptions.localLoginHandler`).
+- **`renderLoginPage` — custom login page branding**: Pass a `LoginPageRenderer` (`renderSelectionPage`
+  / `renderSuccessRedirectPage`) to `createOAuthProvider` to replace the framework's generic,
+  neutral-themed (light/dark) login page with an application-branded one. Exposed via
+  `LoginPageRenderer`, `SelectableProvider`, `LocalLoginForm`.
 
 ### Fixed
 
