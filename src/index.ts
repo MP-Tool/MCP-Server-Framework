@@ -204,6 +204,9 @@ export type {
   TaskToolProvider,
 } from "./mcp/types/index.js";
 
+// Per-tool-call context accessor — reads current ToolContext from AsyncLocalStorage
+export { getCurrentToolContext } from "./mcp/current-tool-context.js";
+
 // --- Tool context & protocol handlers ---
 export type {
   ToolContext,

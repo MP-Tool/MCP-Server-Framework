@@ -28,6 +28,12 @@ import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js"
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
+import { runWithToolContext } from "../../current-tool-context.js";
+
+/** Reads the conventional `username` label from an auth `extra` payload, if present. */
+function authUsername(extra: Record<string, unknown> | undefined): string | undefined {
+  return typeof extra?.["username"] === "string" ? extra["username"] : undefined;
+}
 
 // ============================================================================
 // Constants
@@ -195,11 +201,12 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           // Tool-level scope enforcement (RBAC)
           enforceScopeOrThrow(tool.requiredScopes, authInfo, "Tool", tool.name, logger);
 
-          // Build auth context for tool handler
+          // Build auth context for tool handler.
+          // authInfo.extra is populated by the onAuthenticated hook in auth-middleware.ts.
           const auth = authInfo
             ? {
                 authInfo,
-                extra: undefined as Record<string, unknown> | undefined,
+                extra: authInfo.extra,
               }
             : undefined;
 
@@ -228,14 +235,25 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
             ...(elicitInput && { elicitInput }),
           };
 
-          // Wrap tool execution in AsyncLocalStorage context so that all
-          // logger.*() calls during the handler are forwarded as MCP
-          // notifications/message to the connected client (Logger Step 11).
+          // Wrap tool execution so that:
+          // 1. logger.*() calls are forwarded as MCP notifications/message (Logger Step 11)
+          // 2. getCurrentToolContext() returns toolContext from anywhere in the call stack
+          // Identity label for the log prefix (username convention on auth.extra; else clientId).
+          const userLabel = authUsername(authInfo?.extra) ?? authInfo?.clientId;
+
+          const execute = () => ToolRegistry.executeToolCall(tool, args, toolContext, logger);
+          const executeInToolContext = () => runWithToolContext(toolContext, execute);
           return sendMcpLog
-            ? withExtendedContext({ sendMcpLog, requestId: String(requestId), ...(sessionId && { sessionId }) }, () =>
-                ToolRegistry.executeToolCall(tool, args, toolContext, logger),
+            ? withExtendedContext(
+                {
+                  sendMcpLog,
+                  requestId: String(requestId),
+                  ...(sessionId && { sessionId }),
+                  ...(userLabel && { user: userLabel }),
+                },
+                executeInToolContext,
               )
-            : ToolRegistry.executeToolCall(tool, args, toolContext, logger);
+            : executeInToolContext();
         },
       );
 
@@ -278,7 +296,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
             throw new McpError(JsonRpcErrorCode.REQUEST_CANCELLED, SdkBindingMessages.REQUEST_CANCELLED_BEFORE);
           }
 
-          logger.info(SdkBindingMessages.TOOL_EXECUTING, tool.name);
+          logger.debug(SdkBindingMessages.TOOL_EXECUTING, tool.name);
 
           // @sdk-constraint — SDK registerTool erases input schema type; args validated at runtime by SDK
           const result = await tool.handler(args as Parameters<typeof tool.handler>[0], context);

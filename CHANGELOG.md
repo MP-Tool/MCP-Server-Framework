@@ -115,6 +115,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cap, and explicit `evict()` (with an `onDispose` hook). `authIdentityKey()` derives a stable key
   from an `AuthContext` or `ToolContext.auth`. Exposed via `IdentityStore`, `IdentityStoreOptions`,
   `AuthIdentitySource`.
+- **`getCurrentToolContext()` — AsyncLocalStorage-backed tool context accessor**: Returns the
+  `ToolContext` for the currently executing tool call from anywhere in the call stack (helpers,
+  connection managers, etc.) without threading it through as a parameter. `undefined` outside a tool
+  handler.
+- **Acting user identity in log output**: `LogContext.user` (human-readable username/email) is now
+  shown in the text-formatter log prefix (`u:<user>`). Tool execution derives it from the
+  conventional `username` field on `auth.extra`, falling back to the token's `clientId`.
+- **`ToolContext.auth.extra` is now populated for stateless tool calls**: previously hardcoded to
+  `undefined`; now carries the same `onAuthenticated`-hook result as `session.auth.extra` does for
+  stateful sessions.
 
 ### Dependencies
 

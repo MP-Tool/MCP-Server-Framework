@@ -109,6 +109,10 @@ export class TextFormatter implements LogFormatter {
       }
     }
 
+    if (context.user) {
+      parts.push(`u:${context.user}`);
+    }
+
     if (context.traceId) {
       parts.push(`T:${context.traceId.slice(0, ID_DISPLAY_LENGTH)}`);
     }

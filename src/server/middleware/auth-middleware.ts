@@ -29,8 +29,8 @@ import { logger as baseLogger } from "../../logger/index.js";
 import { logSecurityEvent } from "./logging.js";
 
 // `req.auth` is augmented onto Express by the SDK's bearer-auth module (imported above).
-// We add the legacy consumer seam used to inject a pre-built AuthContext (e.g. Komodo's
-// OIDC bridge); it is read during session creation in the stateful HTTP handler.
+// We add the consumer seam for injecting a pre-built AuthContext (e.g. a custom OIDC bridge);
+// it is read during session creation in the stateful HTTP handler.
 declare module "express-serve-static-core" {
   interface Request {
     /** Pre-built auth context set by consumer middleware; read during session creation. */

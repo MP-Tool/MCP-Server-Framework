@@ -55,6 +55,9 @@ export { text, json, error, image, audio, multi } from "./responses/index.js";
 // Registries
 // ============================================================================
 
+// Per-tool-call context accessor (AsyncLocalStorage-backed)
+export { getCurrentToolContext } from "./current-tool-context.js";
+
 export {
   BaseRegistry,
   ToolRegistry,
