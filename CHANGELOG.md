@@ -91,6 +91,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   / `renderSuccessRedirectPage`) to `createOAuthProvider` to replace the framework's generic,
   neutral-themed (light/dark) login page with an application-branded one. Exposed via
   `LoginPageRenderer`, `SelectableProvider`, `LocalLoginForm`.
+- **`createBrowserOAuthLogin()` — interactive browser OAuth/OIDC login**: A generic
+  Authorization-Code-with-PKCE flow for stdio-mode servers (or any server needing the operator to
+  log in via a browser). Supports a generic OIDC issuer, Google, and GitHub; reuses the framework's
+  cached, SSRF-guarded `getOidcDiscovery()`. Returns the validated upstream provider token
+  (OIDC/Google `id_token` or GitHub `access_token`) with its identity claims — no token minting or
+  consumer-specific credential mapping baked in. `registerCallbackRoutes(app)` mounts the
+  `GET /auth/:provider/callback` handlers (designed for the `configureHttpApp` hook). Exposed via
+  `BrowserOAuthLogin`, `BrowserOAuthConfig`, `BrowserOAuthResult`, `BrowserOAuthProvider`.
+- **`deriveServerBaseUrl()` helper**: Computes this server's public base URL from the transport
+  config (`MCP_TRANSPORT`/`MCP_BIND_HOST`/`MCP_PORT`), rewriting a wildcard bind host to `localhost`.
+- **`jwks_uri` on `OidcDiscoveryDocument`**: The discovery document now carries the provider's JWKS
+  URI, enabling ID-token signature validation.
+
+### Dependencies
+
+- Added **`jose`** (`^6.2.3`) for OIDC ID-token (JWKS) validation in the browser login flow.
 
 ### Fixed
 

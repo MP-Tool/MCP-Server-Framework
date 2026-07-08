@@ -28,7 +28,7 @@ export const GITHUB_ENDPOINTS: UpstreamEndpoints = {
   userinfoUrl: "https://api.github.com/user",
 };
 
-const GOOGLE_DEFAULT_ISSUER = "https://accounts.google.com";
+export const GOOGLE_DEFAULT_ISSUER = "https://accounts.google.com";
 
 /** Preset type token (everything except the `oauth2` escape hatch, which has no preset). */
 export type PresetProviderType = Exclude<OAuthProviderType, "oauth2">;

@@ -92,6 +92,9 @@ export interface OidcDiscoveryDocument {
   /** RECOMMENDED. URL of the UserInfo endpoint */
   readonly userinfo_endpoint?: string;
 
+  /** URL of the provider's JSON Web Key Set (used to validate ID token signatures) */
+  readonly jwks_uri?: string;
+
   /** URL of the token revocation endpoint (RFC 7009) */
   readonly revocation_endpoint?: string;
 
@@ -192,7 +195,7 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     throw err;
   }
 
-  logger.info(LogMessages.FETCHING, discoveryUrl);
+  logger.debug(LogMessages.FETCHING, discoveryUrl);
 
   let response: globalThis.Response;
   try {
@@ -232,6 +235,9 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     ...(typeof data.userinfo_endpoint === "string" && {
       userinfo_endpoint: data.userinfo_endpoint,
     }),
+    ...(typeof data.jwks_uri === "string" && {
+      jwks_uri: data.jwks_uri,
+    }),
     ...(typeof data.revocation_endpoint === "string" && {
       revocation_endpoint: data.revocation_endpoint,
     }),
@@ -255,7 +261,7 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     );
   }
 
-  logger.info(
+  logger.debug(
     LogMessages.FETCHED,
     document.authorization_endpoint,
     document.token_endpoint,

@@ -44,6 +44,15 @@ export type { LoginPageRenderer, SelectableProvider, LocalLoginForm } from "./lo
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./oauth/index.js";
 export type { OidcDiscoveryDocument } from "./oauth/index.js";
 
+// Browser-based OAuth/OIDC login (interactive, for stdio-mode servers)
+export { createBrowserOAuthLogin, deriveServerBaseUrl } from "./browser-login.js";
+export type {
+  BrowserOAuthLogin,
+  BrowserOAuthConfig,
+  BrowserOAuthResult,
+  BrowserOAuthProvider,
+} from "./browser-login.js";
+
 // Declarative OAuth config resolution (generic [auth] section → provider configs)
 export { resolveAuthConfig, toOAuthProviderConfigs } from "./auth-config.js";
 export type { ResolvedAuthConfig, AuthProviderInput } from "./auth-config.js";
