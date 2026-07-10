@@ -175,6 +175,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Quality/audit pass**: removed a stale `as unknown as MetricReader` cast in the telemetry SDK
+  (the OpenTelemetry version skew it worked around is resolved; `PrometheusExporter` now extends
+  `MetricReader`); repaired two OAuth provider tests that broke when the callback flow switched from
+  an HTTP 302 to an HTML success-redirect page (they now assert the client code carried by the
+  `<meta refresh>` page — restoring real coverage of the code-exchange and PKCE-TTL paths); and
+  resolved the full ESLint warning backlog (real fixes where genuine — e.g. `(string & {})` on error
+  `code` unions to keep known-code autocomplete — and reasoned, documented suppressions where the
+  flag was a false positive on trusted-config regexes or intentional boundary/race defense).
 - **`AuthOptions.onAuthenticated` now actually called**: The hook was documented since 1.0.x but
   was never invoked — its return value was silently discarded. It is now wired to the auth
   middleware and called after every successful token verification. The result is merged into
@@ -207,6 +215,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auth-endpoint rate-limit parameters named**: the brute-force limiter's capacity/window
   (CWE-307, see Security) are now `AUTH_RATE_LIMIT_MAX`/`AUTH_RATE_LIMIT_WINDOW_MS` constants
   instead of inline magic numbers.
+- **Internal `sanitizeForLog()` renamed to `truncateForLog()`** (transport middleware): the old name
+  wrongly implied CWE-117 injection sanitization, but the function only trims and length-bounds
+  untrusted input (now via a named `MAX_LOG_INPUT_LENGTH` constant instead of an inline `200`) — the
+  actual control-character escaping is applied separately by the Logger pipeline's `InjectionGuard`.
+  Renamed for honesty and to disambiguate it from the scrubber's `sanitizeForLogging()`. Internal
+  helper (not part of the public package surface); no consumer impact.
 - **`mapUserInfo` and `onTokenExchanged` are now ctx-first**: Signature changed from `(token, data) => …`
   to `(ctx: ProviderContext, token, data) => …`. The compiler catches every call site that needs updating.
 - **`serverUrl` replaces `serverCallbackUrl`**: The option key in `CreateOAuthProviderOptions` is now

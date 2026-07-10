@@ -306,6 +306,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           span.setAttributes({
             [MCP_ATTRIBUTES.SUCCESS]: true,
             [MCP_ATTRIBUTES.RESULT_IS_ERROR]: result.isError === true,
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive at the SDK result boundary; content may be absent at runtime.
             [MCP_ATTRIBUTES.RESULT_CONTENT_COUNT]: result.content?.length ?? 0,
           });
 

@@ -72,7 +72,7 @@ interface SdkTaskExtra {
   readonly _meta?: { progressToken?: string | number | undefined } | undefined;
   readonly sendNotification: SendNotificationFn;
   readonly taskId?: string | undefined;
-  readonly taskStore?: unknown | undefined;
+  readonly taskStore?: unknown;
 }
 
 // ============================================================================

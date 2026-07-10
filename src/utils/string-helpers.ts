@@ -129,6 +129,7 @@ export function truncateId(id: string, length = DEFAULT_ID_DISPLAY_LENGTH): stri
  * BYTE_SIZE_REGEX.test('abc');       // false
  * ```
  */
+// eslint-disable-next-line security/detect-unsafe-regex -- linear-time (no ambiguous nesting); only ever tested against trusted config/env values.
 export const BYTE_SIZE_REGEX = /^\d+(\.\d+)?\s*(kb|mb|gb|tb|pb)?$/i;
 
 /**
@@ -167,6 +168,7 @@ const BYTE_MULTIPLIERS: Readonly<Record<string, number>> = {
  */
 export function parseByteSize(value: string): number {
   const trimmed = value.trim();
+  // eslint-disable-next-line security/detect-unsafe-regex -- linear-time; input is a trusted config/env size string.
   const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(kb|mb|gb|tb|pb)?$/i);
 
   if (!match) {
@@ -175,6 +177,7 @@ export function parseByteSize(value: string): number {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- group 1 is required, always present on a match.
   const num = parseFloat(match[1]!);
   const unit = match[2]?.toLowerCase();
 
@@ -207,6 +210,7 @@ export function parseByteSize(value: string): number {
  * DURATION_REGEX.test('abc');       // false
  * ```
  */
+// eslint-disable-next-line security/detect-unsafe-regex -- linear-time (no ambiguous nesting); only ever tested against trusted config/env values.
 export const DURATION_REGEX = /^\d+(\.\d+)?\s*(ms|s|m|h|d|w)?$/i;
 
 /**
@@ -253,6 +257,7 @@ const DURATION_MULTIPLIERS: Readonly<Record<string, number>> = {
  */
 export function parseDuration(value: string): number {
   const trimmed = value.trim();
+  // eslint-disable-next-line security/detect-unsafe-regex -- linear-time; input is a trusted config/env duration string.
   const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?$/i);
 
   if (!match) {
@@ -261,6 +266,7 @@ export function parseDuration(value: string): number {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- group 1 is required, always present on a match.
   const num = parseFloat(match[1]!);
   const unit = match[2]?.toLowerCase();
 

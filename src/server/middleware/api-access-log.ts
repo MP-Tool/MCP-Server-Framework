@@ -14,7 +14,7 @@ import type { Request, Response, NextFunction } from "express";
 import { logger as baseLogger } from "../../logger/index.js";
 import { withExtendedContext } from "../../logger/core/context.js";
 import { MCP_HEADERS } from "../transport/constants.js";
-import { sanitizeForLog } from "./logging.js";
+import { truncateForLog } from "./logging.js";
 
 const logger = baseLogger.child({ component: "api" });
 
@@ -35,7 +35,7 @@ export function apiAccessLog(req: Request, res: Response, next: NextFunction): v
   const method = req.method;
   // Path only — never the query string. OAuth flows carry `code`/`state` in query
   // params (/authorize, /callback); logging them would leak sensitive values.
-  const path = sanitizeForLog(req.path);
+  const path = truncateForLog(req.path);
   const sessionHeader = req.headers[MCP_HEADERS.SESSION_ID];
   const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
 

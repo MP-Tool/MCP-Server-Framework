@@ -84,10 +84,12 @@ export interface ResponseOptions {
 
 /**
  * Options for text responses.
+ *
+ * Intentionally empty — a named extension point so text-specific options can be added later
+ * without changing the public signature of `text()`.
  */
-export interface TextResponseOptions extends ResponseOptions {
-  // Text-specific options can be added here
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- deliberate named extension point.
+export interface TextResponseOptions extends ResponseOptions {}
 
 /**
  * Options for JSON responses.
@@ -125,10 +127,12 @@ export interface StructuredResponseOptions extends ResponseOptions {
 
 /**
  * Options for error responses.
+ *
+ * Intentionally empty — a named extension point so error-specific options can be added later
+ * without changing the public signature of `error()`.
  */
-export interface ErrorResponseOptions extends ResponseOptions {
-  // Error-specific options can be added here
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- deliberate named extension point.
+export interface ErrorResponseOptions extends ResponseOptions {}
 
 // ============================================================================
 // Media Types

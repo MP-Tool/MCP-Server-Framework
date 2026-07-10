@@ -7,6 +7,8 @@
  * @module logger/scrubbing/secret-scrubber
  */
 
+/* eslint-disable security/detect-non-literal-regexp -- redaction patterns are compiled from the
+   framework's own SENSITIVE_KEYS blocklist and internal constants, never from user input. */
 import {
   SENSITIVE_KEYS as BASE_SENSITIVE_KEYS,
   isSensitiveKey as baseSensitiveKeyCheck,

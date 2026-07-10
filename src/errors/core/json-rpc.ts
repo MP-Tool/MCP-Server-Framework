@@ -84,7 +84,7 @@ export function isValidJsonRpcErrorCode(code: number): boolean {
 export interface JsonRpcErrorResponse {
   readonly jsonrpc: "2.0";
   readonly error: {
-    readonly code: JsonRpcErrorCodeType | number;
+    readonly code: JsonRpcErrorCodeType | (number & {});
     readonly message: string;
   };
   readonly id: RequestId | null;
@@ -99,7 +99,7 @@ export interface JsonRpcErrorResponse {
  * @returns Structured JSON-RPC 2.0 error response
  */
 export function createJsonRpcError(
-  code: JsonRpcErrorCodeType | number,
+  code: JsonRpcErrorCodeType | (number & {}),
   message?: string,
   id: RequestId | null = null,
 ): JsonRpcErrorResponse {

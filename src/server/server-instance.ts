@@ -681,6 +681,7 @@ export class McpServerInstance implements ServerInstance {
     } catch (error) {
       stopError = error;
     } finally {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- timedOut is set asynchronously by the timeout callback; not statically const-false.
       if (!timedOut) {
         clearTimeout(timeout);
       }
@@ -690,6 +691,7 @@ export class McpServerInstance implements ServerInstance {
     // scheduled setImmediate(exit(1)), the promise resolution (microtask)
     // can race ahead and trigger .then(exit(0)) first. Throwing here
     // ensures the caller's .catch(exit(1)) wins.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- timedOut is set asynchronously by the timeout callback; not statically const-false.
     if (timedOut) {
       throw new Error("Shutdown completed after timeout — forcing exit(1)");
     }

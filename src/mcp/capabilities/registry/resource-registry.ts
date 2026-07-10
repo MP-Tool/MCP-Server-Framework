@@ -396,11 +396,12 @@ export class ResourceRegistry implements ResourceProvider {
         ? ResourceRegistry.buildResourceCompleteCallbacks(template.uriTemplate, template.complete)
         : undefined;
 
+      const listFn = template.list;
       const sdkTemplate = new SdkResourceTemplate(template.uriTemplate, {
-        list: template.list
+        list: listFn
           ? async () => {
               try {
-                const items = await template.list!();
+                const items = await listFn();
                 return {
                   resources: items.map((item) => ({
                     uri: item.uri,
@@ -524,6 +525,7 @@ export class ResourceRegistry implements ResourceProvider {
    */
   private static extractUriTemplateVariables(uriTemplate: string): string[] {
     const matches = uriTemplate.matchAll(/\{(\w+)\}/g);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- group 1 is required, always present on a match.
     return [...matches].map((m) => m[1]!);
   }
 

@@ -289,14 +289,17 @@ function initializeConfig(): FrameworkEnvConfig {
  * @returns Parsed key-value pairs from the `.env` file, or empty object
  */
 function loadDotenvFile(): Record<string, string> {
+  // Fixed path: `.env` in the process working directory. Not derived from any request input.
   const dotenvPath = join(process.cwd(), ".env");
 
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed cwd/.env path, trusted.
   if (!existsSync(dotenvPath)) {
     logger.debug(LogMessages.DOTENV_NOT_FOUND);
     return {};
   }
 
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed cwd/.env path, trusted.
     const content = readFileSync(dotenvPath, "utf-8");
     const parsed = parseDotenv(content);
     logger.debug(LogMessages.DOTENV_LOADED, Object.keys(parsed).length);

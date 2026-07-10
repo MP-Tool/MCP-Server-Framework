@@ -6,7 +6,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { sanitizeForLog } from "./logging.js";
+import { truncateForLog } from "./logging.js";
 import { logger as baseLogger } from "../../logger/index.js";
 import { HttpStatus, createJsonRpcError, JsonRpcErrorCode } from "../../errors/index.js";
 import { MCP_HEADERS } from "../transport/index.js";
@@ -46,13 +46,13 @@ export function validateProtocolVersion(req: Request, res: Response, next: NextF
 
   // SUPPORTED_PROTOCOL_VERSIONS is imported from the MCP SDK — always in sync with the SDK version
   if (!SUPPORTED_PROTOCOL_VERSIONS.includes(protocolVersion)) {
-    logger.warn(LogMessages.PROTOCOL_VERSION_UNSUPPORTED, sanitizeForLog(protocolVersion));
+    logger.warn(LogMessages.PROTOCOL_VERSION_UNSUPPORTED, truncateForLog(protocolVersion));
     res
       .status(HttpStatus.BAD_REQUEST)
       .json(
         createJsonRpcError(
           JsonRpcErrorCode.INVALID_REQUEST,
-          `Unsupported MCP-Protocol-Version: ${sanitizeForLog(protocolVersion)}. Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")}`,
+          `Unsupported MCP-Protocol-Version: ${truncateForLog(protocolVersion)}. Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")}`,
         ),
       );
     return;

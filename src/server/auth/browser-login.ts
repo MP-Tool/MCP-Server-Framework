@@ -272,6 +272,7 @@ async function validateIdToken(flow: PendingFlow, idToken: string): Promise<Reco
 }
 
 async function validateGitHubToken(accessToken: string): Promise<Record<string, unknown>> {
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- optional on UpstreamEndpoints, but GITHUB_ENDPOINTS always defines userinfoUrl.
   const response = await fetch(GITHUB_ENDPOINTS.userinfoUrl!, {
     headers: {
       accept: "application/vnd.github+json",

@@ -74,7 +74,8 @@ export type { AuthMiddlewareOptions, AuthTokenSource, AuthEnforcement } from "./
 // ===== Security Logging Utilities =====
 
 /**
- * Sanitizes a string for logging to prevent log injection attacks.
- * Replaces newlines and other control characters.
+ * `truncateForLog` trims and length-bounds untrusted input before it goes into a log
+ * message (CWE-117 control-character escaping is applied separately by the Logger pipeline).
+ * `logSecurityEvent` logs a security event and mirrors it to the audit trail.
  */
-export { sanitizeForLog, logSecurityEvent } from "./logging.js";
+export { truncateForLog, logSecurityEvent } from "./logging.js";

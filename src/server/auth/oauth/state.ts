@@ -1,8 +1,24 @@
 /**
- * Bounded Map — generic Map with FIFO eviction on capacity overflow and TTL-based eviction.
+ * Bounded Map — generic Map with FIFO eviction on capacity overflow plus opt-in TTL sweeps.
  *
- * Used by the OAuth provider core to manage in-memory state with bounded memory
- * guarantees. Replaces multiple hand-rolled Map + eviction patterns in provider files.
+ * Used by the OAuth provider core and the streamable-HTTP event store to hold in-memory
+ * state with bounded-memory guarantees.
+ *
+ * ## Why this isn't the framework's only bounded collection
+ *
+ * `BoundedMap` is the simplest point on a deliberate spectrum — the other bounded
+ * collections are NOT accidental duplicates, they encode different eviction policies:
+ *
+ * - **`BoundedMap`** (here) — FIFO cap + explicit `evictExpired()` sweep. Insertion order
+ *   only; access does not affect eviction. Cheapest; fits token/code/client registries.
+ * - **`createIdentityStore`** (`server/auth/identity-store`) — TTL + true LRU (access bumps
+ *   recency) + `onDispose` on every removal path. For entries that own resources.
+ * - **`InMemorySessionStore`** (`server/session/in-memory-store`) — *rejects* new entries at
+ *   capacity rather than evicting an existing session (a live session must not be dropped).
+ * - **OIDC discovery cache** (`server/auth/oauth/discovery`) — TTL checked lazily on read,
+ *   no background sweep, tiny fixed key space.
+ *
+ * When adding bounded state, pick the closest of these rather than hand-rolling a fifth.
  *
  * @module server/auth/oauth/state
  */

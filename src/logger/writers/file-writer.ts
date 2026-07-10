@@ -7,6 +7,8 @@
  * @module logger/writers/file-writer
  */
 
+/* eslint-disable security/detect-non-literal-fs-filename -- all paths derive from the trusted log
+   directory (config/env) joined with a fixed, sanitized component name; never from request input. */
 import * as fs from "fs";
 import * as path from "path";
 import type { LogLevel } from "../core/types.js";

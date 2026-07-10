@@ -11,6 +11,7 @@
 import * as util from "util";
 import type { LogContext, LogFormatter, LogEntryParams } from "../core/types.js";
 import { ID_DISPLAY_LENGTH, LEVEL_PAD_LENGTH } from "../core/constants.js";
+import { truncateId } from "../../utils/string-helpers.js";
 
 /**
  * Configuration for the text formatter.
@@ -98,14 +99,14 @@ export class TextFormatter implements LogFormatter {
     const parts: string[] = [];
 
     if (context.sessionId) {
-      parts.push(context.sessionId.slice(0, ID_DISPLAY_LENGTH));
+      parts.push(truncateId(context.sessionId, ID_DISPLAY_LENGTH));
     }
 
     if (context.requestId) {
       if (parts.length > 0) {
-        parts.push(context.requestId.slice(0, ID_DISPLAY_LENGTH));
+        parts.push(truncateId(context.requestId, ID_DISPLAY_LENGTH));
       } else {
-        parts.push(`Req:${context.requestId.slice(0, ID_DISPLAY_LENGTH)}`);
+        parts.push(`Req:${truncateId(context.requestId, ID_DISPLAY_LENGTH)}`);
       }
     }
 
@@ -114,7 +115,7 @@ export class TextFormatter implements LogFormatter {
     }
 
     if (context.traceId) {
-      parts.push(`T:${context.traceId.slice(0, ID_DISPLAY_LENGTH)}`);
+      parts.push(`T:${truncateId(context.traceId, ID_DISPLAY_LENGTH)}`);
     }
 
     return parts.join(":");

@@ -15,7 +15,7 @@ import { getFrameworkConfig, type FrameworkEnvConfig } from "../../config/index.
 import { registerCacheReset } from "../../config/config-cache.js";
 import { isLocalHost } from "../../utils/string-helpers.js";
 import { createJsonRpcError, HttpStatus, JsonRpcErrorCode, TransportErrorMessage } from "../../errors/index.js";
-import { logSecurityEvent, sanitizeForLog } from "./logging.js";
+import { logSecurityEvent, truncateForLog } from "./logging.js";
 
 // ============================================================================
 // Security Configuration
@@ -98,7 +98,7 @@ export function dnsRebindingProtection(req: Request, res: Response, next: NextFu
     : isLocalHost(cleanHost) || allowedHosts.includes(cleanHost);
 
   if (!host || !isAllowed) {
-    logSecurityEvent(`DNS Rebinding attempt blocked: Host=${sanitizeForLog(host)}`);
+    logSecurityEvent(`DNS Rebinding attempt blocked: Host=${truncateForLog(host)}`);
     res
       .status(HttpStatus.FORBIDDEN)
       .json(createJsonRpcError(JsonRpcErrorCode.SERVER_ERROR, TransportErrorMessage.DNS_REBINDING_BLOCKED));
