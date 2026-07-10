@@ -74,6 +74,13 @@ const LogMessages = {
 } as const;
 
 /**
+ * Dedicated low-capacity limits for the OAuth endpoints (`/authorize`, `/token`, …),
+ * separate from the MCP transport limiter, to slow credential brute-forcing (CWE-307).
+ */
+const AUTH_RATE_LIMIT_MAX = 30;
+const AUTH_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
  * Known W3C Content Security Policy directive names.
  * Used to validate user-provided CSP strings against typos and injection.
  * @see https://www.w3.org/TR/CSP3/
@@ -234,15 +241,17 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
     }
     cspOption = { directives };
   } else {
-    // No custom CSP — use Helmet defaults + form-action 'self'.
-    // Helmet omits form-action by default; without it, browsers allow form submissions to any
-    // origin, which enables login CSRF attacks (attacker submits credentials to /authorize/local).
+    // No custom CSP — use Helmet defaults, ensuring form-action 'self' is present. Without
+    // it, browsers allow form submissions to any origin, enabling login CSRF (attacker page
+    // submits credentials cross-origin to /authorize/local). Conditional rather than always
+    // spreading it in: depending on the installed Helmet version, the defaults may already
+    // include form-action — adding it again unconditionally makes Helmet throw ("duplicate
+    // directive"), since it treats the kebab-case and camelCase spellings as the same directive.
+    // getDefaultDirectives() returns string-array values at runtime; cast is safe.
+    const defaultDirectives = helmet.contentSecurityPolicy.getDefaultDirectives() as Record<string, string[]>;
     cspOption = {
-      directives: {
-        // getDefaultDirectives() returns string-array values at runtime; cast is safe.
-        ...(helmet.contentSecurityPolicy.getDefaultDirectives() as Record<string, string[]>),
-        formAction: ["'self'"],
-      },
+      directives:
+        "form-action" in defaultDirectives ? defaultDirectives : { ...defaultDirectives, formAction: ["'self'"] },
     };
   }
 
@@ -265,6 +274,8 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
 
   // Warn in production when HSTS is disabled — operators running behind a TLS
   // proxy must enable HSTS at the proxy level, but should be aware it is absent.
+  // NODE_ENV is a universal Node convention, read directly rather than via the framework
+  // config schema (which only owns MCP_*/OTEL_* vars).
   if (!options?.helmetHsts && process.env["NODE_ENV"] === "production") {
     logger.warn(
       "HSTS (Strict-Transport-Security) is disabled. " +
@@ -551,12 +562,12 @@ export function createExpressApp(
       throw new Error("issuerUrl is required when using a full OAuth provider");
     }
 
-    // Dedicated low-capacity rate limiter for auth endpoints.
-    // Separate from the MCP transport limiter to prevent auth brute-force (CWE-307).
+    // Dedicated low-capacity rate limiter for auth endpoints (see constants above).
     const authRateLimiter = createRateLimiter({
-      max: 30,
-      windowMs: 15 * 60 * 1000,
-      trustProxyConfigured: options?.trustProxy !== undefined,
+      max: AUTH_RATE_LIMIT_MAX,
+      windowMs: AUTH_RATE_LIMIT_WINDOW_MS,
+      // options is narrowed to defined by the enclosing `if (options?.auth && …)`.
+      trustProxyConfigured: options.trustProxy !== undefined,
     });
     const oauthRoutes = ["/authorize", "/token", "/register", "/callback", "/authorize/local"];
     app.use(oauthRoutes, dnsRebindingProtection); // DNS Rebinding Protection on all auth endpoints

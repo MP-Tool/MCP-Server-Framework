@@ -43,6 +43,28 @@ export function booleanFromEnv(defaultValue: boolean) {
     .default(defaultValue);
 }
 
+/**
+ * Zod schema for optional (tri-state) boolean environment variables.
+ *
+ * Like {@link booleanFromEnv}, but returns `undefined` when unset instead of coercing
+ * to a default. Use for precedence chains (env → config file → fallback) where "not
+ * set" must be distinguishable from "explicitly false".
+ *
+ * @returns Zod schema that outputs `boolean | undefined`
+ *
+ * @example
+ * ```typescript
+ * // In env schema:
+ * MCP_AUTH_ENABLED: optionalBooleanFromEnv(),
+ * ```
+ */
+export function optionalBooleanFromEnv() {
+  return z
+    .boolean()
+    .or(z.string().transform((val) => parseEnvBoolean(val)))
+    .optional();
+}
+
 // ============================================================================
 // Comma-Separated Lists
 // ============================================================================

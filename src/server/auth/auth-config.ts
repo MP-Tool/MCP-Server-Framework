@@ -10,14 +10,15 @@
  *
  * Provider source-of-truth is the framework's own `[auth]` config-file section
  * (retained via {@link getRawAuthConfig}); the master switch additionally honours the
- * `MCP_AUTH_ENABLED` environment variable. Consumers that carry legacy/env-branded
- * provider configs can map them to {@link AuthProviderInput} and feed
+ * `MCP_AUTH_ENABLED` environment variable (or `.env` file, resolved via
+ * {@link getFrameworkConfig}). Consumers that carry legacy/env-branded provider
+ * configs can map them to {@link AuthProviderInput} and feed
  * {@link toOAuthProviderConfigs} directly.
  *
  * @module server/auth/auth-config
  */
 
-import { getRawAuthConfig } from "../../config/config-cache.js";
+import { getRawAuthConfig, getFrameworkConfig } from "../../config/config-cache.js";
 import { logger as baseLogger } from "../../logger/index.js";
 import type { OAuthProviderConfig } from "./oauth/index.js";
 
@@ -127,27 +128,28 @@ export function toOAuthProviderConfigs(
   return result;
 }
 
-/** Tri-state parse of a boolean env var: `undefined` when unset. */
-function parseOptionalBoolEnv(value: string | undefined): boolean | undefined {
-  if (value === undefined) return undefined;
-  return /^(1|true|yes|on)$/i.test(value.trim());
-}
-
 /**
  * Resolve the framework `[auth]` config section into a {@link ResolvedAuthConfig}.
  *
- * The master switch precedence is: `MCP_AUTH_ENABLED` env var → `[auth].enabled`
- * file flag → "enabled when at least one provider is configured". Providers come
- * from the `[auth.providers.*]` tables.
+ * The master switch precedence is: `MCP_AUTH_ENABLED` (env var, or `.env` file via
+ * {@link getFrameworkConfig}) → `[auth].enabled` file flag → `options.defaultEnabled`,
+ * falling back to "enabled when at least one provider is configured" when
+ * `defaultEnabled` is omitted. Providers come from the `[auth.providers.*]` tables.
  *
+ * @param options.defaultEnabled - Overrides the final fallback used when neither the
+ *   env var nor the config file set `enabled` explicitly. Omit to keep the framework's
+ *   generic default (on only when a provider is configured). Pass `true` for consumers
+ *   that always offer a non-provider login method (e.g. local username/password), for
+ *   which "no providers configured" doesn't mean "no way to log in".
  * @returns The resolved auth configuration
  */
-export function resolveAuthConfig(): ResolvedAuthConfig {
+export function resolveAuthConfig(options?: { readonly defaultEnabled?: boolean }): ResolvedAuthConfig {
   const raw = getRawAuthConfig();
   const providers = toOAuthProviderConfigs(raw?.providers);
 
-  const envEnabled = parseOptionalBoolEnv(process.env["MCP_AUTH_ENABLED"]);
-  const enabled = envEnabled ?? raw?.enabled ?? providers.length > 0;
+  const envEnabled = getFrameworkConfig().MCP_AUTH_ENABLED;
+  const fallback = options?.defaultEnabled ?? providers.length > 0;
+  const enabled = envEnabled ?? raw?.enabled ?? fallback;
 
   return {
     enabled,

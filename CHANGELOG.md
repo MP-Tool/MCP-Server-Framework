@@ -73,10 +73,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`resolveAuthConfig()` + `toOAuthProviderConfigs()` — declarative `[auth]` config-file support**:
   Turns a config-file `[auth]` section (master switch + a `[auth.providers.<name>]` table) into the
   `OAuthProviderConfig[]` consumed by `createOAuthProvider`, plus the resolved `enabled` flag and
-  `/mcp` enforcement metadata. The master switch honours `MCP_AUTH_ENABLED` (env) → `[auth].enabled`
-  (file) → "enabled when at least one provider is configured". Provider entries accept `id`/`secret`
-  aliases alongside `client_id`/`client_secret` and infer `type` from the table key when omitted.
-  Exposed via `ResolvedAuthConfig`, `AuthProviderInput`.
+  `/mcp` enforcement metadata. The master switch honours `MCP_AUTH_ENABLED` (env var or `.env` file —
+  now resolved through `getFrameworkConfig()`, like every other framework env var, instead of reading
+  `process.env` directly) → `[auth].enabled` (file) → an optional `resolveAuthConfig({ defaultEnabled })`
+  argument → "enabled when at least one provider is configured". The `defaultEnabled` override lets a
+  consumer with a non-provider login method (e.g. local username/password) default auth *on* even with
+  zero OAuth providers configured, without changing the framework's own default for other consumers.
+  Provider entries accept `id`/`secret` aliases alongside `client_id`/`client_secret` and infer `type`
+  from the table key when omitted. Exposed via `ResolvedAuthConfig`, `AuthProviderInput`.
 - **`AuthOptions.enabled` — master switch for authentication**: When `false`, the framework mounts
   neither the auth middleware nor the OAuth routes on any transport route (SSE and `/mcp` share the
   same auth middleware instance now, built once). Treated as `true` when omitted. Lets a consumer
@@ -191,9 +195,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the temporal dead zone. Fixed by importing directly from `config/file/schema.ts` (the actual leaf
   module — matching the pattern `config/file/loader.ts` already used), which is unaffected by the
   cycle regardless of entry order.
+- **Server crashed on startup with `Content-Security-Policy received a duplicate directive
+  "form-action"` whenever no custom `MCP_HELMET_CSP` was configured**: the default-CSP branch in
+  `createExpressApp()` unconditionally added a `formAction` directive on top of Helmet's own
+  `getDefaultDirectives()`, which — depending on the installed Helmet version — may already include
+  `form-action`; Helmet treats the kebab-case and camelCase spellings as the same directive and
+  throws rather than silently merging them. Now only added when not already present in the defaults.
 
 ### Changed
 
+- **Auth-endpoint rate-limit parameters named**: the brute-force limiter's capacity/window
+  (CWE-307, see Security) are now `AUTH_RATE_LIMIT_MAX`/`AUTH_RATE_LIMIT_WINDOW_MS` constants
+  instead of inline magic numbers.
 - **`mapUserInfo` and `onTokenExchanged` are now ctx-first**: Signature changed from `(token, data) => …`
   to `(ctx: ProviderContext, token, data) => …`. The compiler catches every call site that needs updating.
 - **`serverUrl` replaces `serverCallbackUrl`**: The option key in `CreateOAuthProviderOptions` is now

@@ -11,6 +11,7 @@
 import { z } from "zod";
 import {
   booleanFromEnv,
+  optionalBooleanFromEnv,
   optionalCommaSeparatedList,
   commaSeparatedList,
   byteSizeSchema,
@@ -293,6 +294,18 @@ export const frameworkEnvSchema = z
     // ==========================================================================
     // Authentication
     // ==========================================================================
+
+    /**
+     * Master switch for MCP-server user authentication (see `resolveAuthConfig()`).
+     *
+     * Tri-state: unset falls through to the config-file `[auth].enabled` flag, then to
+     * a consumer-chosen default. Only the literal string `"true"` (case-insensitive) is
+     * truthy — anything else (including `"1"`, `"yes"`) is `false`, consistent with
+     * every other boolean env var in this schema.
+     *
+     * @example 'true'
+     */
+    MCP_AUTH_ENABLED: optionalBooleanFromEnv(),
 
     /**
      * Required OAuth scopes for the `/mcp` endpoint (comma-separated).
