@@ -238,8 +238,10 @@ export type {
   AudioResponseOptions,
 } from "./mcp/types/index.js";
 
-// --- EventStore (SDK re-exports for stream resumability) ---
+// --- EventStore (interface from the SDK; implementation is the framework's own) ---
 export type { EventStore, EventId, StreamId } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+export { createInMemoryEventStore } from "./server/transport/index.js";
+export type { InMemoryEventStoreOptions, InMemoryEventStoreResult } from "./server/transport/index.js";
 
 // --- Server→Client request types (SDK re-exports for Sampling, Roots, Elicitation) ---
 export type {

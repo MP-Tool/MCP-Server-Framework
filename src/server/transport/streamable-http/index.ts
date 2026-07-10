@@ -7,3 +7,5 @@
  */
 
 export { StreamableHttpTransport, type StreamableHttpTransportOptions } from "./transport.js";
+export { createInMemoryEventStore } from "./in-memory-event-store.js";
+export type { InMemoryEventStoreOptions, InMemoryEventStoreResult } from "./in-memory-event-store.js";

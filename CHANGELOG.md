@@ -135,6 +135,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`tool.call`), session lifecycle (`session.open`/`session.close`), and security events (denied
   auth, DNS-rebinding rejections, rate-limit hits). Exposed via `AuditEvent`, `AuditActor`,
   `AuditCategory`, `AuditOutcome`.
+- **`createInMemoryEventStore()` — bounded `EventStore` for stream resumability**: Replaces the
+  re-export of the SDK's example `InMemoryEventStore`, which the SDK itself documents as "not for
+  production use": it never evicts anything (unbounded memory growth), replays by sorting *every*
+  event ever stored across *all* streams on every reconnect, and recovers a stream ID by splitting
+  the event ID on `_` — which silently breaks for the SDK's own standalone GET SSE stream (whose ID
+  is the literal string `_GET_stream`). The framework's implementation keeps one bounded,
+  insertion-ordered event log per stream plus a flat event-to-stream index, so replay only touches
+  the relevant stream (O(events since `lastEventId`), not a global sort) and no ID is ever parsed.
+  Bounded by `maxEventsPerStream` and `maxStreams` (oldest/least-recently-written evicted first,
+  default 1000 each) plus an idle `ttlMs` sweep (default 5 minutes). Exposed via
+  `InMemoryEventStoreOptions`, `InMemoryEventStoreResult`. **Breaking rename** for existing
+  consumers: replace `new InMemoryEventStore()` (from the SDK's `examples/` path) with
+  `createInMemoryEventStore()` (from `mcp-server-framework`).
 
 ### Dependencies
 

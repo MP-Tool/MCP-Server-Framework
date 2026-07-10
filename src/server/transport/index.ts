@@ -42,6 +42,8 @@ export { startStdioTransport } from "./stdio-transport.js";
 
 export { StreamableHttpTransport } from "./streamable-http/index.js";
 export type { StreamableHttpTransportOptions } from "./streamable-http/index.js";
+export { createInMemoryEventStore } from "./streamable-http/index.js";
+export type { InMemoryEventStoreOptions, InMemoryEventStoreResult } from "./streamable-http/index.js";
 
 // ============================================================================
 // Constants (public)

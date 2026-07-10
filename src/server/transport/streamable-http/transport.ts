@@ -100,9 +100,9 @@ export interface StreamableHttpTransportOptions {
    * client reconnection via the `Last-Event-ID` header. Only meaningful
    * in stateful mode — stateless requests have no persistent streams.
    *
-   * The SDK provides {@link InMemoryEventStore} as a reference implementation.
-   * For production horizontal scaling, implement the {@link EventStore} interface
-   * with Redis, PostgreSQL, or another shared backend.
+   * `createInMemoryEventStore()` (from `./in-memory-event-store.js`) provides a bounded,
+   * single-instance implementation. For production horizontal scaling, implement the
+   * {@link EventStore} interface with Redis, PostgreSQL, or another shared backend.
    *
    * @see https://modelcontextprotocol.io/specification/2025-03-26/basic/transports
    */
