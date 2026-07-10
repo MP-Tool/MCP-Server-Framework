@@ -18,6 +18,7 @@ import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
   SetLevelRequestSchema,
+  type Icon,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import type { TaskStore, TaskMessageQueue } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
@@ -54,6 +55,10 @@ export interface McpSessionOptions {
   name: string;
   /** Server version */
   version: string;
+  /** Human-friendly display name, distinct from `name` */
+  title?: string | undefined;
+  /** Icons representing this server */
+  icons?: Icon[] | undefined;
   /** Pre-built SDK capabilities (from builder) */
   capabilities: Record<string, unknown>;
   /** Protocol handler hooks */
@@ -170,7 +175,12 @@ export class McpSession implements LogNotificationHandler {
 
     // Create the underlying SDK server with pre-built capabilities
     this.sdk = new McpServer(
-      { name: options.name, version: options.version },
+      {
+        name: options.name,
+        version: options.version,
+        ...(options.title && { title: options.title }),
+        ...(options.icons && { icons: options.icons }),
+      },
       {
         capabilities: options.capabilities,
         ...(options.taskStore && { taskStore: options.taskStore }),

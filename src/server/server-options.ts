@@ -14,6 +14,7 @@ import type { ServerCapabilities } from "../mcp/capabilities/server-capabilities
 import type { TransportOptions } from "./transport-options.js";
 import type { AuthOptions } from "./auth/types.js";
 import type { Application } from "express";
+import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 
 // ============================================================================
 // Transport Configuration (canonical location: transport-options.ts)
@@ -232,6 +233,20 @@ export interface ServerOptions {
    * @example '1.0.0'
    */
   version: string;
+
+  /**
+   * Human-friendly display name shown by MCP clients, distinct from the
+   * machine-readable `name`.
+   *
+   * @example 'My MCP Server'
+   */
+  title?: string | undefined;
+
+  /**
+   * Icons representing this server, shown by MCP clients that support
+   * branding. Use `iconFromFile()` to build an entry from a local image file.
+   */
+  icons?: Icon[] | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Transport Configuration

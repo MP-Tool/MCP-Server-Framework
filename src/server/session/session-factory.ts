@@ -21,6 +21,7 @@ import type {
   HandlersConfig,
 } from "../../mcp/types/index.js";
 import type { ServerCapabilities } from "../server-options.js";
+import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 import type { TaskStore, TaskMessageQueue } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
 import {
   InMemoryTaskStore,
@@ -60,6 +61,12 @@ export interface SessionFactoryConfig {
 
   /** Server version passed to each MCP session */
   readonly version: string;
+
+  /** Human-friendly display name passed to each MCP session */
+  readonly title?: string | undefined;
+
+  /** Server icons passed to each MCP session */
+  readonly icons?: Icon[] | undefined;
 
   /** Server capabilities configuration */
   readonly capabilities?: ServerCapabilities | undefined;
@@ -200,6 +207,8 @@ export class McpSessionFactory {
       capabilities: this.computedCapabilities,
       handlers: this.config.handlers,
       stateless: this.config.stateless,
+      ...(this.config.title && { title: this.config.title }),
+      ...(this.config.icons && { icons: this.config.icons }),
       ...(this.taskStore && { taskStore: this.taskStore }),
       ...(this.taskMessageQueue && { taskMessageQueue: this.taskMessageQueue }),
     });

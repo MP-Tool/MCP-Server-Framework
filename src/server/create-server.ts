@@ -125,6 +125,8 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
   builder.withOptions({
     name: options.name ?? DEFAULT_SERVER_NAME,
     version: options.version ?? DEFAULT_SERVER_VERSION,
+    title: options.title,
+    icons: options.icons,
     transport: options.transport ?? resolveTransportFromConfig(),
     capabilities: options.capabilities,
     lifecycle: options.lifecycle,

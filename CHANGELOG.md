@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`title?`/`icons?` on `CreateServerOptions` / `ServerOptions` — MCP-spec server branding**:
+  Threaded through to the SDK's `Implementation` object returned during `initialize`, so MCP
+  clients can display a human-friendly name and icon distinct from the machine-readable `name`.
+  Added `iconFromFile(filePath, mimeType, options?)` (new: `mcp-server-framework`) as a reusable
+  primitive — reads a local image file synchronously and returns an `Icon` with the bytes embedded
+  as a base64 `data:` URI, which works identically across stdio and HTTP transports since the icon
+  travels inline in the JSON-RPC response (no separate asset serving needed). `Icon`/`Icons`
+  re-exported from the SDK for consumers building entries by hand.
 - **`configureHttpApp?: (app: Application) => void` on `CreateServerOptions` / `ServerOptions`**:
   Optional hook to register additional Express routes on the MCP HTTP server. Runs after base
   security middleware (Helmet, DNS rebinding, rate limiting) and before health, metrics, and MCP

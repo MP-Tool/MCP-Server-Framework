@@ -47,3 +47,6 @@ export {
   byteSizeSchema,
   durationSchema,
 } from "./zod-helpers.js";
+
+// Re-export icon loading helper
+export { iconFromFile } from "./icon.js";

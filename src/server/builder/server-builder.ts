@@ -159,6 +159,8 @@ export class McpServerBuilder implements ServerBuilder {
     const sessionFactory = new McpSessionFactory({
       name: options.name,
       version: options.version,
+      title: options.title,
+      icons: options.icons,
       capabilities: options.capabilities,
       handlers: options.handlers,
       stateless,

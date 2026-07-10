@@ -172,6 +172,9 @@ export type {
   ShutdownConfig,
 } from "./server/index.js";
 
+// --- Server identity: icons (SDK types) ---
+export type { Icon, Icons } from "@modelcontextprotocol/sdk/types.js";
+
 // --- MCP protocol definitions ---
 export type {
   // Completions
@@ -345,4 +348,5 @@ export {
   interpolate,
   type MessageParams,
   durationSchema,
+  iconFromFile,
 } from "./utils/index.js";
