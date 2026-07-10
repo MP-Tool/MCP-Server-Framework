@@ -33,6 +33,7 @@ import { applyConfigOverrides, setConfigLogger } from "../config/config-cache.js
 import { flushStartupWarnings } from "../config/startup-warnings.js";
 import { isFullOAuthProvider } from "./auth/types.js";
 import { getDynamicResourceRegistry } from "../mcp/capabilities/resources/index.js";
+import { initializeAuditLog } from "../audit/audit-log.js";
 
 // ============================================================================
 // Constants
@@ -228,6 +229,11 @@ export class McpServerInstance implements ServerInstance {
 
       // Bridge config file values → logger (must run after config resolution)
       this.applyLoggerConfig();
+
+      // Eagerly open the audit-log stream — same reasoning as the file logger above:
+      // create it now (path visible in startup logs) instead of only after the first
+      // audited event, which reads as "audit logging isn't working" during a smoke test.
+      initializeAuditLog();
 
       // Inject logger into config module (breaks config→logger dependency)
       setConfigLogger(frameworkLogger.child({ component: "config" }));

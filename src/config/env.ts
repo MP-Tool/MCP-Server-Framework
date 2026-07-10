@@ -55,6 +55,42 @@ function resolveVersion(): string {
 const VERSION = resolveVersion();
 
 // ============================================================================
+// Log Directory Resolution
+// ============================================================================
+
+/**
+ * Default directory for file-based logs (including the audit trail) when `LOG_DIR`
+ * is not configured. Relative to the process's working directory — the same convention
+ * `config-cache.ts` already uses to locate `.env` (`join(process.cwd(), ".env")`).
+ *
+ * `process.cwd()` resolves correctly in both supported run modes without any
+ * environment sniffing: an npm/node invocation runs from the project directory, and the
+ * Docker image's `WORKDIR` is `/app` — the production Dockerfile stage creates and
+ * `chown`s `/app/logs` for the non-root runtime user specifically so this default is
+ * always writable there too.
+ */
+const DEFAULT_LOG_DIR = join(process.cwd(), "logs");
+
+/**
+ * Resolves the effective audit-log file path.
+ *
+ * The audit trail is on by default: an explicit `MCP_AUDIT_FILE` (or `[logging].audit_file`)
+ * wins; otherwise it lands in `<LOG_DIR or the default log directory>/audit.log`, so it
+ * follows wherever general file logging is configured to go even when the operator never
+ * set `MCP_AUDIT_FILE` directly.
+ *
+ * @param config - The resolved `LOG_DIR`/`MCP_AUDIT_FILE` values (accepts the full
+ *   `FrameworkEnvConfig` or just these two fields)
+ * @returns An always-usable, non-empty audit-log file path
+ */
+export function resolveAuditFilePath(config: {
+  LOG_DIR?: string | undefined;
+  MCP_AUDIT_FILE?: string | undefined;
+}): string {
+  return config.MCP_AUDIT_FILE ?? join(config.LOG_DIR ?? DEFAULT_LOG_DIR, "audit.log");
+}
+
+// ============================================================================
 // Schema Definition
 // ============================================================================
 
@@ -312,7 +348,8 @@ export const frameworkEnvSchema = z
 
     /**
      * Path to a dedicated audit-log file (JSON Lines), written in parallel to the normal
-     * logs and independent of LOG_LEVEL. When unset, audit logging is disabled.
+     * logs and independent of LOG_LEVEL. On by default — see {@link resolveAuditFilePath}
+     * for the fallback path used when this is left unset.
      */
     MCP_AUDIT_FILE: z.string().min(1).optional(),
 

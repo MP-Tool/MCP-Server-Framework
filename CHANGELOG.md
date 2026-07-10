@@ -128,13 +128,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Observability parity for task tools**: `createTask`/`getTask`/`getTaskResult` are now wrapped in
   the same tracing span, request-duration metric, and debug/error logging as regular tool calls —
   previously only synchronous tools had this instrumentation.
-- **`logAuditEvent()` — parallel JSON-Lines audit trail**: A security/activity log written to a
-  dedicated file (one JSON object per line), in parallel to the normal application logs and
-  independent of `LOG_LEVEL`. Enabled by pointing `MCP_AUDIT_FILE` (or `[logging].audit_file`) at a
-  path; a no-op when unset, so call sites can emit unconditionally. Emitted for tool calls
+- **`logAuditEvent()` — parallel JSON-Lines audit trail, on by default**: A security/activity log
+  written to a dedicated file (one JSON object per line), in parallel to the normal application logs
+  and independent of `LOG_LEVEL`. `MCP_AUDIT_FILE` (or `[logging].audit_file`) overrides the
+  destination; when unset, events land in `<LOG_DIR or the framework's default log dir>/audit.log`
+  (see `resolveAuditFilePath()`) — the trail is always active, not opt-in. Emitted for tool calls
   (`tool.call`), session lifecycle (`session.open`/`session.close`), and security events (denied
   auth, DNS-rebinding rejections, rate-limit hits). Exposed via `AuditEvent`, `AuditActor`,
-  `AuditCategory`, `AuditOutcome`.
+  `AuditCategory`, `AuditOutcome`, `resolveAuditFilePath`.
 - **`createInMemoryEventStore()` — bounded `EventStore` for stream resumability**: Replaces the
   re-export of the SDK's example `InMemoryEventStore`, which the SDK itself documents as "not for
   production use": it never evicts anything (unbounded memory growth), replays by sorting *every*
@@ -196,6 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider's response through a Zod schema instead of ad-hoc `typeof` casts. A response with a missing
   or wrong-typed `sub`, or a wrong-typed optional claim, now fails with a clear validation error
   instead of silently coercing to `undefined`.
+- **`[logging].dir` renamed to `[logging].log_dir`** in the config file (the `LOG_DIR` env var is
+  unchanged). Consistent with the key now doubling as the default base directory for the audit trail
+  (see `resolveAuditFilePath()` above) — existing config files using `dir` need updating.
 
 ### Removed
 
