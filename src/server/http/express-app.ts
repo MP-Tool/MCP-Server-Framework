@@ -368,8 +368,11 @@ const MAX_REDIRECT_URIS_PER_CLIENT = 20;
 function createClientAutoRegistration(provider: OAuthServerProvider): express.RequestHandler {
   return async (req, _res, next) => {
     try {
-      const clientId = req.query.client_id as string | undefined;
-      const redirectUri = req.query.redirect_uri as string | undefined;
+      // typeof narrowing instead of a cast — Express yields an array for
+      // repeated query params (?client_id=a&client_id=b), which a plain
+      // `as string` would let through unchecked.
+      const clientId = typeof req.query.client_id === "string" ? req.query.client_id : undefined;
+      const redirectUri = typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : undefined;
 
       if (!clientId || !redirectUri || !provider.clientsStore.registerClient) {
         next();

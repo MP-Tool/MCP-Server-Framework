@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Added `iconFromFile(filePath, mimeType, options?)` (new: `mcp-server-framework`) as a reusable
   primitive — reads a local image file synchronously and returns an `Icon` with the bytes embedded
   as a base64 `data:` URI, which works identically across stdio and HTTP transports since the icon
-  travels inline in the JSON-RPC response (no separate asset serving needed). `Icon`/`Icons`
-  re-exported from the SDK for consumers building entries by hand.
+  travels inline in the JSON-RPC response (no separate asset serving needed). Files over 1 MB are
+  rejected with a `ConfigurationError` — the encoded icon is embedded in every `initialize`
+  response, so an oversized file (e.g. a mistaken path) would bloat every session handshake.
+  `Icon`/`Icons` re-exported from the SDK for consumers building entries by hand.
 - **`configureHttpApp?: (app: Application) => void` on `CreateServerOptions` / `ServerOptions`**:
   Optional hook to register additional Express routes on the MCP HTTP server. Runs after base
   security middleware (Helmet, DNS rebinding, rate limiting) and before health, metrics, and MCP
@@ -75,7 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ReadinessConfig.checkTimeoutMs` / `HealthRouterOptions.checkTimeoutMs`**: Bounds how long
   `/ready` waits for a consumer-provided `readinessCheck()` before returning `503`. Prevents a
   stalled dependency (e.g. a hung DB connection) from blocking the endpoint indefinitely and
-  delaying Graceful Shutdown. Defaults to `5000`ms.
+  delaying Graceful Shutdown. Defaults to `5000`ms. The deadline timer is cleared as soon as the
+  check settles — readiness probes fire frequently (container orchestrators poll every few
+  seconds), so a lingering timer per probe would accumulate and delay process exit on shutdown.
 - **HTTPS server enforces a TLS 1.2 floor**: `startHttpsServer()` now sets `minVersion: "TLSv1.2"`
   on the TLS context, rejecting legacy TLS 1.0/1.1 handshakes.
 - **`resolveAuthConfig()` + `toOAuthProviderConfigs()` — declarative `[auth]` config-file support**:
@@ -183,6 +187,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OAuth client auto-registration no longer trusts query-param casts**: `client_id`/`redirect_uri`
+  at `/authorize` were read via `as string` casts, but Express yields an *array* for repeated query
+  params (`?client_id=a&client_id=b`), which the casts let through unchecked into
+  `getClient()`/`registerClient()`. Now narrowed with `typeof === "string"` (the same pattern the
+  authorize handler already used for `?provider=`); non-string values fall through to the SDK's own
+  validation.
 - **Quality/audit pass**: removed a stale `as unknown as MetricReader` cast in the telemetry SDK
   (the OpenTelemetry version skew it worked around is resolved; `PrometheusExporter` now extends
   `MetricReader`); repaired two OAuth provider tests that broke when the callback flow switched from

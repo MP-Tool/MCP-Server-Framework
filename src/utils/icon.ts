@@ -13,6 +13,15 @@ import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 
 /**
+ * Maximum icon file size accepted by {@link iconFromFile}.
+ *
+ * The encoded icon is embedded (base64, +33% size) in every `initialize`
+ * response, so an oversized file would bloat every session handshake.
+ * Typical favicons are well under 100 KB; 1 MB leaves generous headroom.
+ */
+const MAX_ICON_FILE_BYTES = 1024 * 1024;
+
+/**
  * Builds an MCP `Icon` from a local image file by reading it synchronously
  * and embedding it as a base64 `data:` URI.
  *
@@ -27,7 +36,7 @@ import { ConfigurationError } from "../errors/categories/validation.js";
  * @param filePath - Absolute path to the icon file
  * @param mimeType - MIME type of the icon, e.g. `'image/svg+xml'`, `'image/png'`
  * @param options - Optional `sizes`/`theme` metadata per the MCP `Icon` schema
- * @throws {ConfigurationError} If the file cannot be read
+ * @throws {ConfigurationError} If the file cannot be read or exceeds 1 MB
  */
 export function iconFromFile(
   filePath: string,
@@ -43,6 +52,15 @@ export function iconFromFile(
       cause: cause instanceof Error ? cause : undefined,
       recoveryHint: `Check that '${filePath}' exists and is readable.`,
     });
+  }
+
+  if (bytes.byteLength > MAX_ICON_FILE_BYTES) {
+    throw new ConfigurationError(
+      `Icon file exceeds ${String(MAX_ICON_FILE_BYTES)} bytes (${String(bytes.byteLength)}): ${filePath}`,
+      {
+        recoveryHint: `Use an icon of at most 1 MB — it is embedded in every MCP initialize response.`,
+      },
+    );
   }
 
   return {

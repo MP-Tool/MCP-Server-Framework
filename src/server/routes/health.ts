@@ -187,10 +187,17 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
         reason = `SSE session limit reached (${sseSessionCount}/${maxSseSessions})`;
       }
     } else if (readinessCheck) {
-      // Run consumer-provided readiness check with a deadline.
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`readinessCheck timed out after ${checkTimeoutMs}ms`)), checkTimeoutMs),
-      );
+      // Run consumer-provided readiness check with a deadline. The timer is
+      // cleared once the race settles — readiness probes fire frequently
+      // (container orchestrators poll every few seconds), so a lingering
+      // timer per probe would accumulate and delay process exit on shutdown.
+      let timeoutTimer: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutTimer = setTimeout(
+          () => reject(new Error(`readinessCheck timed out after ${checkTimeoutMs}ms`)),
+          checkTimeoutMs,
+        );
+      });
       try {
         const result = await Promise.race([readinessCheck(), timeoutPromise]);
         if (result === true) {
@@ -207,6 +214,8 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
       } catch (err) {
         status = ReadinessStatus.SERVICE_UNAVAILABLE;
         reason = `${serviceLabel} readiness check failed: ${err instanceof Error ? err.message : String(err)}`;
+      } finally {
+        clearTimeout(timeoutTimer);
       }
     } else {
       status = ReadinessStatus.READY;
