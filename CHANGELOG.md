@@ -228,6 +228,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DynamicResourceRegistryOptions`, `RegisterDynamicResourceOptions`, `RegisterDynamicResourceResult`,
   `ReadDynamicResourceResult`, `DefineDynamicResourceTemplateOptions` are no longer re-exported from
   the main package.
+- **`tools.log` / `transport.log` file-log slots**: `DEFAULT_LOG_COMPONENTS` no longer includes
+  `"tools"`/`"transport"` — nothing in the framework or a consuming server ever logged under those
+  exact component names, so the two files were created eagerly on every startup but stayed
+  permanently empty. Tool-call visibility already lives in the audit trail (`logAuditEvent`). File
+  logging now creates only `server.log` and `api.log` by default.
 
 ### Security
 

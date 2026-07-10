@@ -19,7 +19,7 @@ import { BaseLogWriter } from "./base-writer.js";
 export interface FileWriterConfig {
   /** Directory to write log files to */
   logDir: string;
-  /** Component names to create streams for (default: ['server', 'api', 'transport']) */
+  /** Component names to create streams for (default: ['server', 'api']) */
   components?: readonly string[];
   /** File extension for log files (default: '.log') */
   extension?: string;

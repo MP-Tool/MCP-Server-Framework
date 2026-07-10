@@ -103,7 +103,7 @@ export const LOG_FILE_EXTENSION = ".log";
  * Default components for file logging.
  * Streams will be created for each component.
  */
-export const DEFAULT_LOG_COMPONENTS = ["server", "api", "transport", "tools"] as const;
+export const DEFAULT_LOG_COMPONENTS = ["server", "api"] as const;
 
 /**
  * Logger component names for the logging system.
