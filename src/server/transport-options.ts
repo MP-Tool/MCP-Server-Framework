@@ -127,6 +127,9 @@ export interface BaseHttpTransportOptions {
    * implementation. For production horizontal scaling, implement the `EventStore`
    * interface with Redis, PostgreSQL, or another shared backend.
    *
+   * The framework transparently scopes the store per session: streams stored through one
+   * session can never be replayed by another, so implementations need no ownership logic.
+   *
    * @example
    * ```typescript
    * import { createInMemoryEventStore } from 'mcp-server-framework';

@@ -104,6 +104,10 @@ export interface StreamableHttpTransportOptions {
    * single-instance implementation. For production horizontal scaling, implement the
    * {@link EventStore} interface with Redis, PostgreSQL, or another shared backend.
    *
+   * The stateful handler transparently scopes the store per session (see
+   * `./session-scoped-event-store.js`): streams stored through one session can never be
+   * replayed by another, so implementations need no ownership logic of their own.
+   *
    * @see https://modelcontextprotocol.io/specification/2025-03-26/basic/transports
    */
   readonly eventStore?: EventStore | undefined;

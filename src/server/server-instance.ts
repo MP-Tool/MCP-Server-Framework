@@ -76,6 +76,7 @@ const RuntimeLogMessages = {
   AUTH_NO_TRUST_PROXY:
     "Auth is enabled without trust proxy — client IP detection may be inaccurate behind a reverse proxy",
   AUTH_PROVIDER_DISPOSED: "Auth provider disposed",
+  EVENT_STORE_DISPOSED: "Event store disposed",
   // Shutdown cleanup
   SHUTDOWN_STEP_FAILED: "Shutdown step %s failed: %s",
   // Process error handlers
@@ -353,6 +354,16 @@ export class McpServerInstance implements ServerInstance {
       logger.warn(
         RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
         "auth-provider",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    try {
+      await this.disposeEventStore();
+    } catch (error) {
+      logger.warn(
+        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
+        "event-store",
         error instanceof Error ? error.message : String(error),
       );
     }
@@ -747,6 +758,23 @@ export class McpServerInstance implements ServerInstance {
       // Support both sync and async dispose() implementations
       await provider.dispose();
       logger.debug(RuntimeLogMessages.AUTH_PROVIDER_DISPOSED);
+    }
+  }
+
+  /**
+   * Dispose the transport's event store if it has a `dispose()` method.
+   *
+   * `EventStore` doesn't declare `dispose()` (the SDK interface has no shutdown hook), so
+   * this is a duck-typed opportunistic call — implementations like `createInMemoryEventStore()`
+   * that hold a cleanup timer can still be released without the consumer keeping a reference.
+   */
+  private async disposeEventStore(): Promise<void> {
+    const transport = this.options.transport;
+    const eventStore = transport && isHttpTransport(transport) ? transport.eventStore : undefined;
+    if (eventStore && "dispose" in eventStore && typeof eventStore.dispose === "function") {
+      // Support both sync and async dispose() implementations
+      await eventStore.dispose();
+      logger.debug(RuntimeLogMessages.EVENT_STORE_DISPOSED);
     }
   }
 }

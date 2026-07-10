@@ -147,7 +147,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default 1000 each) plus an idle `ttlMs` sweep (default 5 minutes). Exposed via
   `InMemoryEventStoreOptions`, `InMemoryEventStoreResult`. **Breaking rename** for existing
   consumers: replace `new InMemoryEventStore()` (from the SDK's `examples/` path) with
-  `createInMemoryEventStore()` (from `mcp-server-framework`).
+  `createInMemoryEventStore()` (from `mcp-server-framework`). Messages are stored by value
+  (`structuredClone`), so later mutation of a caller's message object can never alter what a
+  replay delivers. `evictStreams(predicate)` supports bulk eviction (used by the framework to
+  reclaim a closed session's streams promptly, see below). `dispose()` stops the idle-sweep
+  timer and is now called automatically on server shutdown when `transport.eventStore` was
+  provided.
 
 ### Dependencies
 
@@ -244,6 +249,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dedicated rate limiter on auth endpoints**: `/authorize`, `/token`, `/register`, `/callback`, and
   `/authorize/local` now sit behind their own low-capacity limiter (30 req / 15 min) and DNS-rebinding
   protection, separate from the MCP transport limiter — mitigates auth brute-force (CWE-307).
+- **Event stores are now session-scoped — cross-session replay closed**: The SDK's `EventStore`
+  contract carries no session context, so with one shared store two gaps existed: (1) the SDK stores
+  standalone-GET-stream events under the hardcoded constant `_GET_stream` for *every* session, so all
+  sessions' GET-stream events interleaved in one record and a client resuming its own stream could
+  replay other sessions' events; (2) a client that learned an event ID from another session's stream
+  could replay that stream's messages. The stateful handler now wraps the supplied store in a
+  per-session namespacing decorator — replay of any stream outside the session's own scope fails
+  closed. On session close, the session's stored events are evicted from the inner store immediately
+  (data minimization; the TTL sweep remains the backstop). Applies transparently to **any**
+  `EventStore` implementation (in-memory, Redis, ...); no changes needed in consumer code or custom
+  stores.
 
 ## [1.1.2]
 

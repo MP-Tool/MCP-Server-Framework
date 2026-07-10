@@ -18,6 +18,7 @@ import { SESSION_CLOSE_REASONS } from "../../session/index.js";
 import type { SessionManager } from "../../session/index.js";
 import { createAuthContext } from "../../auth/index.js";
 import type { SessionFactory } from "../types.js";
+import { createSessionScopedEventStore } from "./session-scoped-event-store.js";
 import { JsonRpcErrorCode, HttpStatus, TransportErrorMessage } from "../../../errors/index.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 import { TRANSPORT_LOG_COMPONENTS, MCP_HEADERS, SESSION_ID_QUERY_PARAMS } from "../constants.js";
@@ -229,10 +230,15 @@ export class StatefulHandler implements TransportRequestHandler {
     try {
       const mcpSession = this.sessionFactory();
 
+      // One scoped view per transport (= per session): streams stored through this
+      // session can never be replayed by another session (see session-scoped-event-store.ts).
+      const scopedEventStore =
+        this.eventStore !== undefined ? createSessionScopedEventStore(this.eventStore) : undefined;
+
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         enableJsonResponse: this.enableJsonResponse,
-        ...(this.eventStore !== undefined && { eventStore: this.eventStore }),
+        ...(scopedEventStore !== undefined && { eventStore: scopedEventStore }),
         onsessioninitialized: (sessionId: string) => {
           releaseSlot();
           logger.trace(LogMessages.SESSION_INITIALIZED, shortId(sessionId));
@@ -265,6 +271,9 @@ export class StatefulHandler implements TransportRequestHandler {
         if (transportClosed) return;
         transportClosed = true;
         releaseSlot();
+        // Reclaim this session's stored events promptly (data minimization) — the
+        // TTL sweep / capacity eviction remain the backstop for abandoned streams.
+        scopedEventStore?.evictOwnStreams();
         const sid = transport.sessionId;
         if (sid) {
           logger.trace(LogMessages.SESSION_CLOSED, shortId(sid));
