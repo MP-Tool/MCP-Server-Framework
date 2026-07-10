@@ -28,7 +28,7 @@
 import type { ZodTypeAny } from "zod";
 import { ConfigurationError } from "../errors/categories/validation.js";
 import { isConfigInitialized } from "./config-cache.js";
-import { CONFIG_FILE_SECTIONS } from "./file/index.js";
+import { CONFIG_FILE_SECTIONS } from "./file/schema.js";
 
 // ============================================================================
 // Types

@@ -153,6 +153,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is now logged before `Logger.closeStreams()` runs.
 - **`booleanFromEnv()` accepts more truthy spellings**: now uses `parseEnvBoolean()`
   (`1`/`true`/`yes`/`on`, case-insensitive) instead of a bare `=== "true"` comparison.
+- **Circular-import crash on startup (`ReferenceError: Cannot access 'CONFIG_FILE_SECTIONS' before
+  initialization`)**: `config/extensions.ts` imported `CONFIG_FILE_SECTIONS` via the `config/file`
+  barrel instead of directly from the module that defines it, landing in the same import cycle as
+  `config/file/loader.ts` and `config/config-cache.ts`. Depending on which module a given entry point
+  happened to touch first, ESM's cycle resolution could return that barrel's namespace before its own
+  re-export of `CONFIG_FILE_SECTIONS` had run, crashing at module-evaluation time on a `const` still in
+  the temporal dead zone. Fixed by importing directly from `config/file/schema.ts` (the actual leaf
+  module — matching the pattern `config/file/loader.ts` already used), which is unaffected by the
+  cycle regardless of entry order.
 
 ### Changed
 
