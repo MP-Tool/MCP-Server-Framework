@@ -36,6 +36,13 @@
 export { dnsRebindingProtection } from "./dns-rebinding.js";
 
 /**
+ * API Access Log
+ * Logs one line per HTTP request/response (method, path, status, duration) to
+ * the "api" file-log component. Operational access log, separate from the audit trail.
+ */
+export { apiAccessLog } from "./api-access-log.js";
+
+/**
  * Rate Limiting (not handled by SDK)
  * Prevents abuse and DoS attacks
  */

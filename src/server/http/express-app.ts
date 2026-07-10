@@ -39,6 +39,7 @@ import {
   validateProtocolVersion,
   dnsRebindingProtection,
   createAuthMiddleware,
+  apiAccessLog,
 } from "../middleware/index.js";
 
 // Auth
@@ -537,6 +538,10 @@ export function createExpressApp(
   if (options?.trustProxy !== undefined) {
     app.set("trust proxy", options.trustProxy);
   }
+
+  // API Access Log — mounted first so every request is captured, including ones
+  // later rejected by DNS-rebinding protection, auth, or rate limiting.
+  app.use(apiAccessLog);
 
   setupSecurityMiddleware(app, options);
 

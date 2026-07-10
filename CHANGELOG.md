@@ -154,6 +154,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reclaim a closed session's streams promptly, see below). `dispose()` stops the idle-sweep
   timer and is now called automatically on server shutdown when `transport.eventStore` was
   provided.
+- **`apiAccessLog` middleware — HTTP access logging**: Logs one line per request (method, path,
+  status, duration) to the `"api"` file-log component — previously an empty, unused stream slot
+  (`api.log` alongside `server.log`, both created eagerly but only `server.log` was ever written
+  to). Mounted first in the Express pipeline, so requests rejected later by DNS-rebinding
+  protection, auth, or rate limiting are still captured. Also populates the existing `HttpContext`
+  (`method`/`path`/`statusCode`/`durationMs`) for JSON-format consumers. Deliberately separate
+  from `logAuditEvent()`/`audit.log` — mirroring all traffic there, including health/metrics
+  polling, would flood the audit trail with low-value noise. Query strings are never logged (OAuth
+  flows carry `code`/`state` there). Internal middleware, automatically applied — not part of the
+  public API surface.
 
 ### Dependencies
 
