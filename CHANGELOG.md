@@ -212,6 +212,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Typed OAuth token-exchange response**: `parseTokenResponse()` now returns a `TokenResponse`
+  type that encodes its existing runtime guarantee (`access_token` is a non-empty string),
+  removing two `as string` casts in the token-exchange path (`buildOAuthTokens()` and
+  `exchangeAuthorizationCode()`). The OAuth debug log now truncates the upstream authorization
+  code via the shared `truncateId()` helper instead of an inline `slice(0, 8)`.
 - **Auth-endpoint rate-limit parameters named**: the brute-force limiter's capacity/window
   (CWE-307, see Security) are now `AUTH_RATE_LIMIT_MAX`/`AUTH_RATE_LIMIT_WINDOW_MS` constants
   instead of inline magic numbers.

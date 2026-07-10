@@ -42,6 +42,13 @@ export function parseClientRedirectUri(uri: string): URL | null {
 }
 
 /**
+ * A validated token-endpoint response. `access_token` is guaranteed to be a non-empty
+ * string (enforced at runtime by {@link parseTokenResponse}); the remaining fields are
+ * left untyped since they vary by provider and are read defensively at the call site.
+ */
+export type TokenResponse = { access_token: string } & Record<string, unknown>;
+
+/**
  * Parses and validates a token endpoint response.
  *
  * Validates Content-Type, extracts and re-throws upstream `error` fields as
@@ -50,12 +57,9 @@ export function parseClientRedirectUri(uri: string): URL | null {
  *
  * @param response - Fetch response from the upstream token endpoint
  * @param context - Human-readable context for error messages
- * @returns Parsed response body as a record of string values
+ * @returns Parsed response body, with `access_token` guaranteed present
  */
-export async function parseTokenResponse(
-  response: globalThis.Response,
-  context: string,
-): Promise<Record<string, unknown>> {
+export async function parseTokenResponse(response: globalThis.Response, context: string): Promise<TokenResponse> {
   assertJsonContentType(response, context);
   const data = (await response.json()) as Record<string, unknown>;
   if (data.error) {
@@ -66,7 +70,7 @@ export async function parseTokenResponse(
   if (typeof data.access_token !== "string" || !data.access_token) {
     throw new ServerError(`Upstream ${context} returned no access_token`);
   }
-  return data;
+  return data as TokenResponse;
 }
 
 /**

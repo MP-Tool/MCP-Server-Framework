@@ -46,8 +46,10 @@ import {
   OAUTH_FETCH_TIMEOUT_MS,
   parseClientRedirectUri,
   parseTokenResponse,
+  type TokenResponse,
 } from "./http.js";
 import { BoundedMap } from "./state.js";
+import { truncateId } from "../../../utils/string-helpers.js";
 
 // ============================================================================
 // Logger
@@ -270,14 +272,14 @@ export function authInfoExpiry(nowMs: number = Date.now()): number {
  * with consistent `expires_in` validation. Shared by the authorization-code and
  * refresh-token exchange paths.
  */
-function buildOAuthTokens(tokenData: Record<string, unknown>): OAuthTokens {
+function buildOAuthTokens(tokenData: TokenResponse): OAuthTokens {
   const rawExpiresIn = tokenData.expires_in;
   const expiresIn = rawExpiresIn !== undefined ? Number(rawExpiresIn) : undefined;
   if (expiresIn !== undefined && (!Number.isFinite(expiresIn) || expiresIn < 1)) {
     throw new ServerError(`Invalid expires_in from upstream token response: ${String(rawExpiresIn)}`);
   }
   return {
-    access_token: tokenData.access_token as string,
+    access_token: tokenData.access_token,
     token_type: typeof tokenData.token_type === "string" ? tokenData.token_type : "bearer",
     expires_in: expiresIn ?? AUTH_INFO_TTL_SECONDS,
     ...(typeof tokenData.refresh_token === "string" && { refresh_token: tokenData.refresh_token }),
@@ -505,7 +507,7 @@ export function createOAuthProviderCore(
       const prov = providerMap.get(ctx.provider);
       if (!prov) throw new InvalidGrantError(`Unknown provider in code context: ${ctx.provider}`);
 
-      logger.debug(LogMessages.TOKEN_EXCHANGE, ctx.provider, ctx.upstreamCode.slice(0, 8));
+      logger.debug(LogMessages.TOKEN_EXCHANGE, ctx.provider, truncateId(ctx.upstreamCode));
 
       const response = await fetchToken(
         prov.endpoints.tokenUrl,
@@ -520,7 +522,7 @@ export function createOAuthProviderCore(
       );
 
       const tokenData = await parseTokenResponse(response, `token exchange (${ctx.provider})`);
-      const accessToken = tokenData.access_token as string;
+      const accessToken = tokenData.access_token;
 
       if (onTokenExchanged) {
         await onTokenExchanged(prov.ctx, accessToken, tokenData);
