@@ -193,6 +193,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `getClient()`/`registerClient()`. Now narrowed with `typeof === "string"` (the same pattern the
   authorize handler already used for `?provider=`); non-string values fall through to the SDK's own
   validation.
+- **Refresh-token exchange now registers the new access token and fires `onTokenExchanged`**:
+  `exchangeRefreshToken()` previously returned the refreshed tokens without updating
+  `tokenRegistry` or invoking the exchange hook, so verification only worked via the
+  single-provider fallback and consumers relying on `onTokenExchanged` (e.g. to rotate a
+  downstream credential) never saw the refresh. Now mirrors the authorization-code exchange path.
+- **Browser-login upstream fetches now have a timeout**: `exchangeCode()` and
+  `validateGitHubToken()` in the stdio browser-login flow omitted `AbortSignal.timeout(...)`,
+  unlike every other upstream OAuth call — a hung token/userinfo endpoint could stall the pending
+  login flow indefinitely. Now bounded by the same `OAUTH_FETCH_TIMEOUT_MS`.
 - **Quality/audit pass**: removed a stale `as unknown as MetricReader` cast in the telemetry SDK
   (the OpenTelemetry version skew it worked around is resolved; `PrometheusExporter` now extends
   `MetricReader`); repaired two OAuth provider tests that broke when the callback flow switched from
@@ -296,6 +305,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Open-redirect in local-login guarded**: `POST /authorize/local` accepted any `authorize_url`
+  starting with `/` as "same-origin" before re-rendering the selection page — but protocol-relative
+  (`//evil.com`) and backslash (`/\evil.com`) forms also start with `/` and resolve to a foreign
+  origin in a browser, which was then reflected unescaped into the page's provider-button `href`s
+  (an open redirect from an otherwise-trusted login page). Now rejected explicitly, falling back to
+  `/authorize`.
+- **OIDC discovery endpoints re-validated against the SSRF allowlist**: `fetchOidcDiscovery()`
+  validated only the `.well-known` discovery URL itself; the `token_endpoint`/`userinfo_endpoint`/
+  `revocation_endpoint`/`jwks_uri` values *inside* the returned document were trusted implicitly,
+  even though the framework later POSTs the OAuth `client_secret` and user bearer tokens to them.
+  A compromised or MITM'd provider could point these at an internal address (e.g. cloud metadata).
+  Every discovered endpoint now passes through the same host-allowlist check as the discovery URL.
+- **Empty PKCE challenge rejected in local-login**: a `POST /authorize/local` omitting
+  `code_challenge` previously stored an empty string and relied entirely on the SDK's `/token`
+  handler to enforce PKCE. Now rejected with 400 at the point the code is minted.
+- **Upstream authorization code no longer logged, even truncated**: the debug-level token-exchange
+  log previously included the first 8 characters of the upstream `code` — inconsistent with the
+  module's otherwise strict no-code-logging discipline. Now logs only the provider name.
 - **`req.query` array-injection guard**: Query parameters in the OAuth authorize handler (`provider`,
   `code`, `state`, `error`, `error_description`) are now validated with `typeof value === "string"`
   before use. Express coerces repeated keys to arrays (`?provider=a&provider=b`); the previous casts

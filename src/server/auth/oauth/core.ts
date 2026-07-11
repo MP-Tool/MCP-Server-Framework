@@ -49,7 +49,6 @@ import {
   type TokenResponse,
 } from "./http.js";
 import { BoundedMap } from "./state.js";
-import { truncateId } from "../../../utils/string-helpers.js";
 
 // ============================================================================
 // Logger
@@ -60,7 +59,7 @@ const LogMessages = {
   REGISTERED_CLIENT: "Registered client: %s",
   CLIENT_EVICTED: "Client store at capacity (%d) — evicted oldest client: %s",
   AUTHORIZE: "Authorize: client=%s provider=%s upstreamState=%s",
-  TOKEN_EXCHANGE: "Token exchange: provider=%s code=%s…",
+  TOKEN_EXCHANGE: "Token exchange: provider=%s",
   CALLBACK_INVALID_STATE: "Callback: invalid or expired state=%s",
   CALLBACK_EXPIRED: "Callback: expired pending auth state=%s",
   CALLBACK_SUCCESS: "Callback: provider=%s state mapped, redirecting to client",
@@ -507,7 +506,9 @@ export function createOAuthProviderCore(
       const prov = providerMap.get(ctx.provider);
       if (!prov) throw new InvalidGrantError(`Unknown provider in code context: ${ctx.provider}`);
 
-      logger.debug(LogMessages.TOKEN_EXCHANGE, ctx.provider, truncateId(ctx.upstreamCode));
+      // Never log the upstream authorization code (even truncated) — it is a single-use
+      // credential; keep this consistent with the module's no-code-logging discipline.
+      logger.debug(LogMessages.TOKEN_EXCHANGE, ctx.provider);
 
       const response = await fetchToken(
         prov.endpoints.tokenUrl,
@@ -619,6 +620,22 @@ export function createOAuthProviderCore(
       );
 
       const tokenData = await parseTokenResponse(response, "refresh token exchange");
+      const accessToken = tokenData.access_token;
+
+      // Mirror the authorization-code path: fire the exchange hook and register the new
+      // access token so verifyAccessToken routes it explicitly (rather than relying on the
+      // single-provider fallback), keeping a refreshed session consistent with a fresh one.
+      if (onTokenExchanged) {
+        await onTokenExchanged(prov.ctx, accessToken, tokenData);
+      }
+      if (prov.endpoints.userinfoUrl) {
+        tokenRegistry.set(accessToken, {
+          provider: prov.ctx.name,
+          userinfoUrl: prov.endpoints.userinfoUrl,
+          createdAt: Date.now(),
+        });
+      }
+
       return buildOAuthTokens(tokenData);
     },
 
@@ -733,9 +750,15 @@ export function createOAuthProviderCore(
         const redirectUri = str(body["redirect_uri"]);
         const state = str(body["state"]) ?? "";
         const codeChallenge = str(body["code_challenge"]) ?? "";
-        // Only accept relative paths — prevents javascript:/data: XSS via CSRF-assisted POST
+        // Only accept same-origin absolute paths. A bare `startsWith("/")` is not enough:
+        // protocol-relative (`//evil.com`) and backslash (`/\evil.com`) forms also start with
+        // "/" but resolve to a foreign origin, which would then be reflected into the login
+        // page's provider-button hrefs (escapeHtml does not neutralize `//`) — an open redirect
+        // / phishing vector. Require a single leading slash not followed by slash/backslash.
         const rawAuthorizeUrl = str(body["authorize_url"]) ?? "/authorize";
-        const authorizeUrl = rawAuthorizeUrl.startsWith("/") ? rawAuthorizeUrl : "/authorize";
+        const isSafeLocalPath =
+          rawAuthorizeUrl.startsWith("/") && !rawAuthorizeUrl.startsWith("//") && !rawAuthorizeUrl.startsWith("/\\");
+        const authorizeUrl = isSafeLocalPath ? rawAuthorizeUrl : "/authorize";
 
         if (!redirectUri) {
           res.status(400).send("Missing redirect URI");
@@ -744,6 +767,14 @@ export function createOAuthProviderCore(
         const redirectUrl = parseClientRedirectUri(redirectUri);
         if (!redirectUrl) {
           res.status(400).send("Invalid redirect URI");
+          return;
+        }
+        // PKCE is mandatory. A legitimate login form always carries the SDK-validated
+        // code_challenge from the original /authorize request; an empty value only reaches
+        // here on a malformed/hand-crafted POST. Reject it explicitly rather than storing
+        // an empty challenge and relying solely on the SDK's /token handler to catch it.
+        if (!codeChallenge) {
+          res.status(400).send("Missing PKCE code challenge");
           return;
         }
 

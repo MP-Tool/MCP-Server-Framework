@@ -261,6 +261,30 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     );
   }
 
+  // SSRF (CWE-918): the endpoints returned inside the document are attacker-influenceable
+  // if the provider is compromised or MITM'd — and the framework later POSTs the OAuth
+  // client_secret to token_endpoint/revocation_endpoint and the user's bearer token to
+  // userinfo_endpoint. Re-run the same host allowlist that guarded the discovery URL on
+  // every endpoint so a malicious document cannot redirect those requests at an internal
+  // address (e.g. cloud metadata). The issuer match above does not constrain endpoint hosts.
+  const endpointFields: ReadonlyArray<[string, string | undefined]> = [
+    ["authorization_endpoint", document.authorization_endpoint],
+    ["token_endpoint", document.token_endpoint],
+    ["userinfo_endpoint", document.userinfo_endpoint],
+    ["revocation_endpoint", document.revocation_endpoint],
+    ["jwks_uri", document.jwks_uri],
+  ];
+  for (const [field, url] of endpointFields) {
+    if (url === undefined) continue;
+    try {
+      validateDiscoveryUrl(url);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "invalid URL";
+      logger.error(LogMessages.SSRF_BLOCKED, url, reason);
+      throw new Error(`OIDC discovery ${field} is unsafe: ${reason}`, { cause: err });
+    }
+  }
+
   logger.debug(
     LogMessages.FETCHED,
     document.authorization_endpoint,

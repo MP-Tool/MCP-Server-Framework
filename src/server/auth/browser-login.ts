@@ -36,6 +36,7 @@ import { logger as baseLogger } from "../../logger/index.js";
 import { getFrameworkConfig } from "../../config/index.js";
 import { escapeHtml, stripTrailingSlashes } from "../../utils/string-helpers.js";
 import { getOidcDiscovery, type OidcDiscoveryDocument } from "./oauth/discovery.js";
+import { OAUTH_FETCH_TIMEOUT_MS } from "./oauth/http.js";
 import { GITHUB_ENDPOINTS, GOOGLE_DEFAULT_ISSUER } from "./oauth/presets.js";
 
 const logger = baseLogger.child({ component: "browser-login" });
@@ -246,6 +247,7 @@ async function exchangeCode(flow: PendingFlow, code: string): Promise<TokenRespo
       "user-agent": USER_AGENT,
     },
     body,
+    signal: AbortSignal.timeout(OAUTH_FETCH_TIMEOUT_MS),
   });
 
   const payload = (await response.json()) as TokenResponse;
@@ -280,6 +282,7 @@ async function validateGitHubToken(accessToken: string): Promise<Record<string, 
       "user-agent": USER_AGENT,
       "x-github-api-version": "2022-11-28",
     },
+    signal: AbortSignal.timeout(OAUTH_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`GitHub token validation failed: ${response.status} ${response.statusText}`);
