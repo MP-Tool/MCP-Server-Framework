@@ -37,7 +37,10 @@ export function apiAccessLog(req: Request, res: Response, next: NextFunction): v
   // params (/authorize, /callback); logging them would leak sensitive values.
   const path = truncateForLog(req.path);
   const sessionHeader = req.headers[MCP_HEADERS.SESSION_ID];
-  const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+  const rawSessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+  // Client-supplied header — length-bound it like every other transport log site so an
+  // oversized (up to ~16 KB) attacker value can't bloat the log context.
+  const sessionId = rawSessionId === undefined ? undefined : truncateForLog(rawSessionId);
 
   res.on("finish", () => {
     const durationMs = Date.now() - startedAt;

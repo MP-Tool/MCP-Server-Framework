@@ -187,6 +187,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Client-supplied `Mcp-Session-Id` truncated before entering the access log**: the API access
+  log middleware was the only transport log site that didn't length-bound this client-controlled
+  header (up to ~16 KB), unlike every other request field it logs. Now truncated the same way.
+- **Invalid `byteSizeSchema`/`durationSchema` env values now raise a proper `ZodError`**: these
+  transforms previously threw a bare `Error` from inside `.transform()` on malformed input (e.g.
+  `MCP_RATE_LIMIT_WINDOW_MS=abc`), bypassing the `ConfigurationError` taxonomy every other invalid
+  config field goes through. Now reported as a Zod issue like the rest of the schema.
+- **`iconFromFile()` checks the file size before reading, not after**: the 1 MB cap previously
+  only rejected an oversized file post-read, so a mis-pointed path at a very large file would be
+  pulled fully into memory first. Now `stat`s the file and rejects oversized files before the read.
 - **File-log retention no longer deletes the audit trail or foreign logs**: `FileWriter`'s
   retention sweep previously `unlink`ed *any* `.log` file in `LOG_DIR` past its retention age —
   not scoped to its own components. Since the audit trail (`audit.log`) defaults to the same

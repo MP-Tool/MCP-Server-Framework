@@ -8,7 +8,7 @@
  * @module utils/icon
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 
@@ -43,24 +43,28 @@ export function iconFromFile(
   mimeType: string,
   options?: { sizes?: string[]; theme?: "light" | "dark" },
 ): Icon {
+  // Check size via stat BEFORE reading, so a mis-pointed path at a multi-GB file is rejected
+  // rather than pulled fully into memory (the 1 MB cap would otherwise only fire post-read).
   let bytes: Buffer;
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is supplied by the consumer at startup, not user input
+    const stats = statSync(filePath);
+    if (stats.size > MAX_ICON_FILE_BYTES) {
+      throw new ConfigurationError(
+        `Icon file exceeds ${String(MAX_ICON_FILE_BYTES)} bytes (${String(stats.size)}): ${filePath}`,
+        {
+          recoveryHint: `Use an icon of at most 1 MB — it is embedded in every MCP initialize response.`,
+        },
+      );
+    }
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is supplied by the consumer at startup, not user input
     bytes = readFileSync(filePath);
   } catch (cause) {
+    if (cause instanceof ConfigurationError) throw cause;
     throw new ConfigurationError(`Failed to read icon file: ${filePath}`, {
       cause: cause instanceof Error ? cause : undefined,
       recoveryHint: `Check that '${filePath}' exists and is readable.`,
     });
-  }
-
-  if (bytes.byteLength > MAX_ICON_FILE_BYTES) {
-    throw new ConfigurationError(
-      `Icon file exceeds ${String(MAX_ICON_FILE_BYTES)} bytes (${String(bytes.byteLength)}): ${filePath}`,
-      {
-        recoveryHint: `Use an icon of at most 1 MB — it is embedded in every MCP initialize response.`,
-      },
-    );
   }
 
   return {

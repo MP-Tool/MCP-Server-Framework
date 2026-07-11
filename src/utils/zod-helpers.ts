@@ -145,7 +145,19 @@ export function optionalCommaSeparatedList() {
 export function byteSizeSchema(defaultValue: string) {
   return z
     .string()
-    .transform((val) => parseByteSize(val))
+    .transform((val, ctx) => {
+      try {
+        return parseByteSize(val);
+      } catch (err) {
+        // Surface as a Zod issue (→ ZodError) instead of a bare Error, so an invalid value
+        // flows through the same ConfigurationError taxonomy as every other schema field.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err instanceof Error ? err.message : "invalid byte size",
+        });
+        return z.NEVER;
+      }
+    })
     .default(defaultValue);
 }
 
@@ -173,6 +185,15 @@ export function byteSizeSchema(defaultValue: string) {
 export function durationSchema(defaultValue: string) {
   return z
     .string()
-    .transform((val) => parseDuration(val))
+    .transform((val, ctx) => {
+      try {
+        return parseDuration(val);
+      } catch (err) {
+        // Surface as a Zod issue (→ ZodError) instead of a bare Error, so an invalid value
+        // flows through the same ConfigurationError taxonomy as every other schema field.
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: err instanceof Error ? err.message : "invalid duration" });
+        return z.NEVER;
+      }
+    })
     .default(defaultValue);
 }
