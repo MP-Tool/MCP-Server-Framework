@@ -202,6 +202,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`FileWriter` self-heals after a transient failure instead of going silently dark**: a
+  stream error (directory removed, disk briefly full, file descriptor limit, ...) used to
+  either recover only for the one special-cased `ENOENT` case, or permanently drop every future
+  log line for that component with no further attempt — until the next process restart.
+  `write()` now retries creating the stream on the next call when it's missing, throttled to at
+  most once per second per component so a persistently broken filesystem isn't hit with a
+  `createWriteStream`/`statSync` pair on every single log line. A component's own file is
+  restored once the underlying issue clears, rather than commingling its lines into the
+  fallback file forever after one blip. A component's failure (init, runtime stream error, or a
+  failed recreate) is now also reported on stderr — previously `createStream()`'s own init-time
+  failure path was completely silent — once per outage, not once per line.
+
 - **SSE sessions and tool calls now carry the authenticated identity**: the legacy SSE
   transport never threaded a connecting client's verified auth into either of the two places
   that needed it, so a successful login had no effect over SSE — sessions and tool calls were
