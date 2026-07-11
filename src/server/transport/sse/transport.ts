@@ -18,7 +18,7 @@
  */
 
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
 import type { Response, Request } from "express";
 import { randomUUID } from "node:crypto";
 import { HttpStatus, TransportError, TransportErrorMessage } from "../../../errors/index.js";
@@ -58,7 +58,7 @@ export class SseTransport implements Transport {
 
   onclose?: () => void;
   onerror?: (error: Error) => void;
-  onmessage?: (message: JSONRPCMessage) => void;
+  onmessage?: (message: JSONRPCMessage, extra?: MessageExtraInfo) => void;
 
   /**
    * Creates a new SSE Transport
@@ -168,9 +168,14 @@ export class SseTransport implements Transport {
       return;
     }
 
-    // Notify the MCP server of the incoming message
+    // Notify the MCP server of the incoming message. Each SSE tool call arrives as its own
+    // POST — the auth middleware verifies it and sets req.auth same as it does for /mcp, but
+    // that per-request auth was never threaded into the message, so extra.authInfo (and thus
+    // getCurrentToolContext().auth) was always undefined for SSE, silently falling back to
+    // anonymous regardless of the session's actual login. Mirrors the SDK's own
+    // StreamableHTTPServerTransport, which passes `{ authInfo: req.auth }` here too.
     try {
-      this.onmessage?.(body);
+      this.onmessage?.(body, { ...(req.auth && { authInfo: req.auth }) });
 
       // For requests (with id), send 202 Accepted - response will come via SSE
       // For notifications (no id), send 204 No Content

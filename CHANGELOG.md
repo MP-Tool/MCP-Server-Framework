@@ -202,6 +202,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SSE sessions and tool calls now carry the authenticated identity**: the legacy SSE
+  transport never threaded a connecting client's verified auth into either of the two places
+  that needed it, so a successful login had no effect over SSE — sessions and tool calls were
+  indistinguishable from anonymous:
+  - `SseRequestHandler.handleConnection()` never read `req.auth` from the initiating
+    `GET /sse` request, so `session.auth` was always unset (session logging, audit, and the
+    `onClientConnected` lifecycle hook all saw an anonymous session regardless of login).
+  - `SseTransport.handlePostMessage()` never passed `req.auth` from each `POST /sse/message`
+    through to the SDK's `onmessage` callback, so `extra.authInfo` — and therefore
+    `getCurrentToolContext().auth` inside a tool handler — was always `undefined`.
+
+  Both now mirror the patterns the Streamable HTTP stateful handler and the SDK's own
+  `StreamableHTTPServerTransport` already use (`createAuthContext(req.auth, ...)` for the
+  session, `{ authInfo: req.auth }` for each message), which was unaffected by either gap.
+
 - **Documentation defaults corrected to match the actual schema**: `MCP_TRANSPORT`'s JSDoc said
   "default: http" while the schema (and README) default is `stdio`; `json_response`'s doc said
   "default: true" while the actual default is `false`; the `metrics_exporter` doc and
