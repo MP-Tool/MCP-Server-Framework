@@ -124,7 +124,7 @@ const transportSection = z
     sse_enabled: z.boolean(),
     /** Operate in stateless mode (no session IDs) */
     stateless: z.boolean(),
-    /** Prefer JSON responses over SSE for simple request-response (default: true) */
+    /** Prefer JSON responses over SSE for simple request-response (default: false) */
     json_response: z.boolean(),
     /** TLS configuration (required when mode is 'https') */
     tls: z
@@ -222,7 +222,7 @@ const telemetrySection = z
     metric_export_interval: z.union([z.number().int().positive(), z.string().regex(DURATION_REGEX)]),
     /**
      * Metric exporters (comma-separated): otlp, prometheus, console, none.
-     * Default: 'otlp,prometheus'
+     * Default: 'prometheus'
      */
     metrics_exporter: z.string().min(1),
   })

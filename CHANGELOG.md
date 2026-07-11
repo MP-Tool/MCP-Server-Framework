@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CI typecheck/lint/build gate + `SECURITY.md`**: PRs and pushes to `main` now run `tsc`,
+  `eslint`, and a production build in CI (`.github/workflows/ci.yml`) — previously no workflow
+  verified the codebase before publish. Added a `SECURITY.md` vulnerability-disclosure policy
+  (GitHub private reporting), addressing an OpenSSF Scorecard check the repo's existing
+  `scorecard.yml` workflow already evaluates.
 - **`title?`/`icons?` on `CreateServerOptions` / `ServerOptions` — MCP-spec server branding**:
   Threaded through to the SDK's `Implementation` object returned during `initialize`, so MCP
   clients can display a human-friendly name and icon distinct from the machine-readable `name`.
@@ -184,8 +189,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dependencies
 
 - Added **`jose`** (`^6.2.3`) for OIDC ID-token (JWKS) validation in the browser login flow.
+- **OpenTelemetry packages moved to `optionalDependencies`**: the SDK, exporters, and
+  instrumentation packages (`@opentelemetry/sdk-node`, `sdk-metrics`, the exporters,
+  `instrumentation-http`/`-express`, `resources`, `semantic-conventions`) are already loaded
+  exclusively via dynamic `import()` (never at module-parse time — see `telemetry/sdk.ts`), so
+  moving them out of `dependencies` lets a stdio-only install skip ~15-20 MB with
+  `npm install --omit=optional`; telemetry degrades gracefully when absent, as already designed.
+  `@opentelemetry/api` stays a regular dependency — its types are re-exported from this
+  package's public surface (`Span`, `SpanKind`, etc.), so it must always resolve. README and the
+  `sdk.ts` module doc previously described this dependency split incorrectly (as "peer
+  dependencies"); both now match the real `package.json` classification.
 
 ### Fixed
+
+- **Documentation defaults corrected to match the actual schema**: `MCP_TRANSPORT`'s JSDoc said
+  "default: http" while the schema (and README) default is `stdio`; `json_response`'s doc said
+  "default: true" while the actual default is `false`; the `metrics_exporter` doc and
+  `telemetry/sdk.ts`'s module comment said "default: 'otlp,prometheus'" while the real default is
+  `'prometheus'`. No behavior changes — only the comments were wrong.
 
 - **Client-supplied `Mcp-Session-Id` truncated before entering the access log**: the API access
   log middleware was the only transport log site that didn't length-bound this client-controlled

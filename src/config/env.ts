@@ -133,7 +133,7 @@ export const frameworkEnvSchema = z
     /** Port to listen on (default: 8000) */
     MCP_PORT: z.coerce.number().int().min(1).max(65535).default(8000),
 
-    /** Transport mode: 'stdio' for CLI, 'http' for HTTP, 'https' for HTTPS with TLS (default: http) */
+    /** Transport mode: 'stdio' for CLI, 'http' for HTTP, 'https' for HTTPS with TLS (default: stdio) */
     MCP_TRANSPORT: z.enum(["stdio", "http", "https"]).default("stdio"),
 
     /**

@@ -99,11 +99,10 @@ That's it. The tool is auto-registered, the server starts on stdio by default.
 npm install mcp-server-framework @modelcontextprotocol/sdk zod
 ```
 
-**For HTTP transport** (Express is a peer dependency, optional for stdio-only):
-
-```bash
-npm install express
-```
+Express, Zod, and the MCP SDK are regular dependencies, installed automatically — HTTP
+transport works out of the box (set `MCP_TRANSPORT=http`). The OpenTelemetry packages are
+optional dependencies: installed by default, but a stdio-only deployment can skip them with
+`npm install --omit=optional` to save ~15-20 MB. Telemetry degrades gracefully when absent.
 
 **For OpenTelemetry** (all optional):
 
@@ -234,7 +233,7 @@ Defaults → .env file → Config file → Environment variables → Programmati
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_TRANSPORT` | `http` | Transport mode: `stdio`, `http`, `https` |
+| `MCP_TRANSPORT` | `stdio` | Transport mode: `stdio`, `http`, `https` |
 | `MCP_BIND_HOST` | `127.0.0.1` | Host to bind to |
 | `MCP_PORT` | `8000` | Port to listen on |
 | `MCP_STATELESS` | `false` | Stateless mode (no sessions) |
@@ -418,13 +417,13 @@ process.on('uncaughtException', (error) => {
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| `@opentelemetry/sdk-node` | ^0.213.0 | OTEL SDK orchestration |
+| `@opentelemetry/sdk-node` | ^0.219.0 | OTEL SDK orchestration |
 | `@opentelemetry/api` | ^1.9.0 | Tracing API, span context |
 | `@opentelemetry/sdk-metrics` | ^2.6.0 | Metrics collection & export |
-| `@opentelemetry/instrumentation-http` | ^0.213.0 | Automatic HTTP span instrumentation |
+| `@opentelemetry/instrumentation-http` | ^0.219.0 | Automatic HTTP span instrumentation |
 | `@opentelemetry/instrumentation-express` | ^0.61.0 | Automatic Express route instrumentation |
-| `@opentelemetry/exporter-prometheus` | ^0.213.0 | Prometheus `/metrics` endpoint |
-| `@opentelemetry/exporter-trace-otlp-http` | ^0.213.0 | OTLP trace export (Jaeger, Grafana, etc.) |
+| `@opentelemetry/exporter-prometheus` | ^0.219.0 | Prometheus `/metrics` endpoint |
+| `@opentelemetry/exporter-trace-otlp-http` | ^0.219.0 | OTLP trace export (Jaeger, Grafana, etc.) |
 
 ### Configuration & Utilities
 
@@ -434,4 +433,9 @@ process.on('uncaughtException', (error) => {
 | smol-toml | ^1.3.1 | TOML config file parsing |
 | yaml | ^2.7.1 | YAML config file parsing |
 
-> **Note**: Express, Zod, and all OpenTelemetry packages are **peer dependencies**. OTEL packages are optional — install only what you need. Express is optional, stdio-only servers.
+> **Note**: Express, Zod, and the MCP SDK are regular **dependencies**, installed automatically.
+> The heavy OpenTelemetry packages (SDK, exporters, instrumentation) are **optional
+> dependencies** — installed by default but safe to omit (`npm install --omit=optional`) for
+> stdio-only deployments; telemetry degrades gracefully when absent. `@opentelemetry/api` (the
+> lightweight tracing API re-exported from this package's public types) stays a regular
+> dependency so type resolution never breaks.

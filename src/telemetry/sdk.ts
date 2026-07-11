@@ -16,7 +16,7 @@
  * **Framework-managed** (with defaults):
  * - `OTEL_ENABLED` — Master toggle (default: false)
  * - `OTEL_SERVICE_NAME` — Service name (default: 'mcp-server')
- * - `OTEL_METRICS_EXPORTER` — Metric exporters (default: 'otlp,prometheus')
+ * - `OTEL_METRICS_EXPORTER` — Metric exporters (default: 'prometheus')
  * - `OTEL_LOGS_EXPORTER` — Log exporter (default: 'none' — framework has own logger)
  *
  * **Standard OTEL (pass-through, no defaults)**:
