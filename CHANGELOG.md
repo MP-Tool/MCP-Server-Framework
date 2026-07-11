@@ -202,6 +202,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `validateGitHubToken()` in the stdio browser-login flow omitted `AbortSignal.timeout(...)`,
   unlike every other upstream OAuth call — a hung token/userinfo endpoint could stall the pending
   login flow indefinitely. Now bounded by the same `OAUTH_FETCH_TIMEOUT_MS`.
+- **`/ready` no longer reflects raw readiness-check errors to unauthenticated callers**: a
+  consumer-provided `readinessCheck()` throwing (e.g. `Error("connect ECONNREFUSED 10.2.3.4:5432")`)
+  had its `message` embedded verbatim in the JSON body of the unauthenticated, unrate-limited
+  `/ready` endpoint. The client now sees a generic `"<serviceLabel> readiness check failed"`
+  reason; the full detail is logged server-side.
+- **Graceful HTTP shutdown drains in-flight requests instead of aborting them**: `shutdown()`
+  previously called `closeAllConnections()` before `server.close()`, killing any in-flight POST
+  immediately. Now `server.close()` + `closeIdleConnections()` run first, giving active requests a
+  bounded 3s grace window to finish before a force-close backstop.
+- **CORS now exposes the `Mcp-Session-Id` response header**: without `exposedHeaders`, a
+  cross-origin browser MCP client could not read the session ID the SDK returns on `initialize`
+  and so could never establish a stateful session.
 - **Quality/audit pass**: removed a stale `as unknown as MetricReader` cast in the telemetry SDK
   (the OpenTelemetry version skew it worked around is resolved; `PrometheusExporter` now extends
   `MetricReader`); repaired two OAuth provider tests that broke when the callback flow switched from
@@ -337,9 +349,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`form-action 'self'` in the default CSP**: prevents login-CSRF (an attacker page submitting
   credentials cross-origin to `/authorize/local`). A custom `MCP_HELMET_CSP` without `form-action`
   now logs a warning explaining the gap instead of silently omitting it.
-- **HSTS-disabled warning in production**: logs a warning when `NODE_ENV=production` and
-  `MCP_HELMET_HSTS` is not enabled, so operators terminating TLS at a proxy are aware the header
-  isn't set at the app layer.
+- **HSTS defaults on when the framework terminates TLS**: `MCP_HELMET_HSTS` is now tri-state
+  (unset / `true` / `false`) instead of a plain boolean defaulting to `false`. When unset, HSTS is
+  enabled automatically for `transport.mode: "https"` and left off for plain HTTP or HTTPS
+  terminated by a reverse proxy — previously it required an explicit `MCP_HELMET_HSTS=true` even
+  when the framework itself served TLS. The warning now fires whenever TLS is terminated here but
+  HSTS is off (regardless of `NODE_ENV`), replacing the old production-only check.
+- **DNS-rebinding protection now also validates `Origin`**: previously only the `Host` header was
+  checked (MCP spec MUST); `Origin` validation is added as the spec-recommended second layer — a
+  request whose `Origin` host doesn't match the same allowlist is rejected with 403, same as a bad
+  `Host`. Requests without an `Origin` header (non-browser MCP clients) are unaffected.
 - **Bounded `redirect_uris` per auto-registered OAuth client**: capped at 20 (CWE-770); further
   updates are rejected with a warning instead of growing the array unboundedly.
 - **Dedicated rate limiter on auth endpoints**: `/authorize`, `/token`, `/register`, `/callback`, and

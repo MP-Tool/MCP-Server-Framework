@@ -157,8 +157,19 @@ export interface ExpressAppOptions {
   /** Allow credentials in CORS requests. Only effective when corsOrigin is set. */
   readonly corsCredentials?: boolean | undefined;
 
-  /** Enable HSTS header. Default: false (managed by reverse proxy) */
+  /**
+   * Enable HSTS header (tri-state).
+   * - `true`/`false` — force on/off
+   * - `undefined` — defaults to `tlsTerminated` (on when the framework terminates TLS)
+   */
   readonly helmetHsts?: boolean | undefined;
+
+  /**
+   * Whether the framework itself terminates TLS (`transport.mode: "https"`), as opposed to
+   * plain HTTP or HTTPS fronted by a reverse proxy. Drives the HSTS default when `helmetHsts`
+   * is unset — the header only makes sense on a connection the framework serves over TLS.
+   */
+  readonly tlsTerminated?: boolean | undefined;
 
   /**
    * Content Security Policy.
@@ -263,23 +274,28 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
         ? false
         : { action: "deny" };
 
+  // HSTS is tri-state: honor an explicit setting, otherwise default it to whether the
+  // framework itself terminates TLS. Sending Strict-Transport-Security only makes sense on
+  // a connection we serve over HTTPS; on plain HTTP it is ignored by browsers, and behind a
+  // TLS-terminating proxy the proxy owns the header.
+  const hstsEnabled = options?.helmetHsts ?? options?.tlsTerminated ?? false;
+
   app.use(
     helmet({
-      strictTransportSecurity: options?.helmetHsts === true ? { maxAge: 15552000, includeSubDomains: true } : false,
+      strictTransportSecurity: hstsEnabled ? { maxAge: 15552000, includeSubDomains: true } : false,
       contentSecurityPolicy: cspOption,
       ...(frameguardOption !== false ? { frameguard: frameguardOption } : { frameguard: false }),
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     }),
   );
 
-  // Warn in production when HSTS is disabled — operators running behind a TLS
-  // proxy must enable HSTS at the proxy level, but should be aware it is absent.
-  // NODE_ENV is a universal Node convention, read directly rather than via the framework
-  // config schema (which only owns MCP_*/OTEL_* vars).
-  if (!options?.helmetHsts && process.env["NODE_ENV"] === "production") {
+  // Warn when the framework terminates TLS but HSTS is nonetheless off (operator set it to
+  // false explicitly) — the HTTPS connection then ships no Strict-Transport-Security header,
+  // leaving clients open to SSL-strip on later visits.
+  if (!hstsEnabled && options?.tlsTerminated) {
     logger.warn(
-      "HSTS (Strict-Transport-Security) is disabled. " +
-        "Enable it with MCP_HELMET_HSTS=true or ensure your TLS proxy sets the header.",
+      "HSTS (Strict-Transport-Security) is disabled while the server terminates TLS. " +
+        "Remove MCP_HELMET_HSTS=false to enable it, or ensure an upstream sets the header.",
     );
   }
 
@@ -315,6 +331,10 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
       cors({
         origin,
         credentials: options.corsCredentials ?? false,
+        // Let browser MCP clients read the session ID the SDK returns on initialize —
+        // without this it is hidden by the CORS response-header allowlist, so a cross-origin
+        // browser client cannot establish a stateful session.
+        exposedHeaders: [MCP_HEADERS.SESSION_ID],
       }),
     );
   }

@@ -539,6 +539,7 @@ export class McpServerInstance implements ServerInstance {
         corsOrigin: resolvedConfig.MCP_CORS_ORIGIN,
         corsCredentials: resolvedConfig.MCP_CORS_CREDENTIALS,
         helmetHsts: resolvedConfig.MCP_HELMET_HSTS,
+        tlsTerminated: transport.mode === "https",
         helmetCsp: resolvedConfig.MCP_HELMET_CSP,
         helmetFrameOptions: resolvedConfig.MCP_HELMET_FRAME_OPTIONS,
         bodyLimit: resolvedConfig.MCP_BODY_SIZE_LIMIT,

@@ -176,6 +176,8 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
     // Determine status code
     let status: ReadinessStatusValue;
     let reason: string;
+    // Detailed readiness-check failure, kept server-side only (never sent to the client).
+    let readinessCheckError: string | undefined;
 
     if (sessionsAtLimit) {
       status = ReadinessStatus.TOO_MANY_REQUESTS;
@@ -213,7 +215,12 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
         }
       } catch (err) {
         status = ReadinessStatus.SERVICE_UNAVAILABLE;
-        reason = `${serviceLabel} readiness check failed: ${err instanceof Error ? err.message : String(err)}`;
+        // `/ready` is unauthenticated: never reflect the raw error to the client — a
+        // readinessCheck like `db.ping()` can throw a message carrying internal hosts,
+        // ports, or credentials. The detail is logged server-side (below); the client sees
+        // only a generic reason.
+        reason = `${serviceLabel} readiness check failed`;
+        readinessCheckError = err instanceof Error ? err.message : String(err);
       } finally {
         clearTimeout(timeoutTimer);
       }
@@ -224,9 +231,10 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
 
     const isReady = status === ReadinessStatus.READY;
 
-    // Log readiness state — warn on not-ready, debug on ready
+    // Log readiness state — warn on not-ready, debug on ready. The full error detail (kept
+    // out of the client response above) is logged here for operators.
     if (!isReady) {
-      logger.warn(LogMessages.NOT_READY, reason);
+      logger.warn(LogMessages.NOT_READY, readinessCheckError ? `${reason}: ${readinessCheckError}` : reason);
     } else {
       logger.debug(LogMessages.READINESS_CHECK, status, reason);
     }

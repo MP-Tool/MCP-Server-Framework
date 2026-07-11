@@ -261,11 +261,15 @@ export const frameworkEnvSchema = z
      * Enable HTTP Strict Transport Security (HSTS) header.
      *
      * When true, Helmet sets `Strict-Transport-Security` with `max-age=15552000`
-     * (180 days) and `includeSubDomains`. Only enable when serving over HTTPS.
+     * (180 days) and `includeSubDomains`.
      *
-     * @default false (managed by reverse proxy in production)
+     * Tri-state: when unset, HSTS defaults ON if the framework itself terminates TLS
+     * (`transport.mode: "https"`) and OFF otherwise (plain HTTP, or HTTPS terminated by a
+     * reverse proxy that owns the header). Set explicitly to override either way.
+     *
+     * @default unset → on for framework-terminated HTTPS, off otherwise
      */
-    MCP_HELMET_HSTS: booleanFromEnv(false),
+    MCP_HELMET_HSTS: optionalBooleanFromEnv(),
 
     /**
      * Content Security Policy configuration.
