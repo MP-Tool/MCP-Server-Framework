@@ -147,6 +147,10 @@ export class FileWriter extends BaseLogWriter {
    * Initializes byte tracking from existing file size for rotation.
    */
   private createStream(component: string): boolean {
+    // Key everything by the sanitized name so two raw component names that sanitize to the
+    // same file (e.g. `a/b` and `a_b`) share one stream instead of two streams racing on
+    // one file with split byte-accounting.
+    component = this.safeComponent(component);
     if (this.streams.has(component)) {
       return true;
     }
@@ -200,8 +204,10 @@ export class FileWriter extends BaseLogWriter {
   write(_level: LogLevel, message: string, component: string): void {
     if (!this.enabled || !this.initialized) return;
 
-    // Resolve effective component (fallback if stream missing)
-    const effectiveComponent = this.streams.has(component) ? component : this.fallbackComponent;
+    // Resolve effective component (fallback if stream missing). Normalize first so the
+    // lookup key matches how streams were registered in createStream().
+    const safe = this.safeComponent(component);
+    const effectiveComponent = this.streams.has(safe) ? safe : this.fallbackComponent;
     const stream = this.streams.get(effectiveComponent);
     if (!stream) return;
 
@@ -288,23 +294,31 @@ export class FileWriter extends BaseLogWriter {
 
     const cutoff = Date.now() - this.retentionDays * 24 * 60 * 60 * 1000;
 
-    try {
-      const entries = fs.readdirSync(this.logDir);
-      for (const entry of entries) {
-        if (!entry.endsWith(this.extension)) continue;
-
-        const filePath = path.join(this.logDir, entry);
-        try {
-          const stats = fs.statSync(filePath);
-          if (stats.isFile() && stats.mtimeMs < cutoff) {
-            fs.unlinkSync(filePath);
-          }
-        } catch {
-          // best-effort: individual file errors are non-fatal
-        }
+    // Only ever delete THIS writer's own files. `LOG_DIR` is shared: the audit trail
+    // (`audit.log`), other writers, and third-party files can live in the same directory,
+    // so a blanket `*.<ext>` sweep by mtime would silently unlink a quiet-but-live
+    // audit.log (its open append fd then writes to a deleted inode). Scope the sweep to
+    // each known component's base file + its rotated variants.
+    const ownFiles = new Set<string>();
+    for (const component of this.streams.keys()) {
+      // streams are already keyed by the sanitized name, but re-apply for safety.
+      const safeName = this.safeComponent(component);
+      ownFiles.add(`${safeName}${this.extension}`);
+      for (let n = 1; n <= this.maxFiles; n++) {
+        ownFiles.add(`${safeName}.${n}${this.extension}`);
       }
-    } catch {
-      // best-effort: directory read errors are non-fatal
+    }
+
+    for (const entry of ownFiles) {
+      const filePath = path.join(this.logDir, entry);
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.isFile() && stats.mtimeMs < cutoff) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {
+        // best-effort: missing file / individual errors are non-fatal
+      }
     }
   }
 
@@ -312,16 +326,22 @@ export class FileWriter extends BaseLogWriter {
   // Path Helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * Sanitize a component name into a filesystem-safe basename. Also blocks path traversal
+   * via component names (`../../x` → `______x`). Idempotent — safe names pass through.
+   */
+  private safeComponent(component: string): string {
+    return component.replace(/[^a-zA-Z0-9_-]/g, "_");
+  }
+
   /** Build the primary log file path for a component. */
   private getFilePath(component: string): string {
-    const safeName = component.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return path.join(this.logDir, `${safeName}${this.extension}`);
+    return path.join(this.logDir, `${this.safeComponent(component)}${this.extension}`);
   }
 
   /** Build the rotated file path: `<component>.<n><extension>` */
   private getRotatedPath(component: string, n: number): string {
-    const safeName = component.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return path.join(this.logDir, `${safeName}.${n}${this.extension}`);
+    return path.join(this.logDir, `${this.safeComponent(component)}.${n}${this.extension}`);
   }
 
   /** Rename a file if it exists; ignore errors silently. */

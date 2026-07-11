@@ -177,13 +177,19 @@ export const CONTROL_CHAR_REPLACEMENTS: Readonly<Record<string, string>> = {
   "\x1D": "\\x1D", // Group Separator
   "\x1E": "\\x1E", // Record Separator
   "\x1F": "\\x1F", // Unit Separator
+  "\x85": "\\u0085", // Next Line (NEL, C1) — treated as a line break by many viewers
+  " ": "\\u2028", // Line Separator — new line in JS/browsers and some log viewers
+  " ": "\\u2029", // Paragraph Separator — likewise
 } as const;
 
 /**
- * Regex pattern string for all C0 control characters (U+0000–U+001F)
- * except those commonly allowed in text (\t is replaced but kept readable).
+ * Regex pattern string for characters that could forge a new log line (CWE-117):
+ * all C0 control characters (U+0000–U+001F), DEL (U+007F), the C1 control range
+ * (U+0080–U+009F, which includes NEL U+0085), and the Unicode line/paragraph
+ * separators U+2028/U+2029. The latter three are not `\n` but are rendered as line
+ * breaks by many terminals, editors, and log UIs, so they must be neutralized too.
  */
-export const CONTROL_CHAR_PATTERN = "[\\x00-\\x1F\\x7F]";
+export const CONTROL_CHAR_PATTERN = "[\\x00-\\x1F\\x7F-\\x9F\\u2028\\u2029]";
 
 /**
  * Regex pattern string for ANSI escape sequences.

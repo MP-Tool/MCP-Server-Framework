@@ -85,8 +85,13 @@ function getStream(): WriteStream | null {
     s.on("error", (err) => {
       if (!warnedWriteError) {
         warnedWriteError = true;
-        logger.warn("Audit log write error (further errors suppressed): %s", err.message);
+        logger.warn("Audit log write error — auditing disabled for this process: %s", err.message);
       }
+      // Disable the sink: once the stream has errored (disk full, EPIPE, unlinked inode) it
+      // cannot be relied on. Null it so getStream() stops handing back a broken stream and
+      // subsequent events become clean no-ops rather than writes into the void. Matches the
+      // documented "a write failure disables the sink for the rest of the process".
+      stream = null;
     });
     stream = s;
     logger.info("Audit log enabled: %s", filePath);

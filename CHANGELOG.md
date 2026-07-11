@@ -187,6 +187,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **File-log retention no longer deletes the audit trail or foreign logs**: `FileWriter`'s
+  retention sweep previously `unlink`ed *any* `.log` file in `LOG_DIR` past its retention age —
+  not scoped to its own components. Since the audit trail (`audit.log`) defaults to the same
+  directory, a quiet server could have its audit log silently deleted by the sweep (with the
+  audit module's open append fd then writing into the deleted inode). Retention is now scoped to
+  each writer's own component files (base + rotated variants) only.
+- **Audit sink now actually disables itself on a write error, as documented**: the stream
+  `'error'` handler logged a warning but never stopped `getStream()` from handing back the
+  errored stream, so every subsequent event silently failed to write instead of becoming a clean
+  no-op. Matches the documented "a write failure disables the sink for the rest of the process".
+- **`FileWriter` stream map keyed consistently by the sanitized component name**: previously keyed
+  by the raw name while the file path used the sanitized one, so two raw names that sanitize to
+  the same file (e.g. `a/b` and `a_b`) could open two independent streams appending to one file
+  with split byte-accounting (premature or delayed rotation).
 - **OAuth client auto-registration no longer trusts query-param casts**: `client_id`/`redirect_uri`
   at `/authorize` were read via `as string` casts, but Express yields an *array* for repeated query
   params (`?client_id=a&client_id=b`), which the casts let through unchecked into
@@ -317,6 +331,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **CWE-117 injection guard now covers Unicode line-break forging, not just `\n`**: the control-
+  character pattern escaped C0 controls and DEL but missed the C1 range (U+0080–U+009F, including
+  NEL U+0085) and the Unicode line/paragraph separators U+2028/U+2029 — none of these are `\n`, but
+  many terminals, editors, and log viewers render them as a line break, allowing a forged log entry
+  to slip past scrubbing that only checked for `\n`/`\r`. All are now escaped.
 - **Open-redirect in local-login guarded**: `POST /authorize/local` accepted any `authorize_url`
   starting with `/` as "same-origin" before re-rendering the selection page — but protocol-relative
   (`//evil.com`) and backslash (`/\evil.com`) forms also start with `/` and resolve to a foreign
