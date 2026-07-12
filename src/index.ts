@@ -214,6 +214,10 @@ export type {
 // Per-tool-call context accessor — reads current ToolContext from AsyncLocalStorage
 export { getCurrentToolContext } from "./mcp/current-tool-context.js";
 
+// User confirmation via MCP Elicitation (double opt-in confirm prompt)
+export { elicitConfirmation } from "./mcp/elicit-confirmation.js";
+export type { ElicitConfirmationOptions, ElicitConfirmationOutcome } from "./mcp/elicit-confirmation.js";
+
 // --- Tool context & protocol handlers ---
 export type {
   ToolContext,
@@ -343,6 +347,7 @@ export type { TelemetryConfig, SpanOptions, ServerMetrics, ServerStats } from ".
 
 export {
   parseEnvBoolean,
+  booleanFromEnv,
   getEnvString,
   getEnvOptional,
   interpolate,

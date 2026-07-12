@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`elicitConfirmation(options)` — user confirmation via MCP Elicitation**: Asks the human
+  operator to approve an action through the client's elicitation UI (`elicitation/create`) before
+  the server executes it. The prompt is a form with a single required `confirm` checkbox —
+  approval requires both the "accept" action AND a ticked checkbox (double opt-in), so a hasty
+  accept with defaults does not authorize anything. Never throws; every failure mode maps to an
+  explicit `ElicitConfirmationOutcome` (`accepted` / `declined` / `cancelled` / `timeout` /
+  `unsupported`) so callers can implement their own fail-open/fail-closed policy. Reads the
+  ambient `ToolContext` from AsyncLocalStorage by default (works from anywhere inside a tool
+  handler); a `context` override is available for tests. Clients that advertise the `elicitation`
+  capability without the `form` sub-capability (the SDK rejects those before sending) fold into
+  `unsupported` rather than surfacing an error.
+- **`booleanFromEnv` exported from the package root**: The strict boolean env-var schema helper
+  (only `"true"` maps to true; native booleans pass through) was previously only available via
+  internal subpaths, while `parseEnvBoolean` was already public. Consumers defining their own env
+  schemas can now use the same convention as the framework.
+
 ## [1.2.0]
 
 ### Added

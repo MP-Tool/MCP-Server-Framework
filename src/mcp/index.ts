@@ -58,6 +58,10 @@ export { text, json, error, image, audio, multi } from "./responses/index.js";
 // Per-tool-call context accessor (AsyncLocalStorage-backed)
 export { getCurrentToolContext } from "./current-tool-context.js";
 
+// User confirmation via MCP Elicitation
+export { elicitConfirmation } from "./elicit-confirmation.js";
+export type { ElicitConfirmationOptions, ElicitConfirmationOutcome } from "./elicit-confirmation.js";
+
 export {
   BaseRegistry,
   ToolRegistry,
