@@ -3,8 +3,10 @@
  *
  * Centralized logging for the MCP server framework.
  * Only exports what consumers need. Internal components (writers, formatters,
- * scrubbing, context, constants) are accessed via direct imports within
- * the logger module.
+ * context) are accessed via direct imports within the logger module.
+ * `SecretScrubber`/`REDACTED_VALUE` are deliberately public: consumers scrub
+ * secrets out of their own payloads (e.g. MCP tool output) with the same
+ * engine and marker the framework uses for logs.
  *
  * ## Usage
  *
@@ -50,3 +52,11 @@ export { configureLogger, getLoggerConfig } from "./logger.js";
 // =============================================================================
 
 export { mcpLogger } from "./mcp-logger.js";
+
+// =============================================================================
+// Secret Scrubbing (consumer-facing: scrub secrets out of arbitrary payloads,
+// e.g. tool output, before it leaves the server)
+// =============================================================================
+
+export { SecretScrubber } from "./scrubbing/index.js";
+export { REDACTED_VALUE } from "./core/constants.js";

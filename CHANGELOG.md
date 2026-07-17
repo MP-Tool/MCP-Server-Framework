@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (only `"true"` maps to true; native booleans pass through) was previously only available via
   internal subpaths, while `parseEnvBoolean` was already public. Consumers defining their own env
   schemas can now use the same convention as the framework.
+- **`SecretScrubber` + `REDACTED_VALUE` re-exported from `mcp-server-framework/logger`**: partially
+  reverses the 1.2.0 public-API narrowing that removed `SecretScrubber` from the logger barrel —
+  consumers scrub secrets out of their own payloads (e.g. MCP tool output before it reaches the
+  client transcript) with the same engine and redaction marker the framework uses for logs.
+  `REDACTED_VALUE` is newly public alongside it so consumers' bespoke masking can present one
+  consistent marker instead of duplicating the constant.
 
 ## [1.2.0]
 
