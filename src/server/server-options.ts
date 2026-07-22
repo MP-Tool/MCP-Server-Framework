@@ -13,6 +13,7 @@ import type { SessionStore } from "./session/index.js";
 import type { ServerCapabilities } from "../mcp/capabilities/server-capabilities.js";
 import type { TransportOptions } from "./transport-options.js";
 import type { AuthOptions } from "./auth/types.js";
+import type { ScrubToolResultsConfig } from "../mcp/capabilities/registry/index.js";
 import type { Application } from "express";
 import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 
@@ -403,6 +404,18 @@ export interface ServerOptions {
    * Ignored in stdio mode.
    */
   configureHttpApp?: ((app: Application) => void) | undefined;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Security (Optional)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Central secret redaction for tool results (see
+   * `CreateServerOptions.scrubToolResults` for the full documentation).
+   *
+   * @default true
+   */
+  scrubToolResults?: ScrubToolResultsConfig | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)

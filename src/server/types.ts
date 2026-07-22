@@ -9,6 +9,7 @@
 import type { TransportOptions, ServerCapabilities, ReadinessConfig, SessionConfigOptions } from "./server-options.js";
 import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { AuthOptions } from "./auth/types.js";
+import type { ScrubToolResultsConfig } from "../mcp/capabilities/registry/index.js";
 import type { Application } from "express";
 import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 
@@ -156,6 +157,30 @@ export interface CreateServerOptions {
    * (for example `/auth/google/callback`). Ignored in stdio mode.
    */
   configureHttpApp?: (app: Application) => void;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Security (Optional)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Central secret redaction for tool results.
+   *
+   * Every tool (and task-tool) result is scrubbed for secrets at the single
+   * boundary between the tool handler and the SDK, before it reaches the
+   * client transcript and the model provider. Fail-closed: if scrubbing
+   * itself fails, the result is withheld and replaced by a generic error.
+   *
+   * - `true` / omitted → scrub with the base heuristics (**default ON**)
+   * - `false` → disable scrubbing
+   * - `{ additionalKeys, allowKeys }` → extend the sensitive-key set /
+   *   exempt exact key names (e.g. `public_key`) from key-based redaction
+   *
+   * Individual tools whose purpose is returning a secret can opt out via
+   * `ToolDefinition.scrubResult: false`.
+   *
+   * @default true
+   */
+  scrubToolResults?: ScrubToolResultsConfig;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)

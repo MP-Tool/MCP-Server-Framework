@@ -135,6 +135,7 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
     session: options.session,
     auth: options.auth,
     configureHttpApp: options.configureHttpApp,
+    scrubToolResults: options.scrubToolResults,
     telemetryEnabled: options.telemetry ?? getTelemetryConfig().enabled,
     onBeforeTelemetryInit: options.onBeforeTelemetryInit,
   });

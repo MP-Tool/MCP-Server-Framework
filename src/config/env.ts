@@ -332,6 +332,38 @@ export const frameworkEnvSchema = z
     MCP_AUTH_RESOURCE_METADATA_URL: z.string().url().optional(),
 
     // ==========================================================================
+    // Secret Scrubbing
+    // ==========================================================================
+
+    /**
+     * Master switch for tool-result secret scrubbing (see `resolveScrubConfig()`).
+     *
+     * Tri-state: unset falls through to the consumer-provided base config, then to
+     * the scrubber's own default (on). Only the literal string `"true"` is truthy.
+     *
+     * @example 'true'
+     */
+    MCP_SCRUB_ENABLED: optionalBooleanFromEnv(),
+
+    /**
+     * Extra sensitive key-name fragments to redact, beyond the built-in blocklist
+     * (comma-separated, case-insensitive substring match). Merged with any
+     * `additionalKeys` the consumer already declares programmatically.
+     *
+     * @example 'fernet,x-internal-token'
+     */
+    MCP_SCRUB_ADDITIONAL_KEYS: optionalCommaSeparatedList(),
+
+    /**
+     * Exact key names that must never be redacted by key-based matching, even
+     * when they contain a sensitive fragment (comma-separated, case-insensitive).
+     * Merged with any `allowKeys` the consumer already declares programmatically.
+     *
+     * @example 'public_key,is_secret'
+     */
+    MCP_SCRUB_ALLOW_KEYS: optionalCommaSeparatedList(),
+
+    // ==========================================================================
     // Session Management
     // ==========================================================================
 

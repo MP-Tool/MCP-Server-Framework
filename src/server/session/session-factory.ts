@@ -30,6 +30,7 @@ import {
 import { buildCapabilities } from "../../mcp/capabilities/index.js";
 import { McpSession } from "./mcp-session.js";
 import { logger as frameworkLogger } from "../../logger/index.js";
+import type { SecretScrubber } from "../../logger/index.js";
 
 // ============================================================================
 // Constants
@@ -123,6 +124,12 @@ export interface SessionFactoryConfig {
    * Default: `false` (spec-konform — all capabilities listed).
    */
   readonly scopeFilterCapabilities?: boolean | undefined;
+
+  /**
+   * Central tool-result secret scrubber, shared by every session created by
+   * this factory. `undefined` disables result scrubbing.
+   */
+  readonly resultScrubber?: SecretScrubber | undefined;
 }
 
 // ============================================================================
@@ -211,6 +218,7 @@ export class McpSessionFactory {
       ...(this.config.icons && { icons: this.config.icons }),
       ...(this.taskStore && { taskStore: this.taskStore }),
       ...(this.taskMessageQueue && { taskMessageQueue: this.taskMessageQueue }),
+      ...(this.config.resultScrubber && { resultScrubber: this.config.resultScrubber }),
     });
 
     // Log session errors (lifecycle managed by SessionManager, not here)

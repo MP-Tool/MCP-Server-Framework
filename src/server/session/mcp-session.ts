@@ -40,6 +40,7 @@ import {
 } from "../../mcp/capabilities/registry/index.js";
 import { hasAllRequiredScopes } from "../../mcp/capabilities/registry/scope-enforcement.js";
 import { logger as frameworkLogger } from "../../logger/index.js";
+import type { SecretScrubber } from "../../logger/index.js";
 import type { LogNotificationHandler, McpLogLevel } from "../../logger/core/index.js";
 import { MCP_LEVEL_ORDER } from "../../logger/core/constants.js";
 
@@ -83,6 +84,12 @@ export interface McpSessionOptions {
    * @experimental MCP Tasks is an experimental SDK feature
    */
   taskMessageQueue?: TaskMessageQueue | undefined;
+  /**
+   * Central tool-result secret scrubber (shared per server build). Applied to
+   * every tool and task-tool result bound on this session. `undefined`
+   * disables result scrubbing.
+   */
+  resultScrubber?: SecretScrubber | undefined;
 }
 
 /**
@@ -272,6 +279,7 @@ export class McpSession implements LogNotificationHandler {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
       logNotificationHandler: this,
+      resultScrubber: this.options.resultScrubber,
     });
   }
 
@@ -285,6 +293,7 @@ export class McpSession implements LogNotificationHandler {
     TaskToolRegistry.bindToSdk(this.sdk, taskTools, {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
+      resultScrubber: this.options.resultScrubber,
     });
   }
 
@@ -298,6 +307,7 @@ export class McpSession implements LogNotificationHandler {
   ): void {
     ResourceRegistry.bindToSdk(this.sdk, resources, templates, {
       logger: this.logger,
+      resultScrubber: this.options.resultScrubber,
     });
   }
 

@@ -5,12 +5,12 @@
  * Prevents attackers from forging log entries by injecting newlines or control characters.
  *
  * @see https://cwe.mitre.org/data/definitions/117.html
- * @module logger/scrubbing/injection-guard
+ * @module logger/injection-guard
  */
 
 /* eslint-disable security/detect-non-literal-regexp -- every RegExp in this file is compiled from
    internal constant patterns (CONTROL_CHAR_PATTERN / ANSI_ESCAPE_PATTERN), never from user input. */
-import { CONTROL_CHAR_REPLACEMENTS, CONTROL_CHAR_PATTERN, ANSI_ESCAPE_PATTERN } from "../core/constants.js";
+import { CONTROL_CHAR_REPLACEMENTS, CONTROL_CHAR_PATTERN, ANSI_ESCAPE_PATTERN } from "./core/constants.js";
 
 /**
  * Pre-compiled regex for control characters (with /g flag for replacement).

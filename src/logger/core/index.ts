@@ -50,8 +50,6 @@ export {
   // Security constants (scrubbing)
   SENSITIVE_KEYS,
   SENSITIVE_KEY_BLOCKLIST,
-  REDACTED_VALUE,
-  JWT_PREFIX,
   // Security constants (injection prevention)
   CONTROL_CHAR_REPLACEMENTS,
   CONTROL_CHAR_PATTERN,

@@ -24,6 +24,8 @@ import { randomBytes } from "node:crypto";
 
 import { FrameworkErrorFactory } from "../../../../errors/index.js";
 import { logger as baseLogger } from "../../../../logger/index.js";
+import { createSecretScrubber, scrubByMimeType } from "../../../../utils/scrubbing/index.js";
+import type { SecretScrubber, SecretScrubberConfig } from "../../../../utils/scrubbing/index.js";
 
 const logger = baseLogger.child({ component: "dynamic-resource-registry" });
 
@@ -74,6 +76,14 @@ export interface DynamicResourceRegistryOptions {
   readonly defaultTtlMs?: number;
   /** Cleanup interval in ms (default: 60 s; set to 0 to disable) */
   readonly cleanupIntervalMs?: number;
+  /**
+   * Secret scrubbing for registered content (**default ON**). Offloaded
+   * resources bypass the tool-result scrub boundary — they are served later
+   * via `resources/read` — so string content is scrubbed on register instead
+   * (secrets never sit in the store). `Uint8Array` content passes through
+   * verbatim. `false` disables; an options object extends/exempts keys.
+   */
+  readonly scrub?: SecretScrubberConfig;
 }
 
 /**
@@ -128,6 +138,7 @@ export class DynamicResourceRegistry {
   private readonly maxEntriesValue: number;
   private readonly defaultTtlMsValue: number;
   private readonly cleanupIntervalMsValue: number;
+  private readonly scrubber: SecretScrubber | undefined;
   private cleanupTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options?: DynamicResourceRegistryOptions) {
@@ -135,6 +146,7 @@ export class DynamicResourceRegistry {
     this.maxEntriesValue = options?.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.defaultTtlMsValue = options?.defaultTtlMs ?? DEFAULT_TTL_MS;
     this.cleanupIntervalMsValue = options?.cleanupIntervalMs ?? DEFAULT_CLEANUP_INTERVAL_MS;
+    this.scrubber = createSecretScrubber(options?.scrub);
   }
 
   /** URI scheme used for generated URIs (e.g. `ephemeral`) */
@@ -182,12 +194,19 @@ export class DynamicResourceRegistry {
     const uri = `${this.uriSchemeValue}://${options.category}/${id}`;
     const now = Date.now();
     const ttl = options.ttlMs ?? this.defaultTtlMsValue;
+    // Scrub-on-register: offloaded content bypasses the tool-result boundary,
+    // so redact here — secrets never sit in the store. Errors propagate
+    // (fail-closed: the caller falls back to inlining, which IS boundary-scrubbed).
+    const content =
+      this.scrubber && typeof options.content === "string"
+        ? scrubByMimeType(options.content, options.mimeType, this.scrubber)
+        : options.content;
     const entry: DynamicResourceEntry = {
       uri,
       sessionId: options.sessionId,
       category: options.category,
       mimeType: options.mimeType,
-      content: options.content,
+      content,
       createdAt: now,
       expiresAt: now + ttl,
     };

@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Central tool-result secret scrubbing (`scrubToolResults`, default ON)**: every tool and
+  task-tool `CallToolResult` now passes a single redaction boundary between the handler and the
+  SDK — the one place all results cross before they reach the client transcript and the model
+  provider. `structuredContent` is scrubbed recursively; `text`, embedded-resource `text`, and
+  `resource_link` string fields are scrubbed as text; binary payloads (`image`/`audio` `data`,
+  resource `blob`) pass through verbatim so base64 is never corrupted. `isError` results and the
+  `McpError` wrap message are scrubbed too (upstream errors embed API responses). **Fail-closed**:
+  if scrubbing itself throws, the result is withheld and replaced by a generic error carrying zero
+  fragments of the original. Configure via `createServer({ scrubToolResults })`: `true`/omitted →
+  base heuristics, `false` → off, `{ additionalKeys, allowKeys }` → extend/exempt keys. Tools
+  whose purpose is returning a secret (e.g. a create-API-key tool) opt out individually via
+  `defineTool({ scrubResult: false })` — document the exposure in the tool description.
+  Unknown/future content-block types are scrubbed as objects rather than passed through
+  (fail-closed; only the known binary types `image`/`audio`/resource-`blob` pass verbatim).
+- **`DynamicResourceRegistry` scrub-on-register (`scrub` option, default ON)**: offloaded
+  resources bypass the tool-result boundary (they are served later via `resources/read`), so
+  string content is scrubbed when it is registered — secrets never sit in the store. `Uint8Array`
+  content passes through verbatim. Accepts the same `boolean | SecretScrubberOptions` shape;
+  a scrub failure makes `register()` throw (fail-closed: callers that fall back to inlining get
+  the boundary scrub instead).
+- **`SecretScrubberOptions` with `allowKeys`**: `new SecretScrubber({ additionalKeys, allowKeys })`
+  — `allowKeys` exempts exact key names (case-insensitive) from key-based redaction, for
+  false-positive keys like `public_key` that contain a sensitive fragment but are not secrets.
+  Exact match only, so an allowlist entry like `key` can never exempt `api_key` wholesale; values
+  of allowlisted keys still pass the string/value-shape scrubbing. Scope: `allowKeys` applies
+  wherever the full key name is known (object keys, JSON pairs); the flat-text `key=value` and
+  URL-param passes may over-redact allowlisted compound keys — the safe direction. The legacy
+  `new SecretScrubber(additionalKeys)` array form keeps working.
+- **`additionalKeys` now apply to the flat-text passes too**: the `key=value` and URL-query-param
+  patterns are compiled per scrubber instance (base keys + regex-escaped `additionalKeys`) instead
+  of once at module load from the base list only — previously a consumer-declared key was redacted
+  as an object key and in JSON text but silently NOT in env-block strings (`MY_CUSTOM=secret`),
+  its primary use case. Instances without `additionalKeys` share the precompiled default patterns.
+- **Declarative domain-redaction rules** (`SecretScrubberOptions`): consumers now DECLARE
+  redaction policy instead of writing bespoke masking code — `dropKeys` (field removed entirely,
+  e.g. bulky post-interpolation deploy artifacts), `sensitivePaths` (dot-path suffixes masked —
+  keys innocuous by NAME but secret in CONTEXT, e.g. `endpoint.params.url`; array elements keep
+  their parent's path), and `maskWhenSibling` (mask named keys when a sibling flag matches, e.g.
+  `{ sibling: "is_secret", keys: ["value"] }`; the flag key itself is implicitly allowlisted).
+  Explicit rules win over `allowKeys`.
+- **Value collector — object rules reach rendered text**: `scrubObject(obj, collector?)` reports
+  every masked/dropped string leaf (min length 4), and the tool-result boundary purges exactly
+  those literals (plain and JSON-escaped form) from all text blocks of the same result. Text is
+  rendered from the RAW object in handlers before the boundary runs — without this, a path/
+  sibling/drop rule would sanitize `structuredContent` while the same value survived in the
+  rendered text. Also strengthens the generic pass: heuristically masked values now vanish from
+  markdown shapes no text regex matches.
+- **`DynamicResourceRegistry` scrubs JSON as JSON**: registered content with a JSON mime type is
+  parsed, scrubbed via `scrubObject` (all declarative rules apply with structural fidelity —
+  a text regex could never drop a nested field), and re-serialized; unparseable/non-JSON content
+  falls back to the text scrub.
+- **`createSecretScrubber(config)` + `SecretScrubberConfig`**: the shared
+  `boolean | SecretScrubberOptions → SecretScrubber | undefined` factory, exported from
+  `mcp-server-framework/logger` and used by both the tool-result boundary and the
+  dynamic-resource registry (one config shape, one resolution).
+- **MCP log notifications scrub with the configured instance**: `logger.*()` calls inside a tool
+  handler that are forwarded to the client as `notifications/message` are now scrubbed with the
+  same `scrubToolResults`-configured scrubber as tool results
+  (`mcpLogger.createContextLogger(handler, scrubber?)`) — previously only the base heuristics
+  applied there, so a consumer-declared `additionalKeys` secret could reach the client transcript
+  via a log line while being redacted in the tool result. With result scrubbing disabled, log
+  notifications still fall back to the base scrubber — they never fall open.
+- **JSON key/value pass in `SecretScrubber.scrub()`**: rendered JSON (`"webhook_secret": "…"`,
+  plain and `\"`-escaped) is now redacted in text — the existing `key=value` / `key: value` pass
+  cannot match JSON's quoted keys. Callback-based, so `additionalKeys`/`allowKeys` apply to text
+  scrubbing as well.
 - **`elicitConfirmation(options)` — user confirmation via MCP Elicitation**: Asks the human
   operator to approve an action through the client's elicitation UI (`elicitation/create`) before
   the server executes it. The prompt is a form with a single required `confirm` checkbox —

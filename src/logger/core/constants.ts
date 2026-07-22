@@ -135,16 +135,6 @@ export { SENSITIVE_KEYS, SENSITIVE_KEY_BLOCKLIST } from "../../utils/sensitive-k
  */
 export type SensitiveKey = string;
 
-/**
- * The string used to replace redacted values.
- */
-export const REDACTED_VALUE = "**********";
-
-/**
- * JWT prefix pattern for detection.
- */
-export const JWT_PREFIX = "eyJ";
-
 // ============================================================================
 // Security Constants (Injection Prevention - CWE-117)
 // ============================================================================

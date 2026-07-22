@@ -19,8 +19,9 @@ import type { z } from "zod";
 
 import type { ToolDefinition, ToolContext, ToolProvider } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
-import type { Logger } from "../../../logger/index.js";
+import type { Logger, SecretScrubber } from "../../../logger/index.js";
 import { mcpLogger } from "../../../logger/index.js";
+import { scrubCallToolResult } from "./result-scrub.js";
 import type { LogNotificationHandler } from "../../../logger/core/index.js";
 import { withExtendedContext } from "../../../logger/core/context.js";
 import { JsonRpcErrorCode, AppError } from "../../../errors/index.js";
@@ -65,6 +66,12 @@ export interface ToolBindOptions {
   readonly stateless: boolean;
   /** Session-level notification handler for bridging framework logs → MCP notifications/message */
   readonly logNotificationHandler?: LogNotificationHandler | undefined;
+  /**
+   * When set, every tool result is scrubbed for secrets before it returns to
+   * the SDK (see `scrubCallToolResult`). Tools can opt out individually via
+   * `ToolDefinition.scrubResult: false`. `undefined` disables scrubbing.
+   */
+  readonly resultScrubber?: SecretScrubber | undefined;
 }
 
 // ============================================================================
@@ -166,12 +173,17 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
    * @internal
    */
   static bindToSdk(sdk: McpServer, tools: readonly ToolDefinition[], options: ToolBindOptions): void {
-    const { logger, stateless, logNotificationHandler } = options;
+    const { logger, stateless, logNotificationHandler, resultScrubber } = options;
 
     // Bridge framework logger → MCP notifications/message for this session.
     // When set, any logger.*() call during tool execution is also forwarded
     // to the connected MCP client as a notifications/message notification.
-    const sendMcpLog = logNotificationHandler ? mcpLogger.createContextLogger(logNotificationHandler) : undefined;
+    // Log notifications reach the same client transcript as tool results —
+    // scrub them with the same configured instance (falls back to the default
+    // scrubber inside createContextLogger when result scrubbing is disabled).
+    const sendMcpLog = logNotificationHandler
+      ? mcpLogger.createContextLogger(logNotificationHandler, resultScrubber)
+      : undefined;
 
     if (tools.length === 0) {
       logger.trace(SdkBindingMessages.NO_TOOLS);
@@ -242,7 +254,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           // Identity label for the log prefix (username convention on auth.extra; else clientId).
           const userLabel = authUsername(authInfo?.extra) ?? authInfo?.clientId;
 
-          const execute = () => ToolRegistry.executeToolCall(tool, args, toolContext, logger);
+          const execute = () => ToolRegistry.executeToolCall(tool, args, toolContext, logger, resultScrubber);
           const executeInToolContext = () => runWithToolContext(toolContext, execute);
           return sendMcpLog
             ? withExtendedContext(
@@ -274,6 +286,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
     args: Record<string, unknown>,
     context: ToolContext,
     logger: Logger,
+    resultScrubber?: SecretScrubber,
   ): Promise<CallToolResult> {
     const startTime = Date.now();
     let success = true;
@@ -310,7 +323,11 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
             [MCP_ATTRIBUTES.RESULT_CONTENT_COUNT]: result.content?.length ?? 0,
           });
 
-          return result;
+          // Central secret-redaction boundary: the only place every tool result
+          // passes before it reaches the SDK (→ client transcript → model provider).
+          return resultScrubber && tool.scrubResult !== false
+            ? scrubCallToolResult(result, resultScrubber, logger, tool.name)
+            : result;
         } catch (error) {
           success = false;
 
@@ -332,10 +349,10 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           if (error instanceof McpError) {
             throw error;
           }
-          throw new McpError(
-            ErrorCode.InternalError,
-            `Error executing ${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          // Thrown protocol errors bypass the result-scrub boundary — scrub the
+          // wrapped message too, since upstream errors can embed API responses.
+          const wrapped = `Error executing ${tool.name}: ${error instanceof Error ? error.message : String(error)}`;
+          throw new McpError(ErrorCode.InternalError, resultScrubber ? resultScrubber.scrub(wrapped) : wrapped);
         } finally {
           const durationMs = Date.now() - startTime;
           getServerMetrics().recordRequest(tool.name, durationMs, success);

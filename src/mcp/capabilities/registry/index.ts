@@ -21,6 +21,13 @@ export { BaseRegistry, type RegistryItem } from "./base-registry.js";
 export { ToolRegistry, globalToolRegistry, type ToolBindOptions } from "./tool-registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tool-Result Secret Scrubbing (central redaction boundary)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export { createResultScrubber, scrubCallToolResult, type ScrubToolResultsConfig } from "./result-scrub.js";
+export { resolveScrubConfig } from "./resolve-scrub-config.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Resource Registry
 // ─────────────────────────────────────────────────────────────────────────────
 

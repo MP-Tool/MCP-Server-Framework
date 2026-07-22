@@ -26,6 +26,8 @@ import type {
   CompletionCallback,
 } from "../../types/index.js";
 import type { Logger } from "../../../logger/index.js";
+import type { SecretScrubber } from "../../../utils/scrubbing/index.js";
+import { scrubByMimeType } from "../../../utils/scrubbing/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
@@ -64,6 +66,13 @@ const RegistryLogMessages = {
  */
 export interface ResourceBindOptions {
   readonly logger: Logger;
+  /**
+   * Scrubber applied to string content read from static resources/templates —
+   * this registry has no scrub-on-register stage (content is produced live by
+   * consumer `read()` handlers), so redaction happens here instead. Binary
+   * (`Uint8Array`/blob) content passes through verbatim. Omit to disable.
+   */
+  readonly resultScrubber?: SecretScrubber | undefined;
 }
 
 // ============================================================================
@@ -309,7 +318,7 @@ export class ResourceRegistry implements ResourceProvider {
    * @param sdk - The MCP SDK server instance
    * @param resources - Static resource definitions
    * @param templates - Resource template definitions
-   * @param options - Registration context (logger)
+   * @param options - Registration context (logger, resultScrubber)
    * @internal
    */
   static bindToSdk(
@@ -318,7 +327,7 @@ export class ResourceRegistry implements ResourceProvider {
     templates: readonly ResourceTemplateDefinition[],
     options: ResourceBindOptions,
   ): void {
-    const { logger } = options;
+    const { logger, resultScrubber } = options;
 
     if (resources.length === 0 && templates.length === 0) {
       logger.trace(SdkBindingMessages.NO_RESOURCES);
@@ -356,12 +365,13 @@ export class ResourceRegistry implements ResourceProvider {
                 const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, resource.mimeType);
 
                 if (typeof content === "string") {
+                  const text = resultScrubber ? scrubByMimeType(content, mimeType ?? "", resultScrubber) : content;
                   return {
                     contents: [
                       {
                         uri: resource.uri,
                         ...(mimeType && { mimeType }),
-                        text: content,
+                        text,
                       },
                     ],
                   };
@@ -474,8 +484,9 @@ export class ResourceRegistry implements ResourceProvider {
                 const uri = template.uriTemplate.replace(/\{(\w+)\}/g, (_, key) => params[key] ?? `{${key}}`);
 
                 if (typeof content === "string") {
+                  const text = resultScrubber ? scrubByMimeType(content, mimeType ?? "", resultScrubber) : content;
                   return {
-                    contents: [{ uri, ...(mimeType && { mimeType }), text: content }],
+                    contents: [{ uri, ...(mimeType && { mimeType }), text }],
                   };
                 } else {
                   const base64 = Buffer.from(content).toString("base64");

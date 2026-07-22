@@ -41,6 +41,7 @@ That said: this software is provided **as-is, without warranty of any kind**. Se
 - **Scope-Based Access Control** — Permission guards (`requireAuth`, `requireScope`, `hasScope`) for fine-grained tool access.
 - **Security Middleware Stack** — Helmet headers, DNS rebinding protection, configurable rate limiting, protocol version validation — all enabled by default for HTTP transports.
 - **Secret Scrubbing** — JWT, Bearer tokens, and API keys automatically redacted from logs. CWE-117 log injection guard strips ANSI escapes and neutralizes injection attempts.
+- **Tool-Result Redaction** — every tool result passes a central, fail-closed secret-scrub boundary before it reaches the client transcript (default ON, configurable via `scrubToolResults`).
 
 ### 🛠️ Developer Experience
 
@@ -329,6 +330,45 @@ Request → Trust Proxy → Helmet → DNS Rebinding → Rate Limiter → Auth �
 - **Trust Proxy**: Native Express trust-proxy support for reverse proxies (nginx, Traefik, Cloud LBs)
 - **Secret Scrubbing**: JWT, Bearer tokens, API keys automatically redacted from all log output
 - **Log Injection Guard**: CWE-117 protection — ANSI escapes stripped, injection attempts neutralized
+
+### Tool-Result Redaction
+
+Every tool (and task-tool) result passes a single secret-redaction boundary between the handler
+and the SDK — before it reaches the client transcript and the model provider. Default **ON**.
+
+```typescript
+createServer({
+  // true (default) | false | { additionalKeys, allowKeys }
+  scrubToolResults: {
+    additionalKeys: ["fernet"], // extra key-name fragments to redact
+    allowKeys: ["public_key"], // exact key names never redacted by key-matching
+  },
+});
+```
+
+- `structuredContent` is scrubbed recursively; text content, embedded-resource text, and
+  `resource_link` fields are scrubbed as text. Binary payloads (`image`/`audio` data, resource
+  `blob`) pass through verbatim.
+- Domain rules are declared, not coded: `dropKeys` (remove a field entirely), `sensitivePaths`
+  (mask innocuously-named keys in a secret context, e.g. `endpoint.params.url`), and
+  `maskWhenSibling` (flag-driven masking, e.g. `is_secret` → `value`). Values masked in
+  structured content are purged from the same result's rendered text automatically.
+- **Fail-closed**: if scrubbing itself fails, the result is withheld and replaced by a generic
+  error — an unscrubbed result never leaves the server.
+- Tools whose purpose is returning a secret opt out via `defineTool({ scrubResult: false })`.
+- `resources/read` bypasses this boundary entirely, so resources are scrubbed at two sibling
+  stages instead: ephemeral resources are scrubbed on register in the `DynamicResourceRegistry`
+  (same `scrub` option shape on `configureDynamicResourceRegistry`); static resources/templates
+  are scrubbed on read (same scrubber as `scrubToolResults`, wired automatically).
+- `resolveScrubConfig(base?)` layers the `MCP_SCRUB_ENABLED` / `MCP_SCRUB_ADDITIONAL_KEYS` /
+  `MCP_SCRUB_ALLOW_KEYS` env vars onto a programmatic `base` (env wins on the master switch;
+  key lists are unioned) — pass its result to both `scrubToolResults` and
+  `configureDynamicResourceRegistry`'s `scrub` option so the two stay in sync:
+  ```typescript
+  const scrub = resolveScrubConfig({ dropKeys: ["deployed_config"] });
+  createServer({ scrubToolResults: scrub });
+  configureDynamicResourceRegistry({ scrub });
+  ```
 
 ## Authentication
 

@@ -29,7 +29,7 @@ const MAX_LOG_INPUT_LENGTH = 200;
  *
  * This is a length/whitespace clamp only — it deliberately does NOT perform CWE-117
  * control-character escaping. That is applied automatically downstream by the Logger
- * pipeline's `InjectionGuard` (see `sanitizeForLogging` in `logger/scrubbing/injection-guard`);
+ * pipeline's `InjectionGuard` (see `sanitizeForLogging` in `logger/injection-guard`);
  * pre-escaping here would double-escape (e.g. backslashes re-escaped). The two are
  * complementary despite the similar-sounding names: this bounds size, that neutralizes
  * injection characters.

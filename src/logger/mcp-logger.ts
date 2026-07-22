@@ -19,8 +19,8 @@
 
 import type { LogLevel, McpLogLevel, LogNotificationHandler } from "./core/types.js";
 import { LOG_LEVEL_TO_MCP, MCP_LEVEL_ORDER } from "./core/constants.js";
-import { secretScrubber as sharedScrubber } from "./scrubbing/secret-scrubber.js";
-import { InjectionGuard } from "./scrubbing/injection-guard.js";
+import { secretScrubber as sharedScrubber, type SecretScrubber } from "../utils/scrubbing/secret-scrubber.js";
+import { InjectionGuard } from "./injection-guard.js";
 import { logger as baseLogger } from "./logger.js";
 import { LOGGER_COMPONENTS } from "./core/constants.js";
 
@@ -286,18 +286,29 @@ export class McpNotificationLogger {
    * Create a context-aware logger function for use in tool handlers.
    * Returns a function that can be passed to LogContext.sendMcpLog.
    *
+   * These notifications reach the same client transcript as tool results, so
+   * they should be scrubbed with the same configured instance: pass the
+   * server's result scrubber as `scrubber`. Without one (including when result
+   * scrubbing is disabled), the default base-heuristics scrubber applies —
+   * log-notification scrubbing never falls open.
+   *
    * @param handler - The notification handler for this context
+   * @param scrubber - Scrubber for outgoing messages (default: shared base instance)
    * @returns A function compatible with LogContext.sendMcpLog
    *
    * @example
    * ```typescript
-   * const sendMcpLog = mcpLogger.createContextLogger(handler);
+   * const sendMcpLog = mcpLogger.createContextLogger(handler, resultScrubber);
    * logger.runWithContext({ sendMcpLog }, () => {
    *   logger.info('This will also be sent to MCP client');
    * });
    * ```
    */
-  public createContextLogger(handler: LogNotificationHandler): (level: LogLevel, message: string) => void {
+  public createContextLogger(
+    handler: LogNotificationHandler,
+    scrubber?: SecretScrubber,
+  ): (level: LogLevel, message: string) => void {
+    const activeScrubber = scrubber ?? this.secretScrubber;
     return (level: LogLevel, message: string): void => {
       // Trace-level is too verbose for MCP client notifications.
       // It's intended for local debugging (file/console writers), not the protocol layer.
@@ -307,7 +318,7 @@ export class McpNotificationLogger {
 
       const mcpLevel = LOG_LEVEL_MAP[level];
       const sanitized = this.injectionGuard.sanitize(message);
-      const safeMessage = this.secretScrubber.scrub(sanitized);
+      const safeMessage = activeScrubber.scrub(sanitized);
 
       handler.sendLogNotification(mcpLevel, safeMessage).catch(() => {
         // Silently ignore errors (client may have disconnected)

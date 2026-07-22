@@ -89,7 +89,14 @@ const BLOCKLIST_PATTERNS = SENSITIVE_KEY_BLOCKLIST.map(
     new RegExp(`(?:^|[_\\-.\\s])${escapeRegex(word.toLowerCase())}(?:$|[_\\-.\\s])`, "i"),
 );
 
-function escapeRegex(str: string): string {
+/**
+ * Escape a string for literal use inside a RegExp alternation.
+ *
+ * Exported for pattern compilers that embed consumer-provided key names
+ * (e.g. the `SecretScrubber`'s `additionalKeys`) — escaping guarantees the
+ * fragments stay literal alternations with no regex semantics.
+ */
+export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

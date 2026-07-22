@@ -26,8 +26,9 @@ import type {
   SendNotificationFn,
 } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
-import type { Logger } from "../../../logger/index.js";
+import type { Logger, SecretScrubber } from "../../../logger/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
+import { scrubCallToolResult } from "./result-scrub.js";
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 
@@ -55,6 +56,11 @@ const SdkBindingMessages = {
 export interface TaskToolBindOptions {
   readonly logger: Logger;
   readonly stateless: boolean;
+  /**
+   * When set, every task result is scrubbed for secrets before it returns to
+   * the SDK (see `scrubCallToolResult`). Task tools have no per-tool opt-out.
+   */
+  readonly resultScrubber?: SecretScrubber | undefined;
 }
 
 // ============================================================================
@@ -168,7 +174,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
    * @experimental
    */
   static bindToSdk(sdk: McpServer, taskTools: readonly TaskToolDefinition[], options: TaskToolBindOptions): void {
-    const { logger, stateless } = options;
+    const { logger, stateless, resultScrubber } = options;
 
     if (taskTools.length === 0) {
       logger.trace(SdkBindingMessages.NO_TASK_TOOLS);
@@ -304,10 +310,12 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
               try {
                 logger.debug(SdkBindingMessages.TASK_EXECUTING, taskTool.name, "getTaskResult");
                 // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
-                return await taskTool.taskHandler.getTaskResult(
+                const result = await taskTool.taskHandler.getTaskResult(
                   args as Parameters<typeof taskTool.taskHandler.getTaskResult>[0],
                   context,
                 );
+                // Central secret-redaction boundary — same contract as regular tools.
+                return resultScrubber ? scrubCallToolResult(result, resultScrubber, logger, taskTool.name) : result;
               } catch (error) {
                 success = false;
                 span.setAttribute(MCP_ATTRIBUTES.SUCCESS, false);

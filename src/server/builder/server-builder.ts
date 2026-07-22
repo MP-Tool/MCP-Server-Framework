@@ -27,6 +27,7 @@ import type { ServerOptions } from "../server-options.js";
 import { BuilderLogMessages, BUILDER_LOG_COMPONENT } from "./constants.js";
 import { McpServerInstance } from "../server-instance.js";
 import { McpSessionFactory } from "../session/session-factory.js";
+import { createResultScrubber } from "../../mcp/capabilities/registry/index.js";
 import { validateBuilderState } from "./validation.js";
 import type { ValidatedServerOptions } from "./validation.js";
 import { collectPrimitives } from "./primitive-collector.js";
@@ -156,6 +157,10 @@ export class McpServerBuilder implements ServerBuilder {
     const transport = options.transport ?? ({ mode: "stdio" } as const);
     const stateless = isHttpTransport(transport) ? transport.stateless : undefined;
 
+    // Central secret-redaction boundary — one scrubber per server build,
+    // shared by every session's tool/task-tool binding. Default ON.
+    const resultScrubber = createResultScrubber(options.scrubToolResults);
+
     const sessionFactory = new McpSessionFactory({
       name: options.name,
       version: options.version,
@@ -170,6 +175,7 @@ export class McpServerBuilder implements ServerBuilder {
       prompts: primitives.prompts,
       taskTools: primitives.taskTools,
       scopeFilterCapabilities: options.auth?.scopeFilterCapabilities,
+      resultScrubber,
     });
 
     logger.debug(

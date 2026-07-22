@@ -58,5 +58,5 @@ export { mcpLogger } from "./mcp-logger.js";
 // e.g. tool output, before it leaves the server)
 // =============================================================================
 
-export { SecretScrubber } from "./scrubbing/index.js";
-export { REDACTED_VALUE } from "./core/constants.js";
+export { SecretScrubber, createSecretScrubber, scrubByMimeType, REDACTED_VALUE } from "../utils/scrubbing/index.js";
+export type { SecretScrubberOptions, SecretScrubberConfig } from "../utils/scrubbing/index.js";

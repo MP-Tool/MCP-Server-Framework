@@ -13,8 +13,8 @@ import { TextFormatter } from "./formatters/text-formatter.js";
 import { JsonFormatter } from "./formatters/json-formatter.js";
 import { ConsoleWriter } from "./writers/console-writer.js";
 import { FileWriter } from "./writers/file-writer.js";
-import { SecretScrubber } from "./scrubbing/secret-scrubber.js";
-import { InjectionGuard } from "./scrubbing/injection-guard.js";
+import { SecretScrubber } from "../utils/scrubbing/secret-scrubber.js";
+import { InjectionGuard } from "./injection-guard.js";
 import { MAX_CHILD_LOGGER_CACHE_SIZE } from "./core/constants.js";
 
 // ============================================================================

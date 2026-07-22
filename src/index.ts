@@ -276,9 +276,10 @@ export {
   globalToolRegistry,
   globalResourceRegistry,
   globalPromptRegistry,
+  resolveScrubConfig,
 } from "./mcp/capabilities/registry/index.js";
 
-export type { RegistryItem } from "./mcp/capabilities/registry/index.js";
+export type { RegistryItem, ScrubToolResultsConfig } from "./mcp/capabilities/registry/index.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INFRASTRUCTURE — Logger
