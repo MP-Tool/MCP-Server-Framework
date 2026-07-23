@@ -292,6 +292,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Log files kept appending across a `configureLogger()` reconfigure**: resources were reset via
+  a fire-and-forget `resetLoggerResources()`, which nulled the global handle only after its async
+  close completed — a line logged in that window hit the already-closing stream and was dropped.
+  In practice, this showed up as existing log files silently no longer being written to on
+  startup. The handle is now nulled synchronously so the next log call opens a fresh writer (in
+  append mode) right away; an unchanged reconfigure is now also a no-op instead of reopening the
+  files.
 - **`FileWriter` rotation no longer corrupts the replacement stream**: rotating a component whose
   stream still had a buffered write surfaced a late `ERR_STREAM_DESTROYED` whose self-heal handler
   logged a spurious stderr `Stream error` and deleted the freshly-created replacement stream from

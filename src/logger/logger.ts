@@ -123,15 +123,19 @@ let globalLoggerConfig: GlobalLoggerConfig = { ...DEFAULT_LOGGER_CONFIG };
  * ```
  */
 export function configureLogger(config: Partial<GlobalLoggerConfig>): void {
-  globalLoggerConfig = { ...globalLoggerConfig, ...config };
+  const merged = { ...globalLoggerConfig, ...config };
+  // No-op when unchanged (e.g. createServer() reapplying an already-set config).
+  const changed = (Object.keys(merged) as (keyof GlobalLoggerConfig)[]).some(
+    (k) => merged[k] !== globalLoggerConfig[k],
+  );
+  globalLoggerConfig = merged;
 
-  // Close and reset resources so the next log call re-creates them with the new config.
-  // This is necessary because LoggerResources captures formatter settings
-  // (e.g., includeTimestamp, includeComponent) at construction time.
-  // Must use resetLoggerResources() (not _setLoggerResources(null)) to properly
-  // close existing FileWriter streams and clear rotation/retention timers.
-  if (hasLoggerResources()) {
-    void resetLoggerResources();
+  // Null the handle synchronously so the next log() opens a fresh writer right away —
+  // an async reset would leave a window where writes hit the closing stream and vanish.
+  if (changed && hasLoggerResources()) {
+    const previous = getLoggerResources();
+    _setLoggerResources(null);
+    void previous.close();
   }
 }
 
