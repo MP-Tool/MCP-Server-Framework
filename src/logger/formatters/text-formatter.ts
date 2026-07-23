@@ -8,7 +8,7 @@
  * @module logger/formatters/text-formatter
  */
 
-import * as util from "util";
+import * as util from "node:util";
 import type { LogContext, LogFormatter, LogEntryParams } from "../core/types.js";
 import { ID_DISPLAY_LENGTH, LEVEL_PAD_LENGTH } from "../core/constants.js";
 import { truncateId } from "../../utils/string-helpers.js";

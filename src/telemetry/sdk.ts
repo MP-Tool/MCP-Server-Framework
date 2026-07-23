@@ -438,6 +438,7 @@ export async function shutdownTelemetry(): Promise<void> {
  * Check if the SDK is currently initialized.
  *
  * @returns true if SDK is initialized
+ * @internal
  */
 export function isSdkInitialized(): boolean {
   return sdk !== null;

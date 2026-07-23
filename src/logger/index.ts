@@ -60,3 +60,10 @@ export { mcpLogger } from "./mcp-logger.js";
 
 export { SecretScrubber, createSecretScrubber, scrubByMimeType, REDACTED_VALUE } from "../utils/scrubbing/index.js";
 export type { SecretScrubberOptions, SecretScrubberConfig } from "../utils/scrubbing/index.js";
+
+// =============================================================================
+// Audit Trail (level-independent JSONL sink — own data path, not the log pipeline)
+// =============================================================================
+
+export { logAuditEvent, initializeAuditLog, resolveAuditFilePath } from "./audit/index.js";
+export type { AuditEvent, AuditActor, AuditCategory, AuditOutcome, AuditLogOptions } from "./audit/index.js";

@@ -21,6 +21,7 @@ import type { PromptDefinition, PromptMessage, PromptProvider, CompletionCallbac
 import type { Logger } from "../../../logger/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
+import type { BindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
 
 // ============================================================================
@@ -43,9 +44,7 @@ const SdkBindingMessages = {
  * Options for binding prompts to an MCP SDK server.
  * @internal
  */
-export interface PromptBindOptions {
-  readonly logger: Logger;
-}
+export type PromptBindOptions = BindOptions;
 
 // ============================================================================
 // Prompt Registry Class

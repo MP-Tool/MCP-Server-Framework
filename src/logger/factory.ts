@@ -8,7 +8,7 @@
  */
 
 import type { LogLevel, TransportMode, LogFormatter, LogWriter } from "./core/types.js";
-import { hostname as osHostname } from "os";
+import { hostname as osHostname } from "node:os";
 import { TextFormatter } from "./formatters/text-formatter.js";
 import { JsonFormatter } from "./formatters/json-formatter.js";
 import { ConsoleWriter } from "./writers/console-writer.js";

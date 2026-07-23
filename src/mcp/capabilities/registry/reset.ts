@@ -35,13 +35,7 @@ const logger = baseLogger.child({ component: "registry" });
  * - Server restart / lifecycle management
  * - Isolated testing scenarios
  *
- * @example
- * ```typescript
- * import { resetAllRegistries } from 'mcp-server-framework';
- *
- * // Before re-registering tools in a hot-reload scenario
- * resetAllRegistries();
- * ```
+ * @internal
  */
 export function resetAllRegistries(): void {
   globalToolRegistry.clear();

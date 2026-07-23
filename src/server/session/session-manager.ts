@@ -17,7 +17,7 @@ import type { TransportType } from "../transport/transport-context.js";
 import type { Session, ReadonlySession, SessionCloseReason, CreateSessionOptions } from "./session.js";
 import type { AuthContext } from "../auth/auth-context.js";
 import { getServerMetrics } from "../../telemetry/metrics.js";
-import { logAuditEvent } from "../../audit/index.js";
+import { logAuditEvent } from "../../logger/audit/index.js";
 import { InMemorySessionStore } from "./in-memory-store.js";
 import type { SessionStore, SessionStats } from "./session-store.js";
 import { SessionHousekeeper } from "./session-housekeeper.js";
@@ -464,22 +464,7 @@ export class SessionManagerImpl implements SessionManager {
       });
     }
 
-    try {
-      await session.transport.instance.close();
-    } catch (error) {
-      logger.warn(LogMessages.TRANSPORT_CLOSE_ERROR, sessionId, { error });
-    }
-
-    try {
-      await session.mcpSession.dispose();
-    } catch (error) {
-      logger.warn(LogMessages.SESSION_DISPOSE_ERROR, sessionId, { error });
-    }
-
-    session.state = SESSION_STATES.CLOSED;
-    await this.invokeLifecycleHook("onClientDisconnected", sessionId, () =>
-      this.lifecycle?.onClientDisconnected?.(sessionId),
-    );
+    await this.teardownSession(session);
   }
 
   async closeAll(): Promise<void> {
@@ -489,27 +474,34 @@ export class SessionManagerImpl implements SessionManager {
     const teardownPromises = sessions.map(async (session) => {
       getServerMetrics().recordSessionChange(session.transport.type, -1);
       mcpLogger.removeHandler(session.mcpSession);
-
-      try {
-        await session.transport.instance.close();
-      } catch (error) {
-        logger.warn(LogMessages.TRANSPORT_CLOSE_ERROR, session.id, { error });
-      }
-
-      try {
-        await session.mcpSession.dispose();
-      } catch (error) {
-        logger.warn(LogMessages.SESSION_DISPOSE_ERROR, session.id, { error });
-      }
-
-      session.state = SESSION_STATES.CLOSED;
-      await this.invokeLifecycleHook("onClientDisconnected", session.id, () =>
-        this.lifecycle?.onClientDisconnected?.(session.id),
-      );
+      await this.teardownSession(session);
     });
 
     await Promise.allSettled(teardownPromises);
     logger.info(LogMessages.CLOSE_ALL_COMPLETE, sessions.length);
+  }
+
+  /**
+   * Shared per-session teardown: close the transport, dispose the MCP session
+   * (each individually guarded), mark closed, fire the disconnect hook.
+   */
+  private async teardownSession(session: Session): Promise<void> {
+    try {
+      await session.transport.instance.close();
+    } catch (error) {
+      logger.warn(LogMessages.TRANSPORT_CLOSE_ERROR, session.id, { error });
+    }
+
+    try {
+      await session.mcpSession.dispose();
+    } catch (error) {
+      logger.warn(LogMessages.SESSION_DISPOSE_ERROR, session.id, { error });
+    }
+
+    session.state = SESSION_STATES.CLOSED;
+    await this.invokeLifecycleHook("onClientDisconnected", session.id, () =>
+      this.lifecycle?.onClientDisconnected?.(session.id),
+    );
   }
 
   dispose(): void {

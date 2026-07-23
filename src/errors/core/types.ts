@@ -94,4 +94,4 @@ export interface ValidationIssue {
 // Re-export Error Code Types for convenience
 // ============================================================================
 
-export type { ErrorCodeType, ErrorCategoryType } from "./error-codes.js";
+export type { ErrorCodeType } from "./error-codes.js";

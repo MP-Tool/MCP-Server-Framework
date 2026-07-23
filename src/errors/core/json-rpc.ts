@@ -52,27 +52,6 @@ export type JsonRpcErrorCodeType = (typeof JsonRpcErrorCode)[keyof typeof JsonRp
 // JSON-RPC Error Code Utilities
 // ============================================================================
 
-/**
- * Check if an error code is a spec-defined JSON-RPC error.
- */
-export function isSpecDefinedJsonRpcError(code: number): boolean {
-  return code >= -32700 && code <= -32600;
-}
-
-/**
- * Check if an error code is an implementation-defined server error.
- */
-export function isServerDefinedJsonRpcError(code: number): boolean {
-  return code >= -32099 && code <= -32000;
-}
-
-/**
- * Check if an error code is a valid JSON-RPC error code.
- */
-export function isValidJsonRpcErrorCode(code: number): boolean {
-  return isSpecDefinedJsonRpcError(code) || isServerDefinedJsonRpcError(code);
-}
-
 // ============================================================================
 // JSON-RPC Error Response
 // ============================================================================

@@ -19,7 +19,7 @@ import type { SessionFactory } from "../types.js";
 import { TRANSPORT_LOG_COMPONENTS, SESSION_ID_DISPLAY_LENGTH } from "../constants.js";
 import { SESSION_CLOSE_REASONS } from "../../session/index.js";
 import type { SessionManager } from "../../session/index.js";
-import { createAuthContext } from "../../auth/index.js";
+import { buildSessionAuth, closeSessionOnDisconnect } from "../session-wiring.js";
 
 const logger = baseLogger.child({ component: TRANSPORT_LOG_COMPONENTS.SSE });
 
@@ -97,14 +97,9 @@ export class SseRequestHandler {
       // Create MCP session instance
       const mcpSession = this.sessionFactory();
 
-      // Build the session's AuthContext from the connecting GET request's verified auth,
-      // mirroring the Streamable HTTP stateful handler. Without this, an SSE session was
-      // always recorded/bound as anonymous even after a successful login — session-level
-      // consumers (audit logging, onClientConnected, session.auth reads) never saw the
-      // authenticated identity, only per-message tool calls did (see SseTransport fix).
-      const auth = req.auth
-        ? createAuthContext(req.auth, req.auth.clientId, req.auth.scopes, req.auth.extra)
-        : undefined;
+      // Bind the connecting GET request's verified auth to the session (shared
+      // wiring with the Streamable HTTP handler — see session-wiring.ts for why).
+      const auth = buildSessionAuth(req);
 
       // IMPORTANT: Create unified session BEFORE connecting MCP session!
       const session = this.sessionManager.create({
@@ -136,12 +131,7 @@ export class SseRequestHandler {
         if (closed) return;
         closed = true;
         logger.trace(LogMessages.SESSION_CLOSED, sessionId);
-        void this.sessionManager.close(sessionId, SESSION_CLOSE_REASONS.CLIENT_DISCONNECT).catch((err: unknown) => {
-          logger.warn(
-            "Error closing session on client disconnect: %s",
-            err instanceof Error ? err.message : String(err),
-          );
-        });
+        closeSessionOnDisconnect(this.sessionManager, sessionId, logger);
       };
 
       // Handle cleanup when connection closes

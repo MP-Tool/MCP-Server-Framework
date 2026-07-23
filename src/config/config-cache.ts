@@ -17,7 +17,7 @@
  * without touching configuration files.
  *
  * Derived caches in middleware (DNS rebinding, rate limiter) register
- * their reset functions so `resetConfigCache()` invalidates everything.
+ * their reset functions so `applyConfigOverrides()` invalidates everything.
  *
  * @module config/config-cache
  */
@@ -26,7 +26,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { parseFrameworkEnv, validateConfigConstraints, type FrameworkEnvConfig } from "./env.js";
-import { loadConfigFile, mapConfigToEnvKeys, type ConfigSource, type AuthSectionData } from "./file/index.js";
+import { loadConfigFile, mapConfigToEnvKeys, type AuthSectionData } from "./file/index.js";
 import { addStartupWarning } from "./startup-warnings.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 // ============================================================================
@@ -81,9 +81,6 @@ export function setConfigLogger(injectedLogger: ConfigLogger): void {
 /** Cached config instance (lazy initialization) */
 let cachedConfig: FrameworkEnvConfig | undefined;
 
-/** Metadata about how the config was loaded */
-let configSource: ConfigSource | undefined;
-
 /** Parsed `[auth]` section from the config file (nested `providers` survive here). */
 let rawAuthConfig: AuthSectionData | undefined;
 
@@ -126,16 +123,6 @@ export function getFrameworkConfig(): Readonly<FrameworkEnvConfig> {
 }
 
 /**
- * Returns metadata about which config source is active.
- *
- * Useful for logging after the logger is initialized.
- * Returns `undefined` if the config hasn't been loaded yet.
- */
-export function getConfigSource(): ConfigSource | undefined {
-  return configSource;
-}
-
-/**
  * Returns the parsed `[auth]` config-file section, or `undefined` when no config
  * file (or no `[auth]` section) was loaded.
  *
@@ -155,7 +142,7 @@ export function getRawAuthConfig(): AuthSectionData | undefined {
  *
  * Modules that derive cached values from the framework config
  * (e.g., allowed hosts list, rate limiter instance) register their
- * reset functions here so `resetConfigCache()` can invalidate them.
+ * reset functions here so `applyConfigOverrides()` can invalidate them.
  *
  * @param resetFn - Function that clears the satellite cache
  * @internal
@@ -247,16 +234,6 @@ function initializeConfig(): FrameworkEnvConfig {
 
   // Retain the parsed [auth] section (nested providers can't live in flat config).
   rawAuthConfig = fileResult?.rawAuth;
-
-  // Step 6: Record which config source is active
-  configSource = fileResult
-    ? {
-        type: "file",
-        path: fileResult.sourcePath,
-        format: fileResult.format,
-        dotenvLoaded: Object.keys(dotenvValues).length > 0,
-      }
-    : { type: "env", dotenvLoaded: Object.keys(dotenvValues).length > 0 };
 
   // Log the initialization result
   if (fileResult) {

@@ -350,6 +350,8 @@ let instance: ServerMetricsManager | null = null;
  * const metrics = createServerMetrics();
  * metrics.recordRequest('test-tool', 100, true);
  * ```
+ *
+ * @internal
  */
 export function createServerMetrics(): ServerMetricsManager {
   return new ServerMetricsManager();

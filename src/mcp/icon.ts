@@ -5,7 +5,7 @@
  * `Icon` (part of the `Implementation` object returned during `initialize`)
  * without hand-managing base64 encoding themselves.
  *
- * @module utils/icon
+ * @module mcp/icon
  */
 
 import { readFileSync, statSync } from "node:fs";

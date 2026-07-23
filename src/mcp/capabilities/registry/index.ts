@@ -12,7 +12,7 @@
 // Base Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { BaseRegistry, type RegistryItem } from "./base-registry.js";
+export { type RegistryItem } from "./base-registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool Registry

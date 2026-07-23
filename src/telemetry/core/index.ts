@@ -15,7 +15,6 @@ export type {
   TelemetryConfig,
   // Tracing
   SpanOptions,
-  TraceContext,
   SpanCallback,
   AsyncSpanCallback,
   // Metrics

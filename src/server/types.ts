@@ -42,14 +42,14 @@ export interface CreateServerOptions {
    *
    * @default 'mcp-server'
    */
-  name?: string;
+  name?: string | undefined;
 
   /**
    * Server version.
    *
    * @default '1.0.0'
    */
-  version?: string;
+  version?: string | undefined;
 
   /**
    * Human-friendly display name shown by MCP clients, distinct from the
@@ -81,7 +81,7 @@ export interface CreateServerOptions {
    * @default Resolved from `MCP_TRANSPORT` (default: `'stdio'`)
    * @see TransportOptions for details
    */
-  transport?: TransportOptions;
+  transport?: TransportOptions | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Capabilities (Optional - sensible defaults)
@@ -92,7 +92,7 @@ export interface CreateServerOptions {
    *
    * @default { tools: { listChanged: true }, logging: true }
    */
-  capabilities?: ServerCapabilities;
+  capabilities?: ServerCapabilities | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Lifecycle (Optional)
@@ -101,12 +101,12 @@ export interface CreateServerOptions {
   /**
    * Lifecycle hooks for startup/shutdown.
    */
-  lifecycle?: ServerLifecycleHooks;
+  lifecycle?: ServerLifecycleHooks | undefined;
 
   /**
    * Shutdown configuration.
    */
-  shutdown?: Partial<ShutdownConfig>;
+  shutdown?: Partial<ShutdownConfig> | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Health Endpoint (Optional)
@@ -120,7 +120,7 @@ export interface CreateServerOptions {
    *
    * @see ReadinessConfig
    */
-  health?: ReadinessConfig;
+  health?: ReadinessConfig | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Session Configuration (Optional)
@@ -134,7 +134,7 @@ export interface CreateServerOptions {
    *
    * @see SessionConfigOptions
    */
-  session?: SessionConfigOptions;
+  session?: SessionConfigOptions | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Authentication (Optional)
@@ -148,7 +148,7 @@ export interface CreateServerOptions {
    *
    * @see AuthOptions
    */
-  auth?: AuthOptions;
+  auth?: AuthOptions | undefined;
 
   /**
    * Optional hook to customize the Express app for HTTP/HTTPS transports.
@@ -156,7 +156,7 @@ export interface CreateServerOptions {
    * Useful for registering additional callback endpoints on the MCP host
    * (for example `/auth/google/callback`). Ignored in stdio mode.
    */
-  configureHttpApp?: (app: Application) => void;
+  configureHttpApp?: ((app: Application) => void) | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Security (Optional)
@@ -180,7 +180,7 @@ export interface CreateServerOptions {
    *
    * @default true
    */
-  scrubToolResults?: ScrubToolResultsConfig;
+  scrubToolResults?: ScrubToolResultsConfig | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)
@@ -194,7 +194,7 @@ export interface CreateServerOptions {
    *
    * @default undefined (falls back to OTEL_ENABLED)
    */
-  telemetry?: boolean;
+  telemetry?: boolean | undefined;
 
   /**
    * Called before the OpenTelemetry SDK is initialized.
@@ -215,7 +215,7 @@ export interface CreateServerOptions {
    *
    * @see ServerOptions.onBeforeTelemetryInit for the full documentation
    */
-  onBeforeTelemetryInit?: () => void;
+  onBeforeTelemetryInit?: (() => void) | undefined;
 }
 
 /**

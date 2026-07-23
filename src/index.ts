@@ -30,7 +30,7 @@
  * ```typescript
  * import { SessionManagerImpl } from 'mcp-server-framework/session';
  * import { startHttpTransport, createExpressApp } from 'mcp-server-framework/http';
- * import { getActiveSpan, SpanKind } from 'mcp-server-framework/telemetry';
+ * import { withSpan, MCP_ATTRIBUTES } from 'mcp-server-framework/telemetry';
  * import { FrameworkErrorFactory } from 'mcp-server-framework/errors';
  * import { Logger } from 'mcp-server-framework/logger';
  * import { getFrameworkConfig } from 'mcp-server-framework/config';
@@ -102,8 +102,8 @@ export { resolveAuthConfig } from "./server/auth/index.js";
 export type { ResolvedAuthConfig, AuthProviderInput } from "./server/auth/index.js";
 
 // Audit log (parallel JSON-Lines security/activity trail)
-export { logAuditEvent } from "./audit/index.js";
-export type { AuditEvent, AuditActor, AuditCategory, AuditOutcome } from "./audit/index.js";
+export { logAuditEvent } from "./logger/audit/index.js";
+export type { AuditEvent, AuditActor, AuditCategory, AuditOutcome } from "./logger/audit/index.js";
 
 // Auth providers (re-export SDK types for consumer convenience)
 export { ProxyOAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";
@@ -354,5 +354,6 @@ export {
   interpolate,
   type MessageParams,
   durationSchema,
-  iconFromFile,
 } from "./utils/index.js";
+
+export { iconFromFile } from "./mcp/icon.js";

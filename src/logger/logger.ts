@@ -14,7 +14,7 @@
  * @module logger
  */
 
-import * as util from "util";
+import * as util from "node:util";
 
 // Core types and utilities
 import type { LogLevel, TransportMode, LogContext, LoggerInterface, LogEntryParams } from "./core/types.js";

@@ -91,23 +91,6 @@ export interface ConfigFileResult {
   readonly rawAuth?: AuthSectionData | undefined;
 }
 
-/**
- * Metadata about which config source is active.
- *
- * Stored alongside the cached config so the server can log
- * which source was used after the logger is initialized.
- */
-export interface ConfigSource {
-  /** How the config was loaded */
-  readonly type: "env" | "file";
-  /** Absolute path to the config file (only when type is 'file') */
-  readonly path?: string;
-  /** Format of the config file (only when type is 'file') */
-  readonly format?: ConfigFileFormat;
-  /** Whether a `.env` file was found and loaded */
-  readonly dotenvLoaded: boolean;
-}
-
 // ============================================================================
 // Section Schemas
 // ============================================================================

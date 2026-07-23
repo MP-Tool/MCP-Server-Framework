@@ -16,7 +16,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import { SESSION_CLOSE_REASONS } from "../../session/index.js";
 import type { SessionManager } from "../../session/index.js";
-import { createAuthContext } from "../../auth/index.js";
+import { buildSessionAuth, closeSessionOnDisconnect } from "../session-wiring.js";
 import type { SessionFactory } from "../types.js";
 import { createSessionScopedEventStore } from "./session-scoped-event-store.js";
 import { JsonRpcErrorCode, HttpStatus, TransportErrorMessage } from "../../../errors/index.js";
@@ -242,9 +242,7 @@ export class StatefulHandler implements TransportRequestHandler {
         onsessioninitialized: (sessionId: string) => {
           releaseSlot();
           logger.trace(LogMessages.SESSION_INITIALIZED, shortId(sessionId));
-          const auth =
-            req.mcp_authenticated_context ??
-            (req.auth ? createAuthContext(req.auth, req.auth.clientId, req.auth.scopes, req.auth.extra) : undefined);
+          const auth = buildSessionAuth(req);
           const session = this.sessionManager.create({
             id: sessionId,
             transportType: "http",
@@ -277,12 +275,7 @@ export class StatefulHandler implements TransportRequestHandler {
         const sid = transport.sessionId;
         if (sid) {
           logger.trace(LogMessages.SESSION_CLOSED, shortId(sid));
-          void this.sessionManager.close(sid, SESSION_CLOSE_REASONS.CLIENT_DISCONNECT).catch((err: unknown) => {
-            logger.warn(
-              "Error closing session on client disconnect: %s",
-              err instanceof Error ? err.message : String(err),
-            );
-          });
+          closeSessionOnDisconnect(this.sessionManager, sid, logger);
         }
       };
       /* v8 ignore stop */

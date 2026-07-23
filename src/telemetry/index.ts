@@ -23,7 +23,7 @@
  * ## Usage
  *
  * ```typescript
- * import { initializeTelemetry, withSpan, getTraceContext, serverMetrics } from './telemetry/index.js';
+ * import { initializeTelemetry, withSpan, getServerMetrics } from './telemetry/index.js';
  *
  * // Initialize at startup
  * initializeTelemetry();
@@ -34,11 +34,8 @@
  *   return await doSomething();
  * });
  *
- * // Get trace context for propagation
- * const ctx = getTraceContext();
- *
  * // Record metrics
- * serverMetrics.recordRequest('tool_name', 150, true);
+ * getServerMetrics().recordRequest('tool_name', 150, true);
  * ```
  *
  * @module server/telemetry
@@ -61,20 +58,10 @@ export type { TelemetryConfig } from "./core/index.js";
 // Tracing
 // ============================================================================
 
-export {
-  getTracer,
-  withSpan,
-  withSpanSync,
-  getActiveSpan,
-  addSpanAttributes,
-  addSpanEvent,
-  getTraceContext,
-  FrameworkSpanKind,
-  FrameworkSpanStatusCode,
-} from "./tracing.js";
+export { getTracer, withSpan, withSpanSync, FrameworkSpanKind } from "./tracing.js";
 
 export { MCP_ATTRIBUTES } from "./core/index.js";
-export type { SpanOptions, TraceContext, SpanCallback, AsyncSpanCallback } from "./core/index.js";
+export type { SpanOptions, SpanCallback, AsyncSpanCallback } from "./core/index.js";
 
 // ============================================================================
 // Metrics

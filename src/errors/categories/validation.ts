@@ -10,7 +10,8 @@
 
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { ZodError } from "zod";
-import { AppError, ErrorCodes, VALIDATION_LIMITS, REDACTED_PLACEHOLDER, isSensitiveKey } from "../core/index.js";
+import { AppError, ErrorCodes, VALIDATION_LIMITS, REDACTED_PLACEHOLDER } from "../core/index.js";
+import { isSensitiveKey } from "../../utils/sensitive-keys.js";
 import type { ValidationErrorOptions, ValidationIssue, BaseErrorOptions } from "../core/index.js";
 
 // ============================================================================

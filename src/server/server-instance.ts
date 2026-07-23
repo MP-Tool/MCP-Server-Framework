@@ -33,7 +33,7 @@ import { applyConfigOverrides, setConfigLogger } from "../config/config-cache.js
 import { flushStartupWarnings } from "../config/startup-warnings.js";
 import { isFullOAuthProvider } from "./auth/types.js";
 import { getDynamicResourceRegistry } from "../mcp/capabilities/resources/index.js";
-import { initializeAuditLog } from "../audit/audit-log.js";
+import { initializeAuditLog, resolveAuditFilePath } from "../logger/audit/index.js";
 
 // ============================================================================
 // Constants
@@ -233,7 +233,14 @@ export class McpServerInstance implements ServerInstance {
       // Eagerly open the audit-log stream — same reasoning as the file logger above:
       // create it now (path visible in startup logs) instead of only after the first
       // audited event, which reads as "audit logging isn't working" during a smoke test.
-      initializeAuditLog();
+      // The audit sink reads no config itself (logger block stays config-free) — resolve
+      // its destination and the shared LOG_* rotation limits here instead.
+      const auditConfig = getFrameworkConfig();
+      initializeAuditLog({
+        filePath: resolveAuditFilePath(auditConfig.LOG_DIR, auditConfig.MCP_AUDIT_FILE),
+        maxSizeBytes: auditConfig.LOG_MAX_FILE_SIZE,
+        maxFiles: auditConfig.LOG_MAX_FILES,
+      });
 
       // Inject logger into config module (breaks config→logger dependency)
       setConfigLogger(frameworkLogger.child({ component: "config" }));
@@ -328,63 +335,34 @@ export class McpServerInstance implements ServerInstance {
 
     // Each cleanup step is individually guarded so that a failure in one
     // step does not prevent the remaining steps from running (error isolation).
+    const runShutdownStep = async (step: string, fn: () => Promise<void> | void): Promise<void> => {
+      try {
+        await fn();
+      } catch (error) {
+        logger.warn(
+          RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
+          step,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    };
 
-    try {
+    await runShutdownStep("sessions", async () => {
       if (this.sessionManager) {
         await this.sessionManager.closeAll();
         this.sessionManager.dispose();
       }
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "sessions",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
-      if (this.transportHandle) {
-        await this.transportHandle.shutdown();
-      }
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "transport",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
-      await this.disposeAuthProvider();
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "auth-provider",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
-      await this.disposeEventStore();
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "event-store",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
+    });
+    await runShutdownStep("transport", async () => {
+      await this.transportHandle?.shutdown();
+    });
+    await runShutdownStep("auth-provider", () => this.disposeAuthProvider());
+    await runShutdownStep("event-store", () => this.disposeEventStore());
+    await runShutdownStep("telemetry", async () => {
       if (this.options.telemetryEnabled) {
         await shutdownTelemetry();
       }
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "telemetry",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    });
 
     this.transitionState("stopped");
 

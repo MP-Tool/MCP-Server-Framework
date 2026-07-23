@@ -13,7 +13,7 @@
  * @module logger/core/context
  */
 
-import { AsyncLocalStorage } from "async_hooks";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { LogContext } from "./types.js";
 import { MAX_CONTEXT_DEPTH, COMPONENT_SEPARATOR } from "./constants.js";
 

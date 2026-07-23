@@ -25,11 +25,11 @@ import type {
   ResourceReadResult,
   CompletionCallback,
 } from "../../types/index.js";
-import type { Logger } from "../../../logger/index.js";
 import type { SecretScrubber } from "../../../utils/scrubbing/index.js";
 import { scrubByMimeType } from "../../../utils/scrubbing/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
+import type { ScrubbingBindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 
@@ -61,19 +61,13 @@ const RegistryLogMessages = {
 // ============================================================================
 
 /**
- * Options for binding resources to an MCP SDK server.
+ * Options for binding resources to an MCP SDK server. The scrubber applies to
+ * string content on read — this registry has no scrub-on-register stage
+ * (content is produced live by consumer `read()` handlers); binary
+ * (`Uint8Array`/blob) content passes through verbatim.
  * @internal
  */
-export interface ResourceBindOptions {
-  readonly logger: Logger;
-  /**
-   * Scrubber applied to string content read from static resources/templates —
-   * this registry has no scrub-on-register stage (content is produced live by
-   * consumer `read()` handlers), so redaction happens here instead. Binary
-   * (`Uint8Array`/blob) content passes through verbatim. Omit to disable.
-   */
-  readonly resultScrubber?: SecretScrubber | undefined;
-}
+export type ResourceBindOptions = ScrubbingBindOptions;
 
 // ============================================================================
 // Internal Registry Classes (extend BaseRegistry for CRUD)
@@ -362,31 +356,7 @@ export class ResourceRegistry implements ResourceProvider {
                   ...(extra.authInfo && { authInfo: extra.authInfo }),
                 };
                 const raw = await resource.read(ctx);
-                const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, resource.mimeType);
-
-                if (typeof content === "string") {
-                  const text = resultScrubber ? scrubByMimeType(content, mimeType ?? "", resultScrubber) : content;
-                  return {
-                    contents: [
-                      {
-                        uri: resource.uri,
-                        ...(mimeType && { mimeType }),
-                        text,
-                      },
-                    ],
-                  };
-                } else {
-                  const base64 = Buffer.from(content).toString("base64");
-                  return {
-                    contents: [
-                      {
-                        uri: resource.uri,
-                        ...(mimeType && { mimeType }),
-                        blob: base64,
-                      },
-                    ],
-                  };
-                }
+                return ResourceRegistry.emitResourceContents(resource.uri, raw, resource.mimeType, resultScrubber);
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.RESOURCE_READ_ERROR, resource.uri, msg);
@@ -478,22 +448,11 @@ export class ResourceRegistry implements ResourceProvider {
                   ...(extra.authInfo && { authInfo: extra.authInfo }),
                 };
                 const raw = await template.read(params, ctx);
-                const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, template.mimeType);
 
                 // Construct URI from template for the response
                 const uri = template.uriTemplate.replace(/\{(\w+)\}/g, (_, key) => params[key] ?? `{${key}}`);
 
-                if (typeof content === "string") {
-                  const text = resultScrubber ? scrubByMimeType(content, mimeType ?? "", resultScrubber) : content;
-                  return {
-                    contents: [{ uri, ...(mimeType && { mimeType }), text }],
-                  };
-                } else {
-                  const base64 = Buffer.from(content).toString("base64");
-                  return {
-                    contents: [{ uri, ...(mimeType && { mimeType }), blob: base64 }],
-                  };
-                }
+                return ResourceRegistry.emitResourceContents(uri, raw, template.mimeType, resultScrubber);
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.TEMPLATE_READ_ERROR, template.uriTemplate, msg);
@@ -511,6 +470,26 @@ export class ResourceRegistry implements ResourceProvider {
   // ──────────────────────────────────────────────────────────────────────────
   // Private SDK Binding Helpers
   // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Normalizes a read result into the SDK `contents` payload — the shared
+   * tail of the static and template read paths: string content is scrubbed
+   * (when a scrubber is bound) and emitted as `text`; binary content passes
+   * through verbatim as base64 `blob` (value-shape scrubbing would corrupt it).
+   */
+  private static emitResourceContents(
+    uri: string,
+    raw: string | Uint8Array | ResourceReadResult,
+    fallbackMimeType: string | undefined,
+    resultScrubber: SecretScrubber | undefined,
+  ): { contents: Array<{ uri: string; mimeType?: string } & ({ text: string } | { blob: string })> } {
+    const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, fallbackMimeType);
+    if (typeof content === "string") {
+      const text = resultScrubber ? scrubByMimeType(content, mimeType ?? "", resultScrubber) : content;
+      return { contents: [{ uri, ...(mimeType && { mimeType }), text }] };
+    }
+    return { contents: [{ uri, ...(mimeType && { mimeType }), blob: Buffer.from(content).toString("base64") }] };
+  }
 
   /**
    * Normalizes a resource read return value into a `{ content, mimeType }` pair.

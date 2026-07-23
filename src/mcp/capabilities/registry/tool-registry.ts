@@ -28,9 +28,10 @@ import { JsonRpcErrorCode, AppError } from "../../../errors/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
+import type { ScrubbingBindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
 import { runWithToolContext } from "../../current-tool-context.js";
-import { logAuditEvent } from "../../../audit/index.js";
+import { logAuditEvent } from "../../../logger/audit/index.js";
 
 /** Reads the conventional `username` label from an auth `extra` payload, if present. */
 function authUsername(extra: Record<string, unknown> | undefined): string | undefined {
@@ -58,20 +59,14 @@ const SdkBindingMessages = {
 // ============================================================================
 
 /**
- * Options for binding tools to an MCP SDK server.
+ * Options for binding tools to an MCP SDK server. Tools can opt out of result
+ * scrubbing individually via `ToolDefinition.scrubResult: false`.
  * @internal
  */
-export interface ToolBindOptions {
-  readonly logger: Logger;
+export interface ToolBindOptions extends ScrubbingBindOptions {
   readonly stateless: boolean;
   /** Session-level notification handler for bridging framework logs → MCP notifications/message */
   readonly logNotificationHandler?: LogNotificationHandler | undefined;
-  /**
-   * When set, every tool result is scrubbed for secrets before it returns to
-   * the SDK (see `scrubCallToolResult`). Tools can opt out individually via
-   * `ToolDefinition.scrubResult: false`. `undefined` disables scrubbing.
-   */
-  readonly resultScrubber?: SecretScrubber | undefined;
 }
 
 // ============================================================================
