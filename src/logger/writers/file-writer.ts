@@ -9,8 +9,8 @@
 
 /* eslint-disable security/detect-non-literal-fs-filename -- all paths derive from the trusted log
    directory (config/env) joined with a fixed, sanitized component name; never from request input. */
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { LogLevel } from "../core/types.js";
 import { DEFAULT_LOG_COMPONENTS, LOG_FILE_EXTENSION } from "../core/constants.js";
 import { BaseLogWriter } from "./base-writer.js";
@@ -321,8 +321,15 @@ export class FileWriter extends BaseLogWriter {
       //    renaming the file in step 4.
       const oldStream = this.streams.get(component);
       if (oldStream) {
-        oldStream.destroy();
         this.streams.delete(component);
+        // Detach the self-heal error handler before the intentional destroy: a still-buffered
+        // write aborted by destroy() surfaces asynchronously as ERR_STREAM_DESTROYED, and that
+        // late event would otherwise (a) log a spurious stderr "Stream error" and (b) delete the
+        // freshly-created replacement stream (step 5) from the map — its handler is keyed by
+        // component. Swallow errors on the discarded stream instead.
+        oldStream.removeAllListeners("error");
+        oldStream.on("error", () => {});
+        oldStream.destroy();
       }
 
       const basePath = this.getFilePath(component);
