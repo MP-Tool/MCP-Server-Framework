@@ -168,8 +168,8 @@ export const CONTROL_CHAR_REPLACEMENTS: Readonly<Record<string, string>> = {
   "\x1E": "\\x1E", // Record Separator
   "\x1F": "\\x1F", // Unit Separator
   "\x85": "\\u0085", // Next Line (NEL, C1) — treated as a line break by many viewers
-  " ": "\\u2028", // Line Separator — new line in JS/browsers and some log viewers
-  " ": "\\u2029", // Paragraph Separator — likewise
+  "\u2028": "\\u2028", // Line Separator — new line in JS/browsers and some log viewers
+  "\u2029": "\\u2029", // Paragraph Separator — likewise
 } as const;
 
 /**
