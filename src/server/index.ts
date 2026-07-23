@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export { createServer } from "./create-server.js";
+export { configureLoggerFromEnv } from "./logger-config.js";
 
 export type { CreateServerOptions, CreateServerResult } from "./types.js";
 

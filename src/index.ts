@@ -45,7 +45,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Server creation
-export { createServer } from "./server/index.js";
+export { createServer, configureLoggerFromEnv } from "./server/index.js";
 export { McpServerBuilder } from "./server/index.js";
 
 // Definition helpers (auto-register in global registries)

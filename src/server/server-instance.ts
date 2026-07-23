@@ -24,7 +24,8 @@ import { startStdioTransport } from "./transport/stdio-transport.js";
 import type { TransportHandle } from "./transport/types.js";
 import { SessionManagerImpl } from "./session/index.js";
 import type { SessionManager } from "./session/index.js";
-import { Logger, logger as frameworkLogger, configureLogger } from "../logger/index.js";
+import { Logger, logger as frameworkLogger } from "../logger/index.js";
+import { configureLoggerFromEnv } from "./logger-config.js";
 import { initializeTelemetry, shutdownTelemetry } from "../telemetry/index.js";
 import { DEFAULT_SHUTDOWN_CONFIG } from "./lifecycle.js";
 import type { McpSessionFactory } from "./session/session-factory.js";
@@ -440,20 +441,7 @@ export class McpServerInstance implements ServerInstance {
    * forwarding them to `configureLogger()`.
    */
   private applyLoggerConfig(): void {
-    const config = getFrameworkConfig();
-    configureLogger({
-      LOG_LEVEL: config.LOG_LEVEL,
-      LOG_FORMAT: config.LOG_FORMAT,
-      LOG_DIR: config.LOG_DIR,
-      LOG_MAX_FILE_SIZE: config.LOG_MAX_FILE_SIZE,
-      LOG_MAX_FILES: config.LOG_MAX_FILES,
-      LOG_RETENTION_DAYS: config.LOG_RETENTION_DAYS,
-      LOG_TIMESTAMP: config.LOG_TIMESTAMP,
-      LOG_COMPONENT: config.LOG_COMPONENT,
-      MCP_TRANSPORT: config.MCP_TRANSPORT,
-      SERVER_NAME: this.options.name,
-      SERVER_VERSION: this.options.version,
-    });
+    configureLoggerFromEnv({ name: this.options.name, version: this.options.version });
   }
 
   /**

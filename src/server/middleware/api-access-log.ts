@@ -24,6 +24,21 @@ const LogMessages = {
 } as const;
 
 /**
+ * Pick the log level for a completed request. Routine, low-signal traffic —
+ * CORS `OPTIONS` preflights, `.well-known/*` discovery probes, and `3xx`
+ * redirects/not-modified — is demoted to `debug` so the `info` access log
+ * shows substantive calls and errors (`4xx`/`5xx` stay `info`).
+ *
+ * @internal exported for unit testing.
+ */
+export function levelFor(method: string, path: string, statusCode: number): "info" | "debug" {
+  // Errors are always visible, even on an otherwise-routine preflight or discovery probe.
+  if (statusCode >= 400) return "info";
+  if (method === "OPTIONS" || path.startsWith("/.well-known/") || statusCode >= 300) return "debug";
+  return "info";
+}
+
+/**
  * Logs every HTTP request on completion.
  *
  * Must be mounted first in the Express pipeline (before security middleware) so
@@ -52,7 +67,7 @@ export function apiAccessLog(req: Request, res: Response, next: NextFunction): v
         ...(sessionId !== undefined && { sessionId }),
       },
       () => {
-        logger.info(LogMessages.REQUEST_COMPLETED, method, path, statusCode, durationMs);
+        logger[levelFor(method, path, statusCode)](LogMessages.REQUEST_COMPLETED, method, path, statusCode, durationMs);
       },
     );
   });

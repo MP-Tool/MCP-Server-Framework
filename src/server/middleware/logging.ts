@@ -5,16 +5,17 @@
  */
 
 import { logger as baseLogger } from "../../logger/index.js";
-import { logAuditEvent } from "../../audit/index.js";
+import { logAuditEvent } from "../../logger/audit/index.js";
 import { TRANSPORT_LOG_COMPONENTS } from "../transport/constants.js";
 
 const logger = baseLogger.child({
   component: TRANSPORT_LOG_COMPONENTS.SECURITY,
 });
 
-/** @internal Log messages for transport logging utilities */
+/** @internal Log messages for transport logging utilities. The `[Security]` component tag
+ * already conveys the category — no redundant "Security:" prefix in the message. */
 const LogMessages = {
-  SECURITY_EVENT: "Security: %s",
+  SECURITY_EVENT: "%s",
 } as const;
 
 /**

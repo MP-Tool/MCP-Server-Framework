@@ -31,7 +31,8 @@ import { logger as baseLogger } from "../../logger/index.js";
 const LOG_COMPONENT = "oauth-router";
 
 const LogMessages = {
-  MOUNTED: "OAuth router mounted (issuer: %s)",
+  // Issuer is logged once by server-runtime's "OAuth authentication enabled (issuer: …)".
+  MOUNTED: "OAuth router mounted",
 } as const;
 
 const logger = baseLogger.child({ component: LOG_COMPONENT });
@@ -83,7 +84,7 @@ export function createOAuthRouter(options: OAuthRouterOptions): RequestHandler {
     ...(scopesSupported && { scopesSupported: [...scopesSupported] }),
   };
 
-  logger.info(LogMessages.MOUNTED, issuerUrl.toString());
+  logger.info(LogMessages.MOUNTED);
 
   return mcpAuthRouter(routerOptions);
 }
