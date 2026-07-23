@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0]
 
 ### Added
 
@@ -96,11 +96,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client transcript) with the same engine and redaction marker the framework uses for logs.
   `REDACTED_VALUE` is newly public alongside it so consumers' bespoke masking can present one
   consistent marker instead of duplicating the constant.
-
-## [1.2.0]
-
-### Added
-
+- **`configureLoggerFromEnv({ name?, version? })` exported**: applies the resolved `LOG_*` /
+  `MCP_TRANSPORT` config to the global logger — the same bridge `createServer()` runs internally,
+  now reusable so consumers that log during bootstrap (before `createServer()`) get consistent
+  formatting instead of a few bare-format lines first. Safe to call more than once (the previous
+  file streams are disposed before reapplying).
 - **CI typecheck/lint/build gate + `SECURITY.md`**: PRs and pushes to `main` now run `tsc`,
   `eslint`, and a production build in CI (`.github/workflows/ci.yml`) — previously no workflow
   verified the codebase before publish. Added a `SECURITY.md` vulnerability-disclosure policy
@@ -292,6 +292,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`FileWriter` rotation no longer corrupts the replacement stream**: rotating a component whose
+  stream still had a buffered write surfaced a late `ERR_STREAM_DESTROYED` whose self-heal handler
+  logged a spurious stderr `Stream error` and deleted the freshly-created replacement stream from
+  the map, spilling that component's logs into the fallback for ~1s. The handler is now detached
+  before the intentional `destroy()`.
+- **Audit log rotates by size instead of growing unbounded**: `audit.log` now honors the same
+  `LOG_MAX_FILE_SIZE` / `LOG_MAX_FILES` limits as the general file logger
+  (`audit.log` → `audit.log.1` → …).
 - **`FileWriter` self-heals after a transient failure instead of going silently dark**: a
   stream error (directory removed, disk briefly full, file descriptor limit, ...) used to
   either recover only for the one special-cased `ENOENT` case, or permanently drop every future
@@ -413,6 +421,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Reorganized into self-contained building blocks** (internal; no public API or runtime-behavior
+  change beyond the pruning under Removed): `utils/` is now dependency-free; the `utils`↔`errors`
+  cycle is broken by moving the MCP icon helper to `mcp/icon` (`iconFromFile` still exported from
+  the root); the audit trail moved under `logger/audit` as a level-independent sink and no longer
+  reads config itself (the composition root passes the resolved path + `LOG_*` limits). Public
+  re-exports (`logAuditEvent`, `iconFromFile`, …) are unchanged.
+- **Collapsed duplicated server internals**: the four-layer server-option plumbing now flows through
+  shared `ServerIdentity` / `SessionRuntimeOptions` (and `ServerOptions` derives from
+  `CreateServerOptions`); the per-registry SDK-binding boilerplate and the two transport handlers'
+  session auth/close wiring are de-duplicated into shared helpers. No API or behavior change.
+- **Quieter access log**: `apiAccessLog` now logs routine traffic — CORS `OPTIONS` preflights,
+  `.well-known/*` discovery probes, and `3xx` responses — at `debug`; substantive calls and
+  `4xx`/`5xx` errors stay at `info`.
+- **Tidier startup logs**: dropped the redundant `Security:` message prefix (the `[Security]`
+  component tag already conveys it) and the duplicate OAuth-issuer log line (kept once, on the
+  "OAuth authentication enabled" confirmation).
 - **Typed OAuth token-exchange response**: `parseTokenResponse()` now returns a `TokenResponse`
   type that encodes its existing runtime guarantee (`access_token` is a non-empty string),
   removing two `as string` casts in the token-exchange path (`buildOAuthTokens()` and
@@ -446,6 +470,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Pruned unused public exports** (each was exported but consumed by nobody): config
+  `getConfigSource`; errors `redactIfSensitive`, `getHttpStatusForErrorCode`,
+  `isValidJsonRpcErrorCode`, `ErrorCategory`; telemetry `getActiveSpan`, `addSpanAttributes`,
+  `addSpanEvent`, `getTraceContext`, `FrameworkSpanStatusCode`; and the unused top-level
+  `mcp/index.ts` barrel. `BaseRegistry` and `resetAllRegistries` are demoted to internal.
 - **`createUpstreamOAuthProvider`** and its types (`UpstreamOAuthOptions`, `UpstreamOAuthProviderResult`)
   — replaced by `createOAuthProvider({ type: "oauth2", ... })`. Clean break; no compatibility aliases.
 - **`createOidcProvider`** and its type (`OidcProviderOptions`) — replaced by
