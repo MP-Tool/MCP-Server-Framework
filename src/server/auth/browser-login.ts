@@ -162,12 +162,27 @@ export function deriveServerBaseUrl(): string {
   return `${scheme}://${host}:${cfg.MCP_PORT}`;
 }
 
+/**
+ * Opens `url` in the user's default browser — best-effort, never throws.
+ *
+ * Auto-open is a convenience (the URL is also logged to the terminal), so a
+ * missing or failing launcher is swallowed at debug level.
+ */
 function openBrowser(url: string): void {
-  const platform = process.platform;
-  const command = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
-  const args = platform === "darwin" ? [url] : platform === "win32" ? ["/c", "start", "", url] : [url];
+  // Launch shell-free (no `shell: true`) with the URL as a single argv element: its `&`
+  // separators — and any metacharacters a compromised OIDC provider might inject — must
+  // never be parsed by a shell (breaks the URL and opens a command-injection path). One
+  // launcher per OS family (`process.platform` is bitness-agnostic — `win32` covers 32-
+  // and 64-bit Windows alike): macOS `open`, Windows `rundll32`, else (Linux, *BSD, …)
+  // `xdg-open`.
+  const [command, args] =
+    process.platform === "darwin"
+      ? (["open", [url]] as const)
+      : process.platform === "win32"
+        ? (["rundll32.exe", ["url.dll,FileProtocolHandler", url]] as const)
+        : (["xdg-open", [url]] as const);
   try {
-    const child = spawn(command, args, { detached: true, stdio: "ignore", shell: platform === "win32" });
+    const child = spawn(command, args, { detached: true, stdio: "ignore" });
     child.unref();
   } catch (err) {
     logger.debug("Could not auto-open browser: %s", err instanceof Error ? err.message : String(err));
@@ -434,8 +449,19 @@ export function createBrowserOAuthLogin(options?: { readonly flowTimeoutMs?: num
               );
           })
           .catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err);
-            res.status(400).send(resultPage("Authentication Failed", "✗ Authentication failed", message, "#d1242f"));
+            // Log the detail server-side (the CLI where the operator is watching); return a
+            // generic page to the browser so upstream error text isn't reflected to the client.
+            logger.warn("Browser login callback failed: %s", err instanceof Error ? err.message : String(err));
+            res
+              .status(400)
+              .send(
+                resultPage(
+                  "Authentication Failed",
+                  "✗ Authentication failed",
+                  "Sign-in could not be completed. Check the server logs for details.",
+                  "#d1242f",
+                ),
+              );
           });
       });
     }
