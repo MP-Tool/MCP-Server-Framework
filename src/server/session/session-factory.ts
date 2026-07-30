@@ -176,6 +176,7 @@ export class McpSessionFactory {
       taskStore: this.taskStore,
       taskMessageQueue: this.taskMessageQueue,
       resultScrubber: this.config.resultScrubber,
+      anonymousScopes: this.config.anonymousScopes,
     });
 
     // Log session errors (lifecycle managed by SessionManager, not here)
@@ -209,8 +210,10 @@ export class McpSessionFactory {
       session.registerSetLevelHandler();
     }
 
-    // Install scope-filtered list handlers (opt-in via auth.scopeFilterCapabilities)
-    if (this.config.scopeFilterCapabilities) {
+    // Install scope-filtered list handlers when opted in via auth.scopeFilterCapabilities,
+    // OR when anonymous requests are scope-restricted (so sensitive tools are hidden from
+    // tools/list for unauthenticated callers, not just rejected on call).
+    if (this.config.scopeFilterCapabilities || this.config.anonymousScopes != null) {
       session.registerScopeFilteredListHandlers({
         tools: this.config.tools,
         resources: this.config.resources,

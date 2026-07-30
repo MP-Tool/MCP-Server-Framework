@@ -67,6 +67,12 @@ export interface ToolBindOptions extends ScrubbingBindOptions {
   readonly stateless: boolean;
   /** Session-level notification handler for bridging framework logs → MCP notifications/message */
   readonly logNotificationHandler?: LogNotificationHandler | undefined;
+  /**
+   * Scopes granted to anonymous requests. When set, a request with no `authInfo`
+   * is scope-checked against these instead of bypassing enforcement. See
+   * `ServerOptions.anonymousScopes`.
+   */
+  readonly anonymousScopes?: readonly string[] | undefined;
 }
 
 // ============================================================================
@@ -168,7 +174,13 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
    * @internal
    */
   static bindToSdk(sdk: McpServer, tools: readonly ToolDefinition[], options: ToolBindOptions): void {
-    const { logger, stateless, logNotificationHandler, resultScrubber } = options;
+    const { logger, stateless, logNotificationHandler, resultScrubber, anonymousScopes } = options;
+
+    // Anonymous requests carry no `authInfo`, which makes scope enforcement a no-op.
+    // When the server grants a restricted anonymous scope set, treat that set as the
+    // caller's scopes so the SAME RBAC gates anonymous traffic — without fabricating an
+    // identity (`context.auth` below stays derived from the real `authInfo` only).
+    const anonymousAuthInfo = anonymousScopes ? { scopes: anonymousScopes } : undefined;
 
     // Bridge framework logger → MCP notifications/message for this session.
     // When set, any logger.*() call during tool execution is also forwarded
@@ -206,8 +218,9 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           // SDK flows req.auth → extra.authInfo when bearer auth middleware is active
           const authInfo = extra.authInfo;
 
-          // Tool-level scope enforcement (RBAC)
-          enforceScopeOrThrow(tool.requiredScopes, authInfo, "Tool", tool.name, logger);
+          // Tool-level scope enforcement (RBAC). Anonymous requests fall back to the
+          // restricted anonymous scope set (if configured) so they are gated too.
+          enforceScopeOrThrow(tool.requiredScopes, authInfo ?? anonymousAuthInfo, "Tool", tool.name, logger);
 
           // Build auth context for tool handler.
           // authInfo.extra is populated by the onAuthenticated hook in auth-middleware.ts.

@@ -175,6 +175,7 @@ export class McpServerBuilder implements ServerBuilder {
       prompts: primitives.prompts,
       taskTools: primitives.taskTools,
       scopeFilterCapabilities: options.auth?.scopeFilterCapabilities,
+      anonymousScopes: options.anonymousScopes,
       resultScrubber,
     });
 

@@ -182,6 +182,27 @@ export interface CreateServerOptions {
    */
   scrubToolResults?: ScrubToolResultsConfig | undefined;
 
+  /**
+   * Scopes granted to **anonymous** (unauthenticated) requests.
+   *
+   * When set, a request that carries no `authInfo` is treated as holding exactly
+   * these scopes: a tool/resource/prompt is listed (`tools/list` etc.) and callable
+   * only when its `requiredScopes ⊆ anonymousScopes`. Everything above the granted
+   * set is hidden from the listing and rejected on call — the existing scope RBAC
+   * (scope enforcement + the scope-filtered list handlers) applies to anonymous
+   * traffic instead of being skipped.
+   *
+   * This never fabricates an identity: `ToolContext.auth` stays `undefined` for
+   * anonymous requests, so a consumer's own auth-derived logic is unaffected.
+   * Authenticated requests are unaffected (their real token scopes always win).
+   *
+   * Intended for deployments that run **without per-user auth on a network
+   * transport** — grant `[<read-scope>]` so an open server is read-only. Leave
+   * `undefined` (the default) to preserve unrestricted anonymous access, e.g. for
+   * stdio.
+   */
+  anonymousScopes?: readonly string[] | undefined;
+
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)
   // ─────────────────────────────────────────────────────────────────────────

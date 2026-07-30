@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`anonymousScopes` — scope-gate unauthenticated traffic (`createServer({ anonymousScopes })`)**:
+  by default a request that carries no `authInfo` bypasses scope RBAC entirely (scope enforcement and
+  the scope-filtered list handlers both no-op without a token). Setting `anonymousScopes` treats an
+  anonymous request as holding exactly that scope set: a tool/resource/prompt is listed and callable
+  only when its `requiredScopes ⊆ anonymousScopes`; everything above the granted set is hidden from
+  the `*/list` response and rejected with `AuthorizationError` on call. It never fabricates an
+  identity — `ToolContext.auth` stays `undefined` for anonymous requests, so a consumer's own
+  auth-derived logic is unaffected — and authenticated requests always use their real token scopes.
+  Intended for servers that run without per-user auth on a network transport: grant a read-only scope
+  so an open deployment is read-only. Omitted (default) preserves unrestricted anonymous access.
 - **Central tool-result secret scrubbing (`scrubToolResults`, default ON)**: every tool and
   task-tool `CallToolResult` now passes a single redaction boundary between the handler and the
   SDK — the one place all results cross before they reach the client transcript and the model

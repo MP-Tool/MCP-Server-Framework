@@ -97,6 +97,14 @@ export interface SessionRuntimeOptions {
    * disables result scrubbing.
    */
   readonly resultScrubber?: SecretScrubber | undefined;
+
+  /**
+   * Scopes granted to anonymous (unauthenticated) requests. When set, anonymous
+   * traffic is subject to the same scope RBAC as authenticated traffic: a tool is
+   * visible/callable only if its `requiredScopes ⊆ anonymousScopes`. `undefined`
+   * (default) leaves anonymous access unrestricted. See `ServerOptions.anonymousScopes`.
+   */
+  readonly anonymousScopes?: readonly string[] | undefined;
 }
 
 /**
@@ -295,6 +303,7 @@ export class McpSession implements LogNotificationHandler {
       stateless: this.options.stateless ?? false,
       logNotificationHandler: this,
       resultScrubber: this.options.resultScrubber,
+      anonymousScopes: this.options.anonymousScopes,
     });
   }
 
@@ -506,9 +515,12 @@ export class McpSession implements LogNotificationHandler {
 
     const handlers = rawHandlers as Map<string, (...args: unknown[]) => Promise<Record<string, unknown>>>;
 
+    // Anonymous requests (no authInfo) fall back to the granted anonymous scope set,
+    // so the same visibility rules gate them; `undefined` → `[]` (nothing scoped visible).
+    const anonymousScopes = this.options.anonymousScopes;
     const getTokenScopes = (extra: Record<string, unknown>): readonly string[] => {
       const authInfo = extra.authInfo as { scopes?: readonly string[] } | undefined;
-      return authInfo?.scopes ?? [];
+      return authInfo?.scopes ?? anonymousScopes ?? [];
     };
 
     // One generic wrapper for all four list methods — they differ only in the
