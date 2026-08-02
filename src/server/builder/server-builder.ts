@@ -161,6 +161,15 @@ export class McpServerBuilder implements ServerBuilder {
     // shared by every session's tool/task-tool binding. Default ON.
     const resultScrubber = createResultScrubber(options.scrubToolResults);
 
+    // Operator tool-surface filter — purely subtractive. Tools the predicate rejects
+    // are never registered on any session (absent from tools/list, not callable).
+    // Runs before scope gating, which still applies to whatever remains.
+    const tools = options.filterTools ? primitives.tools.filter(options.filterTools) : primitives.tools;
+    if (options.filterTools && tools.length !== primitives.tools.length) {
+      const removed = primitives.tools.filter((t) => !tools.includes(t)).map((t) => t.name);
+      logger.info(BuilderLogMessages.TOOLS_FILTERED, tools.length, primitives.tools.length, removed.join(", "));
+    }
+
     const sessionFactory = new McpSessionFactory({
       name: options.name,
       version: options.version,
@@ -169,7 +178,7 @@ export class McpServerBuilder implements ServerBuilder {
       capabilities: options.capabilities,
       handlers: options.handlers,
       stateless,
-      tools: primitives.tools,
+      tools,
       resources: primitives.resources,
       resourceTemplates: primitives.resourceTemplates,
       prompts: primitives.prompts,
@@ -181,7 +190,7 @@ export class McpServerBuilder implements ServerBuilder {
 
     logger.debug(
       BuilderLogMessages.BUILD_SUMMARY,
-      primitives.tools.length,
+      tools.length,
       primitives.resources.length + primitives.resourceTemplates.length,
       primitives.prompts.length,
     );

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`filterTools` — prune the registered tool surface (`createServer({ filterTools })`)**: a predicate
+  `(tool: ToolDefinition) => boolean` applied once at build time to the collected tools. Tools it
+  rejects are never bound to any session — absent from `tools/list` and not callable, for every
+  request. Intended as an operator knob to shrink a client's context/token load (e.g. by
+  `_meta.category` or name). Purely **subtractive**: it can only remove tools, never expose more, so it
+  composes safely with `anonymousScopes` and any per-request scope/permission gating (those still apply
+  to whatever remains). The framework does not interpret tool metadata — the consumer supplies the
+  semantics. `undefined` (default) registers all tools. Logs `registered X of Y` (with removed names at
+  debug) when it prunes anything.
 - **`anonymousScopes` — scope-gate unauthenticated traffic (`createServer({ anonymousScopes })`)**:
   by default a request that carries no `authInfo` bypasses scope RBAC entirely (scope enforcement and
   the scope-filtered list handlers both no-op without a token). Setting `anonymousScopes` treats an

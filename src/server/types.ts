@@ -10,6 +10,7 @@ import type { TransportOptions, ServerCapabilities, ReadinessConfig, SessionConf
 import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { AuthOptions } from "./auth/types.js";
 import type { ScrubToolResultsConfig } from "../mcp/capabilities/registry/index.js";
+import type { ToolDefinition } from "../mcp/types/index.js";
 import type { Application } from "express";
 import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 
@@ -202,6 +203,22 @@ export interface CreateServerOptions {
    * stdio.
    */
   anonymousScopes?: readonly string[] | undefined;
+
+  /**
+   * Predicate deciding which tools are registered. A tool is kept only when this
+   * returns `true`; tools it rejects are never bound to any session — absent from
+   * `tools/list` and not callable, for every request.
+   *
+   * Applied once at build time to the collected tools. Intended as an operator
+   * knob to prune the tool surface (e.g. by `_meta.category` or name) to reduce a
+   * client's context/token load. It is **purely subtractive**: it can only remove
+   * tools, never expose more, so it composes safely with `anonymousScopes` and any
+   * per-request scope/permission gating (those still apply to whatever remains).
+   *
+   * The framework does not interpret tool metadata — supply the semantics here.
+   * `undefined` (the default) registers all tools.
+   */
+  filterTools?: ((tool: ToolDefinition) => boolean) | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)
