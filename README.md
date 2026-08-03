@@ -64,12 +64,11 @@ That said: this software is provided **as-is, without warranty of any kind**. Se
 - **12-Factor Config** — Five-level cascade: defaults → `.env` → config file (TOML/YAML/JSON) → environment variables → programmatic overrides.
 - **Pluggable Session Store** — `SessionStore` interface with in-memory default. Bring your own Redis, PostgreSQL, or any backend.
 - **Session Lifecycle** — Configurable idle timeouts, heartbeat keep-alive, dead connection cleanup, and max session capacity.
-- **Connection State Manager** — Generic `ConnectionStateManager<TApi>` with health checks, state transitions, and reconnection tracking for API clients.
 - **Graceful Shutdown** — SIGINT/SIGTERM handling, session drain, configurable shutdown timeouts.
 
 ### 🧩 Error System
 
-- **Typed Error Hierarchy** — `AppError` base with categories: MCP, Session, Transport, Validation, Configuration, Operation, System.
+- **Typed Error Hierarchy** — `AppError` base with categories: MCP, Session, Transport, Auth, Validation, Configuration, Operation, System.
 - **`FrameworkErrorFactory`** — Single import for all error types with unique IDs, HTTP/JSON-RPC code mappings, recovery hints, and cause chains.
 
 ## Quick Start
@@ -269,8 +268,7 @@ For advanced use cases, internal modules are available via subpath imports:
 | Import Path | Purpose |
 |-------------|---------|
 | `mcp-server-framework` | Main API: `createServer`, `defineTool`, auth providers, guards, helpers |
-| `mcp-server-framework/logger` | Logger configuration, child loggers |
-| `mcp-server-framework/connection` | `ConnectionStateManager` for API clients |
+| `mcp-server-framework/logger` | Logger configuration, child loggers, `SecretScrubber` |
 | `mcp-server-framework/session` | Session internals, `SessionStore` interface |
 | `mcp-server-framework/telemetry` | OpenTelemetry tracing & metrics |
 | `mcp-server-framework/errors` | Error classes & `FrameworkErrorFactory` |
@@ -278,9 +276,9 @@ For advanced use cases, internal modules are available via subpath imports:
 | `mcp-server-framework/config` | Config cache, env schema, Zod helpers |
 
 ```typescript
-import { ConnectionStateManager } from 'mcp-server-framework/connection';
 import { FrameworkErrorFactory } from 'mcp-server-framework/errors';
 import { withSpan } from 'mcp-server-framework/telemetry';
+import { SecretScrubber } from 'mcp-server-framework/logger';
 import type { SessionStore } from 'mcp-server-framework/session';
 ```
 
@@ -300,20 +298,19 @@ src/
 │   ├── middleware/     # Helmet, DNS rebinding, rate limiting, auth
 │   ├── routes/        # Health, readiness, metrics, streamable HTTP, SSE
 │   ├── session/       # SessionManager, SessionStore, Housekeeper, auth context
-│   ├── transport/     # Stdio, Streamable HTTP, SSE transports
-│   └── telemetry/     # OpenTelemetry traces, metrics, SDK init (lazy-loaded)
-├── api/           # API Client Abstraction
-│   └── connection/    # ConnectionStateManager<TApi>
+│   └── transport/     # Stdio, Streamable HTTP, SSE transports
+├── telemetry/     # OpenTelemetry traces, metrics, SDK init (lazy-loaded)
 ├── logger/        # Structured Logging
-│   ├── scrubbing/     # Secret scrubbing, injection guard
+│   ├── audit/         # Parallel JSON-Lines security/activity audit trail
+│   ├── core/          # Pipeline, request context, injection guard (CWE-117)
 │   ├── formatters/    # JSON (ECS), text
 │   └── writers/       # Console, file, composite
 ├── errors/        # Error System
 │   ├── core/          # AppError, ErrorCodes, HTTP/JSON-RPC mappings
-│   └── categories/    # Validation, Connection, MCP, Operation, System
+│   └── categories/    # Validation, Protocol, Session, Transport, Auth, Operation, System
 ├── config/        # Configuration
 │   └──                # Env schema (Zod), config cache, file parser
-└── utils/         # Helpers
+└── utils/         # Helpers — SecretScrubber engine, string/env/interpolation helpers
 ```
 
 ## Security
@@ -373,31 +370,40 @@ createServer({
 ## Authentication
 
 OAuth 2.1 and OIDC authentication is **opt-in** — servers work without auth by default.
+A single factory, `createOAuthProvider(config | config[], options)`, builds the provider from a
+config discriminated on `type`: `'github' | 'google' | 'oidc' | 'oauth2'`.
 
 ```typescript
-import { createServer, createOidcProvider } from 'mcp-server-framework';
+import { createServer, createOAuthProvider } from 'mcp-server-framework';
 
 // OIDC auto-discovery (Keycloak, Auth0, Okta, Azure AD, ...)
-const { provider, callbackHandler } = await createOidcProvider({
-  issuer: 'https://auth.example.com',
-  clientId: process.env.OIDC_CLIENT_ID!,
-  clientSecret: process.env.OIDC_CLIENT_SECRET!,
-  serverUrl: 'http://localhost:8000',
-});
+const { provider, callbackHandler } = await createOAuthProvider(
+  {
+    type: 'oidc',
+    issuer: 'https://auth.example.com',
+    clientId: process.env.OIDC_CLIENT_ID!,
+    clientSecret: process.env.OIDC_CLIENT_SECRET!,
+  },
+  { serverUrl: 'http://localhost:8000' },
+);
 
 const { start } = createServer({
   name: 'secure-server',
   version: '1.0.0',
   transport: { mode: 'http' },
-  auth: { provider, callbackHandler },
+  auth: { enabled: true, provider, callbackHandler },
 });
 await start();
 ```
 
+Pass an **array** of configs to enable multi-provider mode — users get an auto-rendered
+provider-selection page when no `?provider=` is present.
+
 **Supported patterns**:
-- **OIDC Auto-Discovery** — `createOidcProvider()` fetches `.well-known/openid-configuration` automatically
-- **Upstream OAuth Proxy** — `createUpstreamOAuthProvider()` for GitHub, Google, and other OAuth services
-- **Custom Token Verifier** — Implement `TokenVerifier` for API keys, custom JWTs, or any auth scheme
+- **OIDC Auto-Discovery** (`type: 'oidc'`) — fetches `.well-known/openid-configuration` from the issuer automatically
+- **Upstream OAuth** (`type: 'github'` / `'google'`) — built-in presets; only `clientId`/`clientSecret` needed
+- **Custom OAuth2** (`type: 'oauth2'`) — the explicit-endpoints escape hatch for any other provider
+- **Custom Token Verifier** — implement `TokenVerifier` for API keys, custom JWTs, or any auth scheme
 - **Permission Guards** — `requireAuth()`, `requireScope()`, `hasScope()` for tool-level access control
 
 Health (`/health`) and metrics (`/metrics`) endpoints remain unauthenticated for liveness/readiness probes.
