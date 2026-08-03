@@ -28,6 +28,7 @@ import { BuilderLogMessages, BUILDER_LOG_COMPONENT } from "./constants.js";
 import { McpServerInstance } from "../server-instance.js";
 import { McpSessionFactory } from "../session/session-factory.js";
 import { createResultScrubber } from "../../mcp/capabilities/registry/index.js";
+import { getFrameworkConfig } from "../../config/index.js";
 import { validateBuilderState } from "./validation.js";
 import type { ValidatedServerOptions } from "./validation.js";
 import { collectPrimitives } from "./primitive-collector.js";
@@ -161,6 +162,10 @@ export class McpServerBuilder implements ServerBuilder {
     // shared by every session's tool/task-tool binding. Default ON.
     const resultScrubber = createResultScrubber(options.scrubToolResults);
 
+    // How much request/response detail the per-call tool.call audit records
+    // (explicit option wins over the LOG_AUDIT_TOOL_IO env default).
+    const auditToolIo = options.auditToolIo ?? getFrameworkConfig().LOG_AUDIT_TOOL_IO;
+
     // Operator tool-surface filter — purely subtractive. Tools the predicate rejects
     // are never registered on any session (absent from tools/list, not callable).
     // Runs before scope gating, which still applies to whatever remains.
@@ -186,6 +191,7 @@ export class McpServerBuilder implements ServerBuilder {
       scopeFilterCapabilities: options.auth?.scopeFilterCapabilities,
       anonymousScopes: options.anonymousScopes,
       resultScrubber,
+      auditToolIo,
     });
 
     logger.debug(

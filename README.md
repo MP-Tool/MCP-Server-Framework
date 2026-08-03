@@ -241,6 +241,7 @@ Defaults → .env file → Config file → Environment variables → Programmati
 | `MCP_JSON_RESPONSE` | `false` | Prefer JSON over SSE for non-streaming responses |
 | `MCP_BODY_SIZE_LIMIT` | `1mb` | Max request body size |
 | `LOG_LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `LOG_AUDIT_TOOL_IO` | `summary` | Audit request/result depth per tool call (scrubbed): `off` \| `summary` \| `full` |
 | `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing & metrics |
 
 **Config file** (auto-discovered as `mcp-server.toml`, `.yaml`, `.json` in CWD):

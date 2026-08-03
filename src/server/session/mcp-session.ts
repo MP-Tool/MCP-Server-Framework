@@ -30,6 +30,7 @@ import type {
   ResourceStaticDefinition,
   ResourceTemplateDefinition,
   PromptDefinition,
+  AuditToolIoLevel,
 } from "../../mcp/types/index.js";
 import { setupPingHandler } from "../../mcp/handlers/index.js";
 import {
@@ -105,6 +106,12 @@ export interface SessionRuntimeOptions {
    * (default) leaves anonymous access unrestricted. See `ServerOptions.anonymousScopes`.
    */
   readonly anonymousScopes?: readonly string[] | undefined;
+
+  /**
+   * How much request/response detail the per-call `tool.call` audit records
+   * (always secret-scrubbed). Defaults to `"summary"` when omitted.
+   */
+  readonly auditToolIo?: AuditToolIoLevel | undefined;
 }
 
 /**
@@ -304,6 +311,7 @@ export class McpSession implements LogNotificationHandler {
       logNotificationHandler: this,
       resultScrubber: this.options.resultScrubber,
       anonymousScopes: this.options.anonymousScopes,
+      auditToolIo: this.options.auditToolIo,
     });
   }
 

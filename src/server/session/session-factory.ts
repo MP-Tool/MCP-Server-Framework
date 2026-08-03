@@ -177,6 +177,7 @@ export class McpSessionFactory {
       taskMessageQueue: this.taskMessageQueue,
       resultScrubber: this.config.resultScrubber,
       anonymousScopes: this.config.anonymousScopes,
+      auditToolIo: this.config.auditToolIo,
     });
 
     // Log session errors (lifecycle managed by SessionManager, not here)

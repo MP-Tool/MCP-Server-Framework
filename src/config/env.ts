@@ -375,7 +375,16 @@ export const frameworkEnvSchema = z
      * logs and independent of LOG_LEVEL. On by default — when unset, the trail lands in
      * `<LOG_DIR or <cwd>/logs>/audit.log` (see `resolveAuditFilePath` in `logger/audit`).
      */
-    MCP_AUDIT_FILE: z.string().min(1).optional(),
+    LOG_AUDIT_FILE: z.string().min(1).optional(),
+
+    /**
+     * How much request/response detail the per-tool-call audit entry records
+     * (everything is secret-scrubbed first):
+     * - `off` — outcome + affected resources only (no args, no result body).
+     * - `summary` (default) — scrubbed request args + a result summary (isError / counts).
+     * - `full` — additionally the scrubbed, size-bounded result `structuredContent`.
+     */
+    LOG_AUDIT_TOOL_IO: z.enum(["off", "summary", "full"]).default("summary"),
 
     /**
      * Maximum size of a single log file before rotation.

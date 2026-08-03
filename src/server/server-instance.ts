@@ -238,7 +238,7 @@ export class McpServerInstance implements ServerInstance {
       // its destination and the shared LOG_* rotation limits here instead.
       const auditConfig = getFrameworkConfig();
       initializeAuditLog({
-        filePath: resolveAuditFilePath(auditConfig.LOG_DIR, auditConfig.MCP_AUDIT_FILE),
+        filePath: resolveAuditFilePath(auditConfig.LOG_DIR, auditConfig.LOG_AUDIT_FILE),
         maxSizeBytes: auditConfig.LOG_MAX_FILE_SIZE,
         maxFiles: auditConfig.LOG_MAX_FILES,
       });

@@ -55,6 +55,12 @@ export interface AuditEvent {
   readonly action: string;
   /** Result of the action. */
   readonly outcome: AuditOutcome;
+  /**
+   * Correlation id tying together all events of one request (e.g. the MCP JSON-RPC
+   * request id). Lets a tool call and its `permission.*` / `confirmation.*` events be
+   * stitched back into a single trail.
+   */
+  readonly requestId?: string | undefined;
   /** Acting principal. */
   readonly actor?: AuditActor | undefined;
   /** Affected target (e.g. tool name, `Server:abc123`). */
@@ -216,16 +222,28 @@ function rotate(): void {
  * exists so the composition root can inject the config-resolved path/limits and so the
  * audit file is created (and its path logged) as soon as the server starts — otherwise
  * the file only appears after the first audited event, which reads as "audit logging
- * isn't working" during a quick smoke test. Safe to call more than once; the sink still
- * only resolves once.
+ * isn't working" during a quick smoke test.
+ *
+ * The configured destination always wins: if an event fired during bootstrap (before this
+ * ran) and lazily opened the stream at the **default** path, this closes that stream and
+ * reopens at the configured `filePath` — otherwise an explicit `LOG_AUDIT_FILE` would be
+ * silently ignored whenever a `config`/`auth` audit event is emitted before startup.
  */
 export function initializeAuditLog(options?: AuditLogOptions): void {
-  if (options && stream === undefined) {
-    sinkOptions = {
+  if (options) {
+    const resolved: ResolvedAuditLogOptions = {
       filePath: options.filePath,
       maxSizeBytes: options.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES,
       maxFiles: options.maxFiles ?? DEFAULT_MAX_FILES,
     };
+    // A stream opened lazily at a different (default) path must be moved to the configured
+    // destination; close it and force getStream() to reopen. (`stream === null` = a prior
+    // I/O failure disabled the sink — leave it disabled rather than retrying here.)
+    if (stream != null && sinkOptions?.filePath !== resolved.filePath) {
+      stream.end();
+      stream = undefined;
+    }
+    sinkOptions = resolved;
   }
   getStream();
 }

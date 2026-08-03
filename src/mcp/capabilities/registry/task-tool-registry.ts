@@ -320,6 +320,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
   ): {
     reportProgress: TaskCreateContext["reportProgress"];
     sendNotification: TaskCreateContext["sendNotification"];
+    recordAuditDetail: TaskCreateContext["recordAuditDetail"];
     abortSignal: AbortSignal;
     requestId: string | number;
     sessionId?: string | undefined;
@@ -331,6 +332,9 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
     return {
       reportProgress,
       sendNotification: extra.sendNotification.bind(extra),
+      // Task tools have their own lifecycle and do not emit the per-call tool.call audit,
+      // so audit detail recorded here is intentionally a no-op.
+      recordAuditDetail: () => {},
       abortSignal: extra.signal,
       requestId: extra.requestId,
       sessionId: extra.sessionId,

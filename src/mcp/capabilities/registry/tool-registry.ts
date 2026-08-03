@@ -17,9 +17,10 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { z } from "zod";
 
-import type { ToolDefinition, ToolContext, ToolProvider } from "../../types/index.js";
+import type { ToolDefinition, ToolContext, ToolProvider, AuditToolIoLevel } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
-import type { Logger, SecretScrubber } from "../../../logger/index.js";
+import type { Logger } from "../../../logger/index.js";
+import { SecretScrubber } from "../../../logger/index.js";
 import { mcpLogger } from "../../../logger/index.js";
 import { scrubCallToolResult } from "./result-scrub.js";
 import type { LogNotificationHandler } from "../../../logger/core/index.js";
@@ -73,6 +74,88 @@ export interface ToolBindOptions extends ScrubbingBindOptions {
    * `ServerOptions.anonymousScopes`.
    */
   readonly anonymousScopes?: readonly string[] | undefined;
+  /**
+   * How much request/response detail the per-call `tool.call` audit records
+   * (always secret-scrubbed). Defaults to `"summary"` when omitted.
+   */
+  readonly auditToolIo?: AuditToolIoLevel | undefined;
+}
+
+// ============================================================================
+// Audit Helpers
+// ============================================================================
+
+/** Max serialized size (chars) of the `full`-level result body before it is truncated. */
+const AUDIT_RESULT_MAX_CHARS = 8_192;
+
+/** Lazily-created base scrubber used for the audit when result scrubbing is disabled. */
+let baseAuditScrubber: SecretScrubber | undefined;
+function auditScrubberOf(configured: SecretScrubber | undefined): SecretScrubber {
+  return configured ?? (baseAuditScrubber ??= new SecretScrubber());
+}
+
+/**
+ * Merge `patch` into the per-call audit accumulator: array-valued keys are **appended** (so
+ * repeated `{ affected: [...] }` calls accumulate), other keys replace.
+ */
+function mergeAuditDetail(target: Record<string, unknown>, patch: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(patch)) {
+    const existing = target[key];
+    if (Array.isArray(existing) && Array.isArray(value)) existing.push(...value);
+    else target[key] = value;
+  }
+}
+
+/** Compact, scrubbed summary of a tool result for the audit trail. */
+function summarizeResult(
+  result: CallToolResult,
+  level: AuditToolIoLevel,
+  scrubber: SecretScrubber,
+): Record<string, unknown> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive at the SDK result boundary; content may be absent at runtime.
+  const content = result.content ?? [];
+  const summary: Record<string, unknown> = {
+    isError: result.isError === true,
+    contentCount: content.length,
+    contentTypes: [...new Set(content.map((c) => c.type))],
+  };
+  if (level === "full" && result.structuredContent !== undefined) {
+    const scrubbed = scrubber.scrubObject(result.structuredContent);
+    const serialized = JSON.stringify(scrubbed);
+    summary.structuredContent =
+      serialized.length > AUDIT_RESULT_MAX_CHARS ? { _truncated: true, bytes: serialized.length } : scrubbed;
+  }
+  return summary;
+}
+
+/**
+ * Build the `tool.call` audit `detail`: the (scrubbed) request args + a result summary per the
+ * `auditToolIo` level, plus the accumulated domain detail (affected resources, effects). Everything
+ * is secret-scrubbed — resource ids/names stay readable, sensitive values are masked. Never throws:
+ * a scrub/serialize failure degrades to the minimal record (fail-safe, never adds unscrubbed data).
+ */
+function buildAuditDetail(
+  durationMs: number,
+  args: Record<string, unknown>,
+  result: CallToolResult | undefined,
+  domainDetail: Record<string, unknown>,
+  level: AuditToolIoLevel,
+  resultScrubber: SecretScrubber | undefined,
+): Record<string, unknown> {
+  const detail: Record<string, unknown> = { durationMs };
+  try {
+    const scrubber = auditScrubberOf(resultScrubber);
+    if (level !== "off") {
+      detail.input = scrubber.scrubObject(args);
+      if (result) detail.result = summarizeResult(result, level, scrubber);
+    }
+    // Domain detail (affected resources, effects) is always recorded, scrubbed.
+    const domain = scrubber.scrubObject(domainDetail);
+    if (domain && typeof domain === "object") Object.assign(detail, domain);
+  } catch {
+    detail.auditError = true;
+  }
+  return detail;
 }
 
 // ============================================================================
@@ -175,6 +258,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
    */
   static bindToSdk(sdk: McpServer, tools: readonly ToolDefinition[], options: ToolBindOptions): void {
     const { logger, stateless, logNotificationHandler, resultScrubber, anonymousScopes } = options;
+    const auditToolIo: AuditToolIoLevel = options.auditToolIo ?? "summary";
 
     // Anonymous requests carry no `authInfo`, which makes scope enforcement a no-op.
     // When the server grants a restricted anonymous scope set, treat that set as the
@@ -243,6 +327,13 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           const elicitInput =
             isStateful && clientCaps?.elicitation ? sdk.server.elicitInput.bind(sdk.server) : undefined;
 
+          // Per-call audit accumulator: domain detail (e.g. affected resources) the handler
+          // attaches via context.recordAuditDetail, merged into the final tool.call event.
+          const auditDetail: Record<string, unknown> = {};
+          const recordAuditDetail = (detail: Record<string, unknown>): void => {
+            mergeAuditDetail(auditDetail, detail);
+          };
+
           const toolContext: ToolContext = {
             reportProgress,
             abortSignal,
@@ -250,6 +341,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
             sessionId,
             stateless,
             sendNotification: extra.sendNotification.bind(extra),
+            recordAuditDetail,
             ...(auth && { auth }),
             ...(createMessage && { createMessage }),
             ...(listRoots && { listRoots }),
@@ -262,7 +354,8 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           // Identity label for the log prefix (username convention on auth.extra; else clientId).
           const userLabel = authUsername(authInfo?.extra) ?? authInfo?.clientId;
 
-          const execute = () => ToolRegistry.executeToolCall(tool, args, toolContext, logger, resultScrubber);
+          const execute = () =>
+            ToolRegistry.executeToolCall(tool, args, toolContext, logger, resultScrubber, auditToolIo, auditDetail);
           const executeInToolContext = () => runWithToolContext(toolContext, execute);
           return sendMcpLog
             ? withExtendedContext(
@@ -294,10 +387,13 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
     args: Record<string, unknown>,
     context: ToolContext,
     logger: Logger,
-    resultScrubber?: SecretScrubber,
+    resultScrubber: SecretScrubber | undefined,
+    auditToolIo: AuditToolIoLevel,
+    auditDetail: Record<string, unknown>,
   ): Promise<CallToolResult> {
     const startTime = Date.now();
     let success = true;
+    let handlerResult: CallToolResult | undefined;
 
     return withSpan(
       `mcp.tool.${tool.name}`,
@@ -322,6 +418,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
 
           // @sdk-constraint — SDK registerTool erases input schema type; args validated at runtime by SDK
           const result = await tool.handler(args as Parameters<typeof tool.handler>[0], context);
+          handlerResult = result; // captured (raw) for the audit trail; the audit scrubs independently
 
           // Record result metadata on span
           span.setAttributes({
@@ -367,18 +464,20 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           if (success) {
             logger.debug(SdkBindingMessages.TOOL_COMPLETED, tool.name, durationMs);
           }
-          // Audit trail: every tool invocation (actor ↔ session ↔ tool ↔ outcome).
+          // Audit trail: every tool invocation as one correlatable request→response record
+          // (actor ↔ session ↔ request ↔ tool ↔ what was requested/affected/returned).
           logAuditEvent({
             category: "tool",
             action: "tool.call",
             outcome: success ? "success" : "failure",
+            requestId: String(context.requestId),
             target: tool.name,
             actor: {
               ...(context.sessionId && { sessionId: context.sessionId }),
               ...(context.auth?.authInfo.clientId && { userId: context.auth.authInfo.clientId }),
               ...(authUsername(context.auth?.extra) && { username: authUsername(context.auth?.extra) }),
             },
-            detail: { durationMs },
+            detail: buildAuditDetail(durationMs, args, handlerResult, auditDetail, auditToolIo, resultScrubber),
           });
         }
       },

@@ -10,7 +10,7 @@ import type { TransportOptions, ServerCapabilities, ReadinessConfig, SessionConf
 import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { AuthOptions } from "./auth/types.js";
 import type { ScrubToolResultsConfig } from "../mcp/capabilities/registry/index.js";
-import type { ToolDefinition } from "../mcp/types/index.js";
+import type { ToolDefinition, AuditToolIoLevel } from "../mcp/types/index.js";
 import type { Application } from "express";
 import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 
@@ -182,6 +182,14 @@ export interface CreateServerOptions {
    * @default true
    */
   scrubToolResults?: ScrubToolResultsConfig | undefined;
+
+  /**
+   * How much request/response detail the per-tool-call audit entry records
+   * (always secret-scrubbed). `off` | `summary` (default) | `full`.
+   *
+   * Overrides the `LOG_AUDIT_TOOL_IO` env var when set. See {@link AuditToolIoLevel}.
+   */
+  auditToolIo?: AuditToolIoLevel | undefined;
 
   /**
    * Scopes granted to **anonymous** (unauthenticated) requests.

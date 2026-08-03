@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Request=>response audit trail on every `tool.call`**: the per-call audit entry now reconstructs
+  *what was requested, what was affected, and what came back*. It carries a top-level `requestId`
+  (`AuditEvent.requestId`) so a tool call and its related `permission.*` / `confirmation.*` entries
+  stitch into one trail, plus a `detail` with the **scrubbed request args** and a **result summary**
+  (`isError`, content counts). Depth is set by `LOG_AUDIT_TOOL_IO` / `createServer({ auditToolIo })`:
+  `off` (outcome + affected only) | `summary` (**default**) | `full` (adds the scrubbed, size-bounded
+  result `structuredContent`). Consumers attach domain detail — most importantly **which resources
+  were affected** — via the new `ToolContext.recordAuditDetail(detail)` hook (array-valued keys append,
+  so repeated `{ affected: [...] }` calls accumulate). Everything written is secret-scrubbed with the
+  configured scrubber, or a base scrubber when result scrubbing is disabled, so the audit **never
+  records unscrubbed I/O**; resource ids/names stay readable.
 - **`MCP_BASE_URL` — public base URL of the server (`[transport].base_url`)**: one setting for the
   externally reachable URL (scheme + host + optional port, e.g. `https://mcp.example.com`) when the
   server runs behind a reverse proxy or on a domain. `deriveServerBaseUrl()` now prefers it (falling
@@ -288,7 +299,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously only synchronous tools had this instrumentation.
 - **`logAuditEvent()` — parallel JSON-Lines audit trail, on by default**: A security/activity log
   written to a dedicated file (one JSON object per line), in parallel to the normal application logs
-  and independent of `LOG_LEVEL`. `MCP_AUDIT_FILE` (or `[logging].audit_file`) overrides the
+  and independent of `LOG_LEVEL`. `LOG_AUDIT_FILE` (or `[logging].audit_file`) overrides the
   destination; when unset, events land in `<LOG_DIR or the framework's default log dir>/audit.log`
   (see `resolveAuditFilePath()`) — the trail is always active, not opt-in. Emitted for tool calls
   (`tool.call`), session lifecycle (`session.open`/`session.close`), and security events (denied

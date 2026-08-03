@@ -180,6 +180,8 @@ const loggingSection = z
     log_dir: z.string().min(1),
     /** Path to a dedicated audit-log file (JSON Lines), parallel to normal logs */
     audit_file: z.string().min(1),
+    /** Per-tool-call audit request/result depth (scrubbed): 'off' | 'summary' | 'full' */
+    audit_tool_io: z.enum(["off", "summary", "full"]),
     /** Maximum log file size before rotation (e.g. "10mb", "500kb") */
     max_file_size: z.string().regex(BYTE_SIZE_REGEX),
     /** Maximum number of rotated log files to keep */
@@ -385,7 +387,8 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
     if (l.timestamp !== undefined) overrides.LOG_TIMESTAMP = l.timestamp;
     if (l.component !== undefined) overrides.LOG_COMPONENT = l.component;
     if (l.log_dir !== undefined) overrides.LOG_DIR = l.log_dir;
-    if (l.audit_file !== undefined) overrides.MCP_AUDIT_FILE = l.audit_file;
+    if (l.audit_file !== undefined) overrides.LOG_AUDIT_FILE = l.audit_file;
+    if (l.audit_tool_io !== undefined) overrides.LOG_AUDIT_TOOL_IO = l.audit_tool_io;
     if (l.max_file_size !== undefined) overrides.LOG_MAX_FILE_SIZE = parseByteSize(l.max_file_size);
     if (l.max_files !== undefined) overrides.LOG_MAX_FILES = l.max_files;
     if (l.retention_days !== undefined) overrides.LOG_RETENTION_DAYS = l.retention_days;
