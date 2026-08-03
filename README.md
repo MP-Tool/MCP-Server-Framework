@@ -10,7 +10,7 @@ A production-ready TypeScript framework for building [Model Context Protocol](ht
 
 ## Why This Framework?
 
-When I started building an MCP server for [Komodo MCP Server](https://github.com/MP-Tool/komodo-mcp-server), I quickly realized that the MCP SDK gives you protocol handling, but everything around it — transport management, session lifecycle, security middleware, configuration, observability, error handling — you're on your own. Every MCP server project ends up solving the same problems from scratch if you want a flexible,production-ready MCP server.
+When I started building an MCP server for [Komodo MCP Server](https://github.com/MP-Tool/komodo-mcp-server), I quickly realized that the MCP SDK gives you protocol handling, but everything around it — transport management, session lifecycle, security middleware, configuration, observability, error handling — you're on your own. Every MCP server project ends up solving the same problems from scratch if you want a flexible, production-ready MCP server.
 
 This framework extracts that infrastructure into a reusable foundation. The goal is simple: **you focus on your API, tools, resources and prompts — the framework handles everything else.**
 

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0]
+## [1.2.0] - feat: fail-closed secret scrubbing, unified auth factories, anonymous scope gating, server branding
 
 ### Added
 
@@ -109,12 +109,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (only `"true"` maps to true; native booleans pass through) was previously only available via
   internal subpaths, while `parseEnvBoolean` was already public. Consumers defining their own env
   schemas can now use the same convention as the framework.
-- **`SecretScrubber` + `REDACTED_VALUE` re-exported from `mcp-server-framework/logger`**: partially
-  reverses the 1.2.0 public-API narrowing that removed `SecretScrubber` from the logger barrel —
-  consumers scrub secrets out of their own payloads (e.g. MCP tool output before it reaches the
-  client transcript) with the same engine and redaction marker the framework uses for logs.
-  `REDACTED_VALUE` is newly public alongside it so consumers' bespoke masking can present one
-  consistent marker instead of duplicating the constant.
+- **`SecretScrubber` + `REDACTED_VALUE` exported from `mcp-server-framework/logger`**: consumers
+  scrub secrets out of their own payloads (e.g. MCP tool output before it reaches the client
+  transcript) with the same engine and redaction marker the framework uses for logs.
+  `REDACTED_VALUE` is public alongside it so consumers' bespoke masking can present one consistent
+  marker instead of duplicating the constant.
 - **`configureLoggerFromEnv({ name?, version? })` exported**: applies the resolved `LOG_*` /
   `MCP_TRANSPORT` config to the global logger — the same bridge `createServer()` runs internally,
   now reusable so consumers that log during bootstrap (before `createServer()`) get consistent

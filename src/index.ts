@@ -75,7 +75,7 @@ export { isHttpTransport } from "./server/index.js";
 export { isStaticResource, isResourceTemplate } from "./mcp/types/index.js";
 
 // Auth provider factory
-export { createOAuthProvider } from "./server/auth/index.js";
+export { createOAuthProvider, authInfoExpiry } from "./server/auth/index.js";
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./server/auth/index.js";
 
 // Browser-based OAuth/OIDC login (interactive, for stdio-mode servers)
@@ -98,7 +98,7 @@ export type {
 } from "./server/auth/index.js";
 
 // Declarative OAuth config resolution (generic [auth] section → provider configs)
-export { resolveAuthConfig } from "./server/auth/index.js";
+export { resolveAuthConfig, toOAuthProviderConfigs } from "./server/auth/index.js";
 export type { ResolvedAuthConfig, AuthProviderInput } from "./server/auth/index.js";
 
 // Audit log (parallel JSON-Lines security/activity trail)

@@ -495,19 +495,23 @@ export class McpSession implements LogNotificationHandler {
       return;
     }
 
-    // @sdk-constraint — Scope-based list filtering relies on the private `_requestHandlers`
-    // Map on the SDK's Protocol class. This is NOT a public SDK API and may break on any
-    // SDK minor version bump. If the field is absent or renamed, filtering silently degrades
-    // to no-op (tools/resources/prompts are visible regardless of token scopes).
+    // @sdk-constraint — Scope-based list *visibility* filtering relies on the private
+    // `_requestHandlers` Map on the SDK's Protocol class. This is NOT a public SDK API and may
+    // break on an SDK version bump. If the field is absent or renamed, list filtering silently
+    // degrades to a no-op: scoped tools/resources/prompts become VISIBLE in the `*/list`
+    // responses regardless of token scopes. This is a **visibility-only** degradation — call-time
+    // scope enforcement is independent (`enforceScopeOrThrow` on every tool call, resource read,
+    // and prompt get), so an unauthorized capability still cannot be invoked.
     //
-    // Long-term fix: request a public `setListHandler` override API from the SDK maintainers.
+    // Long-term fix: request a public list-handler override API from the SDK maintainers.
     const rawHandlers = (this.sdk.server as unknown as Record<string, unknown>)._requestHandlers;
 
     if (!rawHandlers || !(rawHandlers instanceof Map)) {
       this.logger.error(
-        "Scope-filtered list handlers DISABLED: SDK _requestHandlers is %s — " +
-          "prompts will be visible to ALL authenticated sessions regardless of token scopes. " +
-          "This may indicate an incompatible SDK version.",
+        "Scope-filtered list VISIBILITY disabled: SDK _requestHandlers is %s — scoped " +
+          "tools/resources/prompts will be LISTED regardless of token scopes (call-time scope " +
+          "enforcement is unaffected, so they still cannot be invoked). May indicate an " +
+          "incompatible SDK version.",
         rawHandlers === undefined ? "undefined" : typeof rawHandlers,
       );
       return;
