@@ -42,12 +42,31 @@ function createAllowedHosts(config: FrameworkEnvConfig): string[] {
     `[::1]:${port}`,
   ];
 
+  // The public base URL's host is trusted implicitly — that is the hostname clients
+  // reach the server on behind a proxy/domain, so it must pass the Host check without
+  // also having to be repeated in MCP_ALLOWED_HOSTS.
+  const baseUrlHost = baseUrlHostname(config.MCP_BASE_URL);
+
   if (config.MCP_ALLOWED_HOSTS && config.MCP_ALLOWED_HOSTS.length > 0) {
     // Normalize to lowercase — RFC 7230: Host header is case-insensitive
-    return config.MCP_ALLOWED_HOSTS.map((h) => h.toLowerCase());
+    const explicit = config.MCP_ALLOWED_HOSTS.map((h) => h.toLowerCase());
+    return baseUrlHost ? [...explicit, baseUrlHost] : explicit;
   }
 
-  return defaults;
+  return baseUrlHost ? [...defaults, baseUrlHost] : defaults;
+}
+
+/**
+ * Extracts the lowercase `host` (hostname + optional non-default port) from a base URL,
+ * matching the Host-header/allowlist format. Returns `undefined` when unset or unparseable.
+ */
+function baseUrlHostname(baseUrl: string | undefined): string | undefined {
+  if (!baseUrl) return undefined;
+  try {
+    return new URL(baseUrl).host.toLowerCase();
+  } catch {
+    return undefined;
+  }
 }
 
 /** Cached derived value (lazy initialization) */

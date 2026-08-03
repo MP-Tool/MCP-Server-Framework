@@ -193,11 +193,58 @@ export function parseByteSize(value: string): number {
 // ============================================================================
 
 /**
+ * Duration unit multipliers (all units → milliseconds).
+ *
+ * Each canonical unit accepts friendly aliases so config values can read naturally
+ * (`"1min"`, `"30sec"`, `"2hrs"`) as well as the short forms (`"1m"`, `"30s"`, `"2h"`).
+ * @internal
+ */
+const DURATION_MULTIPLIERS: Readonly<Record<string, number>> = {
+  ms: 1,
+  msec: 1,
+  msecs: 1,
+  millisecond: 1,
+  milliseconds: 1,
+  s: 1_000,
+  sec: 1_000,
+  secs: 1_000,
+  second: 1_000,
+  seconds: 1_000,
+  m: 60_000,
+  min: 60_000,
+  mins: 60_000,
+  minute: 60_000,
+  minutes: 60_000,
+  h: 3_600_000,
+  hr: 3_600_000,
+  hrs: 3_600_000,
+  hour: 3_600_000,
+  hours: 3_600_000,
+  d: 86_400_000,
+  day: 86_400_000,
+  days: 86_400_000,
+  w: 604_800_000,
+  week: 604_800_000,
+  weeks: 604_800_000,
+};
+
+/**
+ * Duration unit alternation for the parsing/validation regexes — longest aliases first so
+ * `min`/`ms` win over `m`/`s`. Built once from {@link DURATION_MULTIPLIERS} so the accepted
+ * units stay a single source of truth. Every element is a static, code-controlled literal
+ * (never user input), so the composed regexes are safe.
+ * @internal
+ */
+const DURATION_UNIT_PATTERN = Object.keys(DURATION_MULTIPLIERS)
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+
+/**
  * Regex pattern for human-readable durations.
  *
- * Matches formats like `"15m"`, `"1.5h"`, `"500ms"`, or plain
- * millisecond counts like `"900000"`. Case-insensitive, optional
- * whitespace between number and unit.
+ * Matches formats like `"15m"`, `"1.5h"`, `"500ms"`, `"1min"`, `"2hrs"`, or plain
+ * millisecond counts like `"900000"`. Case-insensitive, optional whitespace between
+ * number and unit.
  *
  * Shared with Zod schemas (`MCP_RATE_LIMIT_WINDOW_MS`, `OTEL_METRIC_EXPORT_INTERVAL`)
  * to ensure consistent validation across env vars and config files.
@@ -206,43 +253,35 @@ export function parseByteSize(value: string): number {
  * ```typescript
  * DURATION_REGEX.test('15m');       // true
  * DURATION_REGEX.test('1.5 h');     // true
+ * DURATION_REGEX.test('1min');      // true
  * DURATION_REGEX.test('900000');    // true (plain ms)
  * DURATION_REGEX.test('abc');       // false
  * ```
  */
-// eslint-disable-next-line security/detect-unsafe-regex -- linear-time (no ambiguous nesting); only ever tested against trusted config/env values.
-export const DURATION_REGEX = /^\d+(\.\d+)?\s*(ms|s|m|h|d|w)?$/i;
+// eslint-disable-next-line security/detect-non-literal-regexp -- pattern built from a static, code-controlled unit allowlist (DURATION_MULTIPLIERS keys), never user input; linear-time.
+export const DURATION_REGEX = new RegExp(`^\\d+(\\.\\d+)?\\s*(${DURATION_UNIT_PATTERN})?$`, "i");
 
-/**
- * Duration unit multipliers (all units → milliseconds).
- * @internal
- */
-const DURATION_MULTIPLIERS: Readonly<Record<string, number>> = {
-  ms: 1,
-  s: 1_000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-};
+/** Capturing variant of {@link DURATION_REGEX} — group 1 = number, group 2 = unit. @internal */
+// eslint-disable-next-line security/detect-non-literal-regexp -- same static unit allowlist as DURATION_REGEX; never user input; linear-time.
+const DURATION_PARSE_REGEX = new RegExp(`^(\\d+(?:\\.\\d+)?)\\s*(${DURATION_UNIT_PATTERN})?$`, "i");
 
 /**
  * Parse a human-readable duration string into milliseconds.
  *
  * Accepts formats like `"15m"`, `"1.5h"`, `"500ms"`, `"2d"`, or plain
- * numeric strings like `"900000"` (interpreted as milliseconds). Uses
- * standard time units:
+ * numeric strings like `"900000"` (interpreted as milliseconds). Each unit
+ * also accepts friendly aliases:
  *
- * | Unit | Meaning      | Multiplier  |
- * |------|-------------|-------------|
- * | ms   | milliseconds | 1           |
- * | s    | seconds      | 1,000       |
- * | m    | minutes      | 60,000      |
- * | h    | hours        | 3,600,000   |
- * | d    | days         | 86,400,000  |
- * | w    | weeks        | 604,800,000 |
+ * | Unit | Meaning      | Aliases                        | Multiplier  |
+ * |------|-------------|--------------------------------|-------------|
+ * | ms   | milliseconds | msec(s), millisecond(s)        | 1           |
+ * | s    | seconds      | sec(s), second(s)              | 1,000       |
+ * | m    | minutes      | min(s), minute(s)              | 60,000      |
+ * | h    | hours        | hr(s), hour(s)                 | 3,600,000   |
+ * | d    | days         | day(s)                         | 86,400,000  |
+ * | w    | weeks        | week(s)                        | 604,800,000 |
  *
- * @param value - Human-readable duration string (e.g. `"15m"`, `"900000"`)
+ * @param value - Human-readable duration string (e.g. `"15m"`, `"1min"`, `"900000"`)
  * @returns Duration in milliseconds (floored to integer)
  * @throws {Error} If the format is invalid
  *
@@ -250,19 +289,18 @@ const DURATION_MULTIPLIERS: Readonly<Record<string, number>> = {
  * ```typescript
  * parseDuration('15m');       // 900000
  * parseDuration('1.5h');      // 5400000
+ * parseDuration('1min');      // 60000
  * parseDuration('500ms');     // 500
- * parseDuration('2d');        // 172800000
  * parseDuration('900000');    // 900000 (plain ms)
  * ```
  */
 export function parseDuration(value: string): number {
   const trimmed = value.trim();
-  // eslint-disable-next-line security/detect-unsafe-regex -- linear-time; input is a trusted config/env duration string.
-  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?$/i);
+  const match = DURATION_PARSE_REGEX.exec(trimmed);
 
   if (!match) {
     throw new Error(
-      `Invalid duration format: "${value}". Use formats like "15m", "1.5h", "500ms", "2d", or a plain millisecond count like "900000".`,
+      `Invalid duration format: "${value}". Use formats like "15m", "1.5h", "1min", "500ms", "2d", or a plain millisecond count like "900000".`,
     );
   }
 

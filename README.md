@@ -236,6 +236,7 @@ Defaults → .env file → Config file → Environment variables → Programmati
 | `MCP_TRANSPORT` | `stdio` | Transport mode: `stdio`, `http`, `https` |
 | `MCP_BIND_HOST` | `127.0.0.1` | Host to bind to |
 | `MCP_PORT` | `8000` | Port to listen on |
+| `MCP_BASE_URL` | *(derived)* | Public base URL behind a proxy/domain (OAuth issuer/redirects, RFC 9728 metadata URL, trusted host) |
 | `MCP_STATELESS` | `false` | Stateless mode (no sessions) |
 | `MCP_JSON_RESPONSE` | `false` | Prefer JSON over SSE for non-streaming responses |
 | `MCP_BODY_SIZE_LIMIT` | `1mb` | Max request body size |

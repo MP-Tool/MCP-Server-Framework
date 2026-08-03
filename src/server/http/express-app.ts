@@ -474,13 +474,12 @@ function setupMcpRoutes(
       );
     }
     const useCustomHeader = headerName !== undefined && headerName !== "" && !isFullOAuthProvider(provider);
-    // Auto-derive resourceMetadataUrl from issuerUrl for full OAuth providers (RFC 9728); N/A for custom headers.
-    const resourceMetadataUrl = useCustomHeader
-      ? undefined
-      : (options.auth.resourceMetadataUrl ??
-        (isFullOAuthProvider(provider) && options.auth.issuerUrl
-          ? `${options.auth.issuerUrl.origin}/.well-known/oauth-protected-resource`
-          : undefined));
+    // Resource Metadata URL (RFC 9728) is always auto-derived from the issuer origin for full
+    // OAuth providers (the issuer comes from the public base URL, MCP_BASE_URL); N/A for custom headers.
+    const resourceMetadataUrl =
+      !useCustomHeader && isFullOAuthProvider(provider) && options.auth.issuerUrl
+        ? `${options.auth.issuerUrl.origin}/.well-known/oauth-protected-resource`
+        : undefined;
     sharedAuthMiddleware = createAuthMiddleware({
       provider,
       ...(useCustomHeader && headerName ? { tokenSource: { header: headerName } } : {}),

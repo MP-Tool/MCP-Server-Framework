@@ -17,7 +17,7 @@ import {
   byteSizeSchema,
   durationSchema,
 } from "../utils/zod-helpers.js";
-import { BYTE_SIZE_REGEX, parseDuration } from "../utils/string-helpers.js";
+import { BYTE_SIZE_REGEX, parseDuration, stripTrailingSlashes } from "../utils/string-helpers.js";
 import { readFileSync, accessSync, constants as fsConstants } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -99,6 +99,23 @@ export const frameworkEnvSchema = z
 
     /** Transport mode: 'stdio' for CLI, 'http' for HTTP, 'https' for HTTPS with TLS (default: stdio) */
     MCP_TRANSPORT: z.enum(["stdio", "http", "https"]).default("stdio"),
+
+    /**
+     * Public base URL of this server (scheme + host + optional port), e.g.
+     * `https://mcp.example.com`. Set this when the server runs behind a reverse
+     * proxy or on a public domain so the URL it advertises to clients is the
+     * externally reachable one — not the internal bind host/port.
+     *
+     * When set it drives, in one place:
+     * - the OAuth `serverUrl` / `issuerUrl` and redirect URLs (via `deriveServerBaseUrl()`),
+     * - the RFC 9728 Protected Resource Metadata URL (`{base}/.well-known/oauth-protected-resource`),
+     * - the DNS-rebinding allowed-hosts list (its host is trusted automatically).
+     *
+     * When unset, the base URL is derived from `MCP_TRANSPORT` + `MCP_BIND_HOST` + `MCP_PORT`.
+     *
+     * @example 'https://mcp.example.com'
+     */
+    MCP_BASE_URL: z.string().url().transform(stripTrailingSlashes).optional(),
 
     /**
      * Enable Legacy SSE Transport (deprecated HTTP+SSE from protocol 2024-11-05)
@@ -285,15 +302,9 @@ export const frameworkEnvSchema = z
      */
     MCP_AUTH_REQUIRED_SCOPES: optionalCommaSeparatedList(),
 
-    /**
-     * Protected Resource Metadata URL (RFC 9728).
-     *
-     * When set, included in `WWW-Authenticate` headers for 401 responses,
-     * allowing clients to discover the authorization server.
-     *
-     * @example 'https://api.example.com/.well-known/oauth-protected-resource'
-     */
-    MCP_AUTH_RESOURCE_METADATA_URL: z.string().url().optional(),
+    // The RFC 9728 Protected Resource Metadata URL is not a standalone setting: it is
+    // derived from the server's base URL (`MCP_BASE_URL` → issuer origin) as
+    // `{base}/.well-known/oauth-protected-resource`.
 
     // ==========================================================================
     // Secret Scrubbing

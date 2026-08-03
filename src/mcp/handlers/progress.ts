@@ -8,6 +8,12 @@
  * Rate-limiting prevents flooding the client with too many
  * `notifications/progress` messages during tight loops.
  *
+ * Note: the `progressToken` lives in the *request's* `_meta` and is set by the **client**
+ * (some clients, e.g. MCP Inspector, attach one — often equal to the request id — to every
+ * call). The server never invents or increments it. A reporter is created only when a token
+ * is present, and it emits nothing unless the handler actively calls it — so short read tools
+ * that don't report progress produce no `notifications/progress` regardless of the token.
+ *
  * @see https://spec.modelcontextprotocol.io/specification/2025-11-25/server/utilities/progress/
  * @module mcp/handlers/progress
  */

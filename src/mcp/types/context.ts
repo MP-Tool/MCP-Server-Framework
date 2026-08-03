@@ -15,7 +15,7 @@
  */
 
 import type { ServerNotification } from "@modelcontextprotocol/sdk/types.js";
-import type { RequestTaskStore } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { RequestTaskStore, RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type {
   CreateMessageRequest,
@@ -301,6 +301,7 @@ export interface ToolContext {
    */
   readonly elicitInput?: (
     params: ElicitRequestFormParams | ElicitRequestURLParams,
+    options?: RequestOptions,
   ) => Promise<ElicitResult> | undefined;
 
   /**

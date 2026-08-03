@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`MCP_BASE_URL` — public base URL of the server (`[transport].base_url`)**: one setting for the
+  externally reachable URL (scheme + host + optional port, e.g. `https://mcp.example.com`) when the
+  server runs behind a reverse proxy or on a domain. `deriveServerBaseUrl()` now prefers it (falling
+  back to `MCP_TRANSPORT` + `MCP_BIND_HOST` + `MCP_PORT` when unset), so it flows to the OAuth
+  `serverUrl`/`issuerUrl` and redirect URLs, to the RFC 9728 Protected Resource Metadata URL
+  (`{base}/.well-known/oauth-protected-resource`), and to the DNS-rebinding allowed-hosts (its host is
+  trusted automatically — no need to also list it in `MCP_ALLOWED_HOSTS`). Trailing slash normalized.
+- **Friendlier duration units in config** (`parseDuration` / `DURATION_REGEX`): time settings that
+  accept human-readable durations (`MCP_RATE_LIMIT_WINDOW_MS`, `OTEL_METRIC_EXPORT_INTERVAL`, and any
+  consumer using `durationSchema`) now also accept spelled-out unit aliases — `sec`/`secs`/`seconds`,
+  `min`/`mins`/`minutes`, `hr`/`hrs`/`hours`, `day`/`days`, `week`/`weeks`, `msec(s)`/`millisecond(s)` —
+  alongside the short forms `ms`/`s`/`m`/`h`/`d`/`w`. So `"1min"` and `"2hrs"` parse, not just `"1m"`
+  and `"2h"`. `formatDuration` still emits the canonical short units.
+
+### Changed
+
+- **`validateProtocolVersion` — spec-correct MCP protocol negotiation over HTTP**: the middleware now
+  **exempts the `initialize` request** (its version is negotiated in the JSON-RPC body by the SDK, not
+  the header — passing it through untouched is what lets auto-negotiation work with clients like MCP
+  Inspector v2), and assumes the SDK's `DEFAULT_NEGOTIATED_PROTOCOL_VERSION` (`2025-03-26`) instead of a
+  stale hardcoded `2024-11-05` when a *non*-initialize request omits the `MCP-Protocol-Version` header.
+  Unsupported header versions on post-init requests are still rejected with `400`.
+- **RFC 9728 metadata URL is derived, not configured**: removed the standalone
+  `MCP_AUTH_RESOURCE_METADATA_URL` env var / `[auth].resource_metadata_url` file key and the
+  `AuthOptions.resourceMetadataUrl` override. The Protected Resource Metadata URL is now always built
+  from the issuer origin (which comes from `MCP_BASE_URL`) as
+  `{origin}/.well-known/oauth-protected-resource`. `MCP_AUTH_REQUIRED_SCOPES` is unaffected.
+
 - **`filterTools` — prune the registered tool surface (`createServer({ filterTools })`)**: a predicate
   `(tool: ToolDefinition) => boolean` applied once at build time to the collected tools. Tools it
   rejects are never bound to any session — absent from `tools/list` and not callable, for every
@@ -96,9 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scrubbing as well.
 - **`elicitConfirmation(options)` — user confirmation via MCP Elicitation**: Asks the human
   operator to approve an action through the client's elicitation UI (`elicitation/create`) before
-  the server executes it. The prompt is a form with a single required `confirm` checkbox —
-  approval requires both the "accept" action AND a ticked checkbox (double opt-in), so a hasty
-  accept with defaults does not authorize anything. Never throws; every failure mode maps to an
+  the server executes it. The prompt carries no form fields — the client's **accept** action is
+  the approval (a single click), so there is no separate checkbox to tick. Configurable
+  `timeoutMs` (default `DEFAULT_CONFIRMATION_TIMEOUT_MS` = 5 min, up from the SDK's 60 s request
+  default) — humans need longer than a machine call. Never throws; every failure mode maps to an
   explicit `ElicitConfirmationOutcome` (`accepted` / `declined` / `cancelled` / `timeout` /
   `unsupported`) so callers can implement their own fail-open/fail-closed policy. Reads the
   ambient `ToolContext` from AsyncLocalStorage by default (works from anywhere inside a tool
@@ -197,8 +226,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on the TLS context, rejecting legacy TLS 1.0/1.1 handshakes.
 - **`resolveAuthConfig()` + `toOAuthProviderConfigs()` — declarative `[auth]` config-file support**:
   Turns a config-file `[auth]` section (master switch + a `[auth.providers.<name>]` table) into the
-  `OAuthProviderConfig[]` consumed by `createOAuthProvider`, plus the resolved `enabled` flag and
-  `/mcp` enforcement metadata. The master switch honours `MCP_AUTH_ENABLED` (env var or `.env` file —
+  `OAuthProviderConfig[]` consumed by `createOAuthProvider`, plus the resolved `enabled` flag and the
+  optional `/mcp` `required_scopes`. The master switch honours `MCP_AUTH_ENABLED` (env var or `.env` file —
   now resolved through `getFrameworkConfig()`, like every other framework env var, instead of reading
   `process.env` directly) → `[auth].enabled` (file) → an optional `resolveAuthConfig({ defaultEnabled })`
   argument → "enabled when at least one provider is configured". The `defaultEnabled` override lets a

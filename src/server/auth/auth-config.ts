@@ -59,8 +59,6 @@ export interface ResolvedAuthConfig {
   readonly providers: OAuthProviderConfig[];
   /** Required scopes for the `/mcp` endpoint, when configured. */
   readonly requiredScopes?: string[] | undefined;
-  /** Protected Resource Metadata URL (RFC 9728), when configured. */
-  readonly resourceMetadataUrl?: string | undefined;
 }
 
 /** Infer a provider kind from its routing name. Unknown names are treated as generic OIDC. */
@@ -155,6 +153,5 @@ export function resolveAuthConfig(options?: { readonly defaultEnabled?: boolean 
     enabled,
     providers,
     ...(raw?.required_scopes && raw.required_scopes.length > 0 && { requiredScopes: [...raw.required_scopes] }),
-    ...(raw?.resource_metadata_url && { resourceMetadataUrl: raw.resource_metadata_url }),
   };
 }

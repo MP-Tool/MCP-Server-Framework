@@ -103,6 +103,8 @@ const transportSection = z
     port: z.number().int().min(1).max(65535),
     /** Host to bind to */
     host: z.string().min(1),
+    /** Public base URL behind a proxy/domain (e.g. 'https://mcp.example.com'). Env: MCP_BASE_URL */
+    base_url: z.string().url(),
     /** Enable SSE transport (legacy protocol 2024-11-05) */
     sse_enabled: z.boolean(),
     /** Operate in stateless mode (no session IDs) */
@@ -247,8 +249,6 @@ const authSection = z
     providers: z.record(z.string(), authProviderSection),
     /** Required OAuth scopes for the /mcp endpoint (array of scope strings) */
     required_scopes: z.array(z.string().min(1)),
-    /** Protected Resource Metadata URL (RFC 9728) */
-    resource_metadata_url: z.string().url(),
   })
   .partial();
 
@@ -340,6 +340,7 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
     if (t.mode !== undefined) overrides.MCP_TRANSPORT = t.mode;
     if (t.port !== undefined) overrides.MCP_PORT = t.port;
     if (t.host !== undefined) overrides.MCP_BIND_HOST = t.host;
+    if (t.base_url !== undefined) overrides.MCP_BASE_URL = t.base_url;
     if (t.sse_enabled !== undefined) overrides.MCP_LEGACY_SSE_ENABLED = t.sse_enabled;
     if (t.stateless !== undefined) overrides.MCP_STATELESS = t.stateless;
     if (t.json_response !== undefined) overrides.MCP_JSON_RESPONSE = t.json_response;
@@ -411,7 +412,6 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
   if (config.auth) {
     const a = config.auth;
     if (a.required_scopes !== undefined) overrides.MCP_AUTH_REQUIRED_SCOPES = a.required_scopes;
-    if (a.resource_metadata_url !== undefined) overrides.MCP_AUTH_RESOURCE_METADATA_URL = a.resource_metadata_url;
   }
 
   return overrides;

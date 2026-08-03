@@ -10,17 +10,11 @@ import { truncateForLog } from "./logging.js";
 import { logger as baseLogger } from "../../logger/index.js";
 import { HttpStatus, createJsonRpcError, JsonRpcErrorCode } from "../../errors/index.js";
 import { MCP_HEADERS } from "../transport/index.js";
-import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
-
-// ============================================================================
-// Protocol Version Configuration
-// ============================================================================
-
-/**
- * Fallback protocol version for backwards compatibility
- * Used when client doesn't send MCP-Protocol-Version header
- */
-const FALLBACK_PROTOCOL_VERSION = "2024-11-05";
+import {
+  SUPPORTED_PROTOCOL_VERSIONS,
+  DEFAULT_NEGOTIATED_PROTOCOL_VERSION,
+  isInitializeRequest,
+} from "@modelcontextprotocol/sdk/types.js";
 
 const logger = baseLogger.child({ component: "ProtocolVersion" });
 
@@ -30,16 +24,36 @@ const LogMessages = {
 } as const;
 
 /**
- * Validates MCP-Protocol-Version header
- * Server MUST respond with 400 Bad Request if version is invalid/unsupported
+ * Validates the `MCP-Protocol-Version` header on `/mcp` requests.
+ *
+ * Per the MCP spec the header is only sent on requests *following* initialization —
+ * the `initialize` request carries the client's requested version in its JSON-RPC body
+ * and is negotiated there by the SDK. So this middleware:
+ *
+ * - **exempts the `initialize` request** entirely (no header expected; leaving it untouched
+ *   lets the SDK negotiate in the body — the reason auto-negotiation must not be second-guessed
+ *   at the HTTP layer),
+ * - assumes the spec default (`DEFAULT_NEGOTIATED_PROTOCOL_VERSION`, currently `2025-03-26`)
+ *   when a non-initialize request omits the header, and
+ * - responds `400` when a present header is not in `SUPPORTED_PROTOCOL_VERSIONS`.
+ *
+ * `req.body` is already JSON-parsed upstream (the json body parser is mounted before this),
+ * so {@link isInitializeRequest} can inspect it.
  */
 export function validateProtocolVersion(req: Request, res: Response, next: NextFunction): void {
+  // The initialize request negotiates its version in the body; the header does not apply yet.
+  // Passing it through untouched is what keeps SDK auto-negotiation working.
+  if (isInitializeRequest(req.body)) {
+    next();
+    return;
+  }
+
   const rawVersion = req.headers[MCP_HEADERS.PROTOCOL_VERSION];
   const protocolVersion = typeof rawVersion === "string" ? rawVersion : undefined;
 
   if (!protocolVersion) {
-    // Spec: For backwards compatibility, assume fallback version if no header present
-    req.headers[MCP_HEADERS.PROTOCOL_VERSION] = FALLBACK_PROTOCOL_VERSION;
+    // Spec: when no header is present, assume the default negotiated version (from the SDK).
+    req.headers[MCP_HEADERS.PROTOCOL_VERSION] = DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
     next();
     return;
   }

@@ -148,15 +148,18 @@ function firstQueryValue(value: unknown): string | undefined {
 }
 
 /**
- * Derives this server's public base URL from the framework transport config.
+ * Derives this server's public base URL.
  *
- * Reads `MCP_TRANSPORT` (scheme), `MCP_BIND_HOST`, and `MCP_PORT`. A wildcard bind
- * host (`0.0.0.0` / `::`) is reported as `localhost` so the URL is dialable locally.
+ * Prefers the explicitly configured `MCP_BASE_URL` (set this behind a reverse
+ * proxy or on a public domain). When unset, falls back to the transport config:
+ * `MCP_TRANSPORT` (scheme), `MCP_BIND_HOST`, and `MCP_PORT`. A wildcard bind host
+ * (`0.0.0.0` / `::`) is reported as `localhost` so the URL is dialable locally.
  *
- * @returns Base URL such as `http://localhost:8000` (no trailing slash)
+ * @returns Base URL such as `https://mcp.example.com` or `http://localhost:8000` (no trailing slash)
  */
 export function deriveServerBaseUrl(): string {
   const cfg = getFrameworkConfig();
+  if (cfg.MCP_BASE_URL) return cfg.MCP_BASE_URL;
   const scheme = cfg.MCP_TRANSPORT === "https" ? "https" : "http";
   const host = cfg.MCP_BIND_HOST === "0.0.0.0" || cfg.MCP_BIND_HOST === "::" ? "localhost" : cfg.MCP_BIND_HOST;
   return `${scheme}://${host}:${cfg.MCP_PORT}`;

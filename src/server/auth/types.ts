@@ -202,13 +202,9 @@ export interface AuthOptions {
    */
   readonly issuerUrl?: URL;
 
-  /**
-   * Protected Resource Metadata URL (RFC 9728).
-   *
-   * Included in `WWW-Authenticate` headers for 401 responses,
-   * allowing clients to discover the authorization server.
-   */
-  readonly resourceMetadataUrl?: string;
+  // The RFC 9728 Protected Resource Metadata URL is not a consumer option: the server
+  // derives it from `issuerUrl.origin` (`{origin}/.well-known/oauth-protected-resource`),
+  // which in turn comes from the public base URL (`MCP_BASE_URL`).
 
   /**
    * Custom header name for token extraction.
