@@ -349,6 +349,7 @@ export type { TelemetryConfig, SpanOptions, ServerMetrics, ServerStats } from ".
 export {
   parseEnvBoolean,
   booleanFromEnv,
+  optionalBooleanFromEnv,
   getEnvString,
   getEnvOptional,
   interpolate,
