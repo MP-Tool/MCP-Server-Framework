@@ -178,6 +178,9 @@ export const FrameworkErrorFactory = {
     fileValidationFailed: (filePath: string, zodError: ZodError) =>
       ConfigurationError.fileValidationFailed(filePath, zodError),
 
+    /** Environment schema validation failed (typos, wrong types, cross-field constraints) */
+    envValidationFailed: (zodError: ZodError) => ConfigurationError.envValidationFailed(zodError),
+
     /** Unsupported config file extension */
     unsupportedFormat: (extension: string) => ConfigurationError.unsupportedFormat(extension),
 

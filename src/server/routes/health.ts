@@ -181,13 +181,17 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
 
     if (sessionsAtLimit) {
       status = ReadinessStatus.TOO_MANY_REQUESTS;
-      if (totalAtLimit) {
-        reason = `Total session limit reached (${totalSessionCount}/${maxSessions})`;
-      } else if (streamableHttpAtLimit) {
-        reason = `Streamable HTTP session limit reached (${streamableHttpSessionCount}/${maxStreamableHttpSessions})`;
-      } else {
-        reason = `SSE session limit reached (${sseSessionCount}/${maxSseSessions})`;
-      }
+      // The client learns THAT capacity is exhausted, never the numbers: /ready is
+      // unauthenticated, and exact counts plus configured limits tell an attacker
+      // how much load it takes to push the server over. Operators get the detail
+      // from the log line below, where it belongs.
+      reason = "Session capacity reached";
+      const which = totalAtLimit
+        ? `total ${totalSessionCount}/${maxSessions}`
+        : streamableHttpAtLimit
+          ? `streamable-http ${streamableHttpSessionCount}/${maxStreamableHttpSessions}`
+          : `sse ${sseSessionCount}/${maxSseSessions}`;
+      logger.warn("Readiness: session capacity reached (%s)", which);
     } else if (readinessCheck) {
       // Run consumer-provided readiness check with a deadline. The timer is
       // cleared once the race settles — readiness probes fire frequently

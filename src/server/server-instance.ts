@@ -261,8 +261,10 @@ export class McpServerInstance implements ServerInstance {
       this.sessionManager = this.createSessionManager();
       this.transportHandle = await this.startTransport(sessionFactory, this.sessionManager);
 
-      // Log stateless mode warning after transport is started
-      if (this.options.transport && isHttpTransport(this.options.transport) && this.options.transport.stateless) {
+      // Log stateless mode warning after transport is started. Resolved from config for the
+      // same reason as the handler selection above: reading `transport.stateless` alone would
+      // stay silent for an operator who enabled stateless via MCP_STATELESS or the config file.
+      if (this.options.transport && isHttpTransport(this.options.transport) && getFrameworkConfig().MCP_STATELESS) {
         logger.warn(RuntimeLogMessages.STATELESS_MODE);
 
         // Warn about ineffective config combinations
@@ -493,9 +495,15 @@ export class McpServerInstance implements ServerInstance {
       const trustProxy = await resolveTrustProxy(resolvedConfig.MCP_TRUST_PROXY);
 
       const resolvedJsonResponse = resolvedConfig.MCP_JSON_RESPONSE;
+      // Resolved, not read straight off `transport` — `applyConfigOverrides()` already folded
+      // the programmatic value into the config chain, so reading it back here is what lets
+      // `MCP_STATELESS` / `[transport].stateless` take effect at all. Taking `transport.stateless`
+      // directly made those two settable but inert: the value was written into the overrides and
+      // never read again, so the server stayed stateful no matter what the operator configured.
+      const resolvedStateless = resolvedConfig.MCP_STATELESS;
 
       const app = createExpressApp(sessionFactory, sessionManager, {
-        stateless: transport.stateless,
+        stateless: resolvedStateless,
         eventStore: transport.eventStore,
         enableJsonResponse: resolvedJsonResponse,
         health: this.options.health,

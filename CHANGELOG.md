@@ -45,6 +45,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing `booleanFromEnv`. Consumers layering their own switch over a framework one need the
   tri-state (`undefined` when unset) to tell "not configured" from an explicit `false`.
 
+### Fixed
+
+- **`MCP_STATELESS` / `[transport].stateless` actually take effect now**: the handler selection read
+  `options.transport.stateless` — the programmatic option — while every neighbouring setting
+  (`MCP_JSON_RESPONSE`, `MCP_TRUST_PROXY`, `MCP_CORS_ORIGIN`) was resolved from `getFrameworkConfig()`.
+  `applyConfigOverrides()` folded the programmatic value *into* the config chain but nothing read it
+  back, so the environment variable and the config-file key were settable and documented yet entirely
+  inert: the server stayed stateful, kept issuing session ids and kept rejecting requests without an
+  `Mcp-Session-Id` header. Both the handler selection and the stateless-mode startup warnings now
+  resolve through the config chain like their neighbours. Stateless mode behaves as documented again
+  (no session ids, `GET`/`DELETE` → 405); stateful mode is unchanged.
+- **Configuration errors are readable again**: `parseFrameworkEnv` called `schema.parse()` and let the
+  raw `ZodError` escape, so a single mistyped variable aborted startup with a stack trace whose first
+  line pointed into `node_modules/zod` — the actual message ("MCP_PORT: Expected number, received nan")
+  was buried below it. Every other validation boundary already converts Zod errors first; config
+  *files* even had a dedicated `ConfigurationError.fileValidationFailed`. The environment path now has
+  its counterpart, `ConfigurationError.envValidationFailed`, and reports each offending variable by
+  name — including cross-field constraints, which list both variables involved.
+- **`ToolContext.sessionId` is now set for stdio too**: the SDK derives every request's
+  `extra.sessionId` from `transport.sessionId` — an optional field on the generic `Transport`
+  interface that `StdioServerTransport` never populates. The framework already created a session
+  (with an id) for stdio, but that id never reached the tool context, so `sessionId` was defined
+  for HTTP transports and `undefined` for stdio alone. Anything keyed on it degraded silently
+  there — most visibly the `DynamicResourceRegistry`, which meant a consumer could not offload
+  large payloads to `ephemeral://` links on the very transport most clients use, even though
+  `resources/read` works perfectly well over stdio. `startStdioTransport` now assigns the
+  session's id to the transport before connecting, so the invariant "every request carries its
+  session id" holds for all transports.
+
 ### Fixed (scrubbing engine)
 
 - **`scrubObject` no longer destroys `Date` values**: a `Date` was walked as a plain record and came

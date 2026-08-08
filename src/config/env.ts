@@ -18,6 +18,9 @@ import {
   durationSchema,
 } from "../utils/zod-helpers.js";
 import { BYTE_SIZE_REGEX, parseDuration, stripTrailingSlashes } from "../utils/string-helpers.js";
+// Safe direction: `errors/` imports nothing from `config/`, so this cannot recreate the
+// circular-import TDZ crash that once broke startup.
+import { FrameworkErrorFactory } from "../errors/index.js";
 import { readFileSync, accessSync, constants as fsConstants } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -628,5 +631,11 @@ export type FrameworkEnvConfig = z.infer<typeof frameworkEnvSchema>;
  * @internal Used only by config-cache.ts — consumers should use `getFrameworkConfig()`
  */
 export function parseFrameworkEnv(envSource: Record<string, string | undefined> = process.env): FrameworkEnvConfig {
-  return frameworkEnvSchema.parse(envSource);
+  const result = frameworkEnvSchema.safeParse(envSource);
+  if (result.success) return result.data;
+  // A raw ZodError here escapes as an unhandled rejection during bootstrap and prints a
+  // stack trace into node_modules/zod — useless to the operator who mistyped a variable.
+  // Every other validation boundary converts first; this one is the counterpart to the
+  // config-file path's `fileValidationFailed`.
+  throw FrameworkErrorFactory.configuration.envValidationFailed(result.error);
 }
