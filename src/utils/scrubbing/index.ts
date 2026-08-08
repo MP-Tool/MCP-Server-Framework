@@ -16,3 +16,4 @@ export {
   REDACTED_VALUE,
 } from "./secret-scrubber.js";
 export type { SecretScrubberOptions, SecretScrubberConfig } from "./secret-scrubber.js";
+export { scrubTomlContent } from "./scrub-toml.js";

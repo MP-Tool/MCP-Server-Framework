@@ -18,6 +18,7 @@ import {
   isSensitiveKey as baseSensitiveKeyCheck,
   escapeRegex,
 } from "../sensitive-keys.js";
+import { scrubTomlContent } from "./scrub-toml.js";
 
 /** Mask applied to redacted values (distinct from the errors module's bracket-style `[REDACTED]`). */
 export const REDACTED_VALUE = "**********";
@@ -82,6 +83,30 @@ function compileKeyPatterns(additionalKeys: readonly string[]): CompiledKeyPatte
   };
 }
 
+/** Characters that continue an identifier when widening a matched key fragment. */
+const KEY_CHAR = /[A-Za-z0-9_.-]/;
+
+/**
+ * Widen a matched sensitive fragment to the full compound key around it.
+ *
+ * The KV pattern matches only the fragment (`secret` inside `is_secret`), but
+ * `allowKeys` is an EXACT-name contract — it can only be honored against the
+ * whole key. A linear character scan over identifier characters is enough and,
+ * unlike widening the regex itself, carries no backtracking cost.
+ *
+ * @param text - The string being scrubbed
+ * @param start - Index where the matched fragment begins
+ * @param length - Length of the matched fragment
+ * @returns The surrounding compound key, lowercased
+ */
+function expandKey(text: string, start: number, length: number): string {
+  let from = start;
+  while (from > 0 && KEY_CHAR.test(text[from - 1] as string)) from--;
+  let to = start + length;
+  while (to < text.length && KEY_CHAR.test(text[to] as string)) to++;
+  return text.slice(from, to).toLowerCase();
+}
+
 /** Regex to match credentials in connection strings (scheme://user:pass@host, including IPv6 [::1]) */
 const CONN_STRING_REGEX = /:\/\/([^/:@\s[\]]+|\[[^\]]+\]):([^@\s]+)@/g;
 
@@ -116,11 +141,12 @@ export interface SecretScrubberOptions {
    * matches the `key` fragment but is not a secret. Values of allowlisted keys
    * still pass through the string/value-shape scrubbing.
    *
-   * Scope: applies wherever the FULL key name is known — object keys
-   * (`scrubObject`) and JSON pairs in text. The flat-text `key=value` and
-   * URL-param passes match only the sensitive fragment (never the full
-   * compound key), so they may over-redact an allowlisted key there — the
-   * safe direction. Explicit rules (`dropKeys`, `sensitivePaths`,
+   * Scope: object keys (`scrubObject`), JSON pairs in text, and the flat-text
+   * `key=value` pass — the last one widens its matched fragment to the
+   * surrounding compound key so exact allowlist entries apply there too
+   * (`is_secret = true` stays a boolean). The URL-param pass still matches on
+   * the fragment alone and may over-redact an allowlisted query parameter —
+   * the safe direction. Explicit rules (`dropKeys`, `sensitivePaths`,
    * `maskWhenSibling`) are consumer declarations and win over `allowKeys`.
    */
   readonly allowKeys?: readonly string[];
@@ -261,11 +287,28 @@ export class SecretScrubber {
     // Pre-check: skip expensive regex if no sensitive key substring is present
     const lowerScrubbed = scrubbed.toLowerCase();
     if (this.patterns.kvKeysLower.some((k) => lowerScrubbed.includes(k))) {
-      scrubbed = scrubbed.replace(this.patterns.kvRegex, (match, prefix, key, sep, quote, value) => {
-        // Don't redact if already redacted
-        if (value.includes(REDACTED_VALUE)) return match;
-        return `${prefix}${key}${sep}${quote}${REDACTED_VALUE}${quote}`;
-      });
+      scrubbed = scrubbed.replace(
+        this.patterns.kvRegex,
+        (
+          match: string,
+          prefix: string,
+          key: string,
+          sep: string,
+          quote: string,
+          value: string,
+          offset: number,
+          whole: string,
+        ) => {
+          // Don't redact if already redacted
+          if (value.includes(REDACTED_VALUE)) return match;
+          // The pattern matches the sensitive FRAGMENT (`secret` inside `is_secret`).
+          // Widen it to the surrounding compound key so an allowlisted name is
+          // honored here too — otherwise `is_secret = true` gets masked into a
+          // string, which is both wrong and enough to break a config document.
+          if (this.allowKeys.has(expandKey(whole, offset + prefix.length, key.length))) return match;
+          return `${prefix}${key}${sep}${quote}${REDACTED_VALUE}${quote}`;
+        },
+      );
     }
 
     // 8. Rendered JSON (`"key": "value"`, plain and \"-escaped) — the KV pass above
@@ -320,17 +363,27 @@ export class SecretScrubber {
     }
   }
 
-  /** Collect every string leaf of a dropped subtree (circular-safe). */
-  private collectLeaves(value: unknown, visited: WeakSet<object>, collector: Set<string> | undefined): void {
+  /**
+   * Collect every string leaf of a dropped subtree (circular-safe).
+   *
+   * Walks with its OWN `seen` set rather than the caller's ancestor stack — a
+   * dropped subtree is a side excursion, and marking its nodes on the main
+   * traversal's stack would make a later, legitimate visit look circular.
+   */
+  private collectLeaves(
+    value: unknown,
+    collector: Set<string> | undefined,
+    seen: WeakSet<object> = new WeakSet(),
+  ): void {
     if (!collector) return;
     if (typeof value === "string") {
       this.collect(value, collector);
       return;
     }
-    if (typeof value !== "object" || value === null || visited.has(value)) return;
-    visited.add(value);
+    if (typeof value !== "object" || value === null || seen.has(value)) return;
+    seen.add(value);
     for (const child of Array.isArray(value) ? value : Object.values(value)) {
-      this.collectLeaves(child, visited, collector);
+      this.collectLeaves(child, collector, seen);
     }
   }
 
@@ -343,10 +396,16 @@ export class SecretScrubber {
    * Internal recursive scrub with circular reference protection and key-path
    * tracking (array elements keep their parent's path, so path rules apply
    * inside arrays).
+   *
+   * `ancestors` holds only the nodes on the CURRENT path (entries are removed
+   * on the way back up), so a genuine cycle is caught while a value merely
+   * referenced twice — a diamond, e.g. the same tag object on two resources,
+   * or the same `TomlDate` — is scrubbed normally instead of collapsing into
+   * `"[Circular]"`.
    */
   private scrubObjectRecursive(
     obj: unknown,
-    visited: WeakSet<object>,
+    ancestors: WeakSet<object>,
     path: string,
     collector: Set<string> | undefined,
   ): unknown {
@@ -358,14 +417,34 @@ export class SecretScrubber {
       return obj;
     }
 
+    // Value objects that serialize to a primitive (Date — and therefore
+    // smol-toml's TomlDate) carry no scrubbable keys. Walking them as plain
+    // records would erase them to `{}`, so hand them back untouched.
+    if (obj instanceof Date) {
+      return obj;
+    }
+
     // Circular reference protection — prevent stack overflow
-    if (visited.has(obj)) {
+    if (ancestors.has(obj)) {
       return "[Circular]";
     }
-    visited.add(obj);
+    ancestors.add(obj);
+    try {
+      return this.scrubObjectNode(obj, ancestors, path, collector);
+    } finally {
+      ancestors.delete(obj);
+    }
+  }
 
+  /** Scrub one already-cycle-checked array/object node. See {@link scrubObjectRecursive}. */
+  private scrubObjectNode(
+    obj: object,
+    ancestors: WeakSet<object>,
+    path: string,
+    collector: Set<string> | undefined,
+  ): unknown {
     if (Array.isArray(obj)) {
-      return obj.map((item) => this.scrubObjectRecursive(item, visited, path, collector));
+      return obj.map((item) => this.scrubObjectRecursive(item, ancestors, path, collector));
     }
 
     const redacted: Record<string, unknown> = {};
@@ -388,7 +467,7 @@ export class SecretScrubber {
 
       // 1. Dropped fields disappear entirely (leaves still reach the collector).
       if (this.dropKeys.has(keyLower)) {
-        this.collectLeaves(value, visited, collector);
+        this.collectLeaves(value, collector);
         continue;
       }
 
@@ -405,7 +484,7 @@ export class SecretScrubber {
         this.collect(value, collector);
         redacted[key] = REDACTED_VALUE;
       } else if (typeof value === "object") {
-        redacted[key] = this.scrubObjectRecursive(value, visited, childPath, collector);
+        redacted[key] = this.scrubObjectRecursive(value, ancestors, childPath, collector);
       } else if (typeof value === "string") {
         redacted[key] = this.scrub(value);
       } else {
@@ -473,18 +552,27 @@ export const secretScrubber = new SecretScrubber();
  * Scrub string content by declared mimeType — shared by every registry that stores
  * content ahead of read time (dynamic and static resources).
  *
- * JSON content is scrubbed AS AN OBJECT (parse → `scrubObject` → re-stringify), so
- * declarative rules (`dropKeys`, `sensitivePaths`, `maskWhenSibling`) apply with full
- * structural fidelity — text regexes could never drop a nested field. Unparseable or
- * non-JSON content falls back to the text scrub.
+ * STRUCTURED formats are scrubbed AS OBJECTS (parse → `scrubObject` → re-serialize),
+ * so declarative rules (`dropKeys`, `sensitivePaths`, `maskWhenSibling`) apply with
+ * full structural fidelity — text regexes could never drop a nested field, and they
+ * over-redact allowlisted keys whose NAME contains a sensitive fragment. Recognized
+ * by mimeType substring: `json` and `toml`. Unparseable content, and every other
+ * type, falls back to the text scrub.
+ *
+ * Registering structured content under `text/plain` therefore silently downgrades it
+ * to regex redaction — declare the real type.
  */
 export function scrubByMimeType(content: string, mimeType: string, scrubber: SecretScrubber): string {
-  if (mimeType.toLowerCase().includes("json")) {
+  const type = mimeType.toLowerCase();
+  if (type.includes("json")) {
     try {
       return JSON.stringify(scrubber.scrubObject(JSON.parse(content)), null, 2);
     } catch {
       // Declared JSON but doesn't parse — treat as text below.
     }
+  }
+  if (type.includes("toml")) {
+    return scrubTomlContent(content, scrubber);
   }
   return scrubber.scrub(content);
 }
