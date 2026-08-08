@@ -53,14 +53,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shared references are no longer reported as `"[Circular]"`**: the cycle guard marked every visited
   node for the whole traversal, so a diamond — the same object reachable by two paths, e.g. one tag
   object on two resources, or one `Date` in two fields — collapsed into the string `"[Circular]"` on
-  its second occurrence instead of being scrubbed. The guard now tracks only the current path.
-  Genuine cycles are still detected.
+  its second occurrence instead of being scrubbed. The guard now tracks only the current path, and a
+  per-walk memo keyed by node and path scope computes each distinct pair once, so the walk stays
+  linear in the size of the graph rather than in the number of paths through it. Genuine cycles are
+  still detected. The memo is sound because `sensitivePaths` match on suffixes: only the last
+  `longestRule - 1` path segments above a node can influence its subtree, and with no path rules
+  configured the path cannot influence anything at all.
 - **`allowKeys` is honored in the flat-text `key=value` pass**: the pattern matches the sensitive
   *fragment*, so `secret` inside `is_secret` triggered redaction even when `is_secret` was explicitly
   allowlisted. The pass now widens the match to the surrounding compound key before consulting the
   allowlist (a linear character scan — the pattern itself is unchanged, so no added backtracking
   cost). Exact-match semantics still hold: allowlisting `secret` does not exempt `webhook_secret`.
-  The URL-query-parameter pass still matches on the fragment alone and may over-redact there.
+  One narrow exception remains by design: the URL-query-parameter pass runs first and matches bare
+  base names, so `?secret=x` stays masked even when `secret` is allowlisted, while `secret=x` in
+  plain text does not — over-redaction, the safe direction.
 
 ### Changed
 

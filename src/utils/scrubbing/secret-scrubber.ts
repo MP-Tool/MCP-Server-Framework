@@ -144,10 +144,15 @@ export interface SecretScrubberOptions {
    * Scope: object keys (`scrubObject`), JSON pairs in text, and the flat-text
    * `key=value` pass — the last one widens its matched fragment to the
    * surrounding compound key so exact allowlist entries apply there too
-   * (`is_secret = true` stays a boolean). The URL-param pass still matches on
-   * the fragment alone and may over-redact an allowlisted query parameter —
-   * the safe direction. Explicit rules (`dropKeys`, `sensitivePaths`,
-   * `maskWhenSibling`) are consumer declarations and win over `allowKeys`.
+   * (`is_secret = true` stays a boolean, in prose and in query strings alike).
+   *
+   * One narrow exception: the URL-query-parameter pass runs first and matches
+   * bare base names, so a query parameter named exactly like a base sensitive
+   * key is redacted even when allowlisted — `?secret=x` stays masked while
+   * `secret=x` in plain text does not. Over-redaction, i.e. the safe direction.
+   *
+   * Explicit rules (`dropKeys`, `sensitivePaths`, `maskWhenSibling`) are
+   * consumer declarations and win over `allowKeys`.
    */
   readonly allowKeys?: readonly string[];
 
@@ -197,6 +202,19 @@ interface SiblingRule {
 const MIN_COLLECT_LENGTH = 4;
 
 /**
+ * Per-walk traversal state for {@link SecretScrubber.scrubObject}.
+ *
+ * Created fresh for every call — a scrubber instance is long-lived and its
+ * inputs may be mutated between calls, so nothing here may outlive one walk.
+ */
+interface ScrubTraversalState {
+  /** Nodes on the current path; membership means a genuine cycle. */
+  readonly ancestors: WeakSet<object>;
+  /** Already-scrubbed results per node, keyed by the path scope that produced them. */
+  readonly memo: WeakMap<object, Map<string, unknown>>;
+}
+
+/**
  * Secret Scrubber class for detecting and redacting sensitive information.
  *
  * Usage:
@@ -229,6 +247,19 @@ export class SecretScrubber {
   private readonly siblingRules: readonly SiblingRule[];
 
   /**
+   * How many trailing segments of a node's own path can still affect its subtree.
+   *
+   * `sensitivePaths` are matched as suffixes, so the deepest a rule can reach
+   * from a node is the node's path plus one more key — meaning only the last
+   * `longestRule - 1` segments above it can complete a rule. Everything further
+   * up is irrelevant to the node's result. With no path rules configured this is
+   * `0`: the path cannot influence anything, and results depend on the node alone.
+   *
+   * This is what makes the per-walk memo in `scrubObjectRecursive` sound.
+   */
+  private readonly pathScopeSegments: number;
+
+  /**
    * Create a new SecretScrubber.
    * @param options - {@link SecretScrubberOptions}
    */
@@ -237,6 +268,7 @@ export class SecretScrubber {
     this.patterns = compileKeyPatterns(this.additionalKeys);
     this.dropKeys = new Set((options.dropKeys ?? []).map((k) => k.toLowerCase()));
     this.sensitivePaths = (options.sensitivePaths ?? []).map((p) => p.toLowerCase());
+    this.pathScopeSegments = Math.max(0, ...this.sensitivePaths.map((p) => p.split(".").length - 1));
     this.siblingRules = (options.maskWhenSibling ?? []).map((r) => ({
       sibling: r.sibling,
       equals: r.equals ?? true,
@@ -353,7 +385,7 @@ export class SecretScrubber {
    * @returns A new object with sensitive values redacted
    */
   public scrubObject(obj: unknown, collector?: Set<string>): unknown {
-    return this.scrubObjectRecursive(obj, new WeakSet(), "", collector);
+    return this.scrubObjectRecursive(obj, { ancestors: new WeakSet(), memo: new WeakMap() }, "", collector);
   }
 
   /** Report a masked/dropped leaf value to the collector (strings only, min length). */
@@ -393,19 +425,42 @@ export class SecretScrubber {
   }
 
   /**
+   * The part of `path` that can still influence a node's subtree — its last
+   * {@link pathScopeSegments} segments, and `""` when no path rules exist.
+   * Two visits of the same node under the same scope must produce the same
+   * result, which is exactly the memo key used below.
+   */
+  private pathScope(path: string): string {
+    if (this.pathScopeSegments === 0) return "";
+    return path.split(".").slice(-this.pathScopeSegments).join(".");
+  }
+
+  /**
    * Internal recursive scrub with circular reference protection and key-path
    * tracking (array elements keep their parent's path, so path rules apply
    * inside arrays).
    *
-   * `ancestors` holds only the nodes on the CURRENT path (entries are removed
-   * on the way back up), so a genuine cycle is caught while a value merely
-   * referenced twice — a diamond, e.g. the same tag object on two resources,
-   * or the same `TomlDate` — is scrubbed normally instead of collapsing into
-   * `"[Circular]"`.
+   * Two structures do the work:
+   *
+   * - `ancestors` holds only the nodes on the CURRENT path, so a genuine cycle
+   *   is caught while a value merely referenced twice — a diamond, e.g. the same
+   *   tag object on two resources — is not mistaken for one.
+   * - `memo` remembers each node's scrubbed result, keyed by node and
+   *   {@link pathScope}. Without it, a node reachable by K paths would be
+   *   recomputed K times and a chain of shared references would cost time
+   *   exponential in its depth; with it every distinct (node, scope) pair is
+   *   computed once, so the walk is linear in the size of the graph.
+   *
+   * Repeated references therefore share one result object. That is safe here —
+   * results are serialized, never mutated — and it is what keeps the walk
+   * linear. One deliberate imprecision: a node first reached from inside a
+   * cycle records the `"[Circular]"` marker its own walk produced, and reuses
+   * it if reached again from outside that cycle. The marker only ever removes
+   * information, so this errs towards less exposure, never more.
    */
   private scrubObjectRecursive(
     obj: unknown,
-    ancestors: WeakSet<object>,
+    state: ScrubTraversalState,
     path: string,
     collector: Set<string> | undefined,
   ): unknown {
@@ -425,26 +480,41 @@ export class SecretScrubber {
     }
 
     // Circular reference protection — prevent stack overflow
-    if (ancestors.has(obj)) {
+    if (state.ancestors.has(obj)) {
       return "[Circular]";
     }
-    ancestors.add(obj);
-    try {
-      return this.scrubObjectNode(obj, ancestors, path, collector);
-    } finally {
-      ancestors.delete(obj);
+
+    const scope = this.pathScope(path);
+    const byScope = state.memo.get(obj);
+    if (byScope?.has(scope) === true) {
+      return byScope.get(scope);
     }
+
+    state.ancestors.add(obj);
+    let result: unknown;
+    try {
+      result = this.scrubObjectNode(obj, state, path, collector);
+    } finally {
+      state.ancestors.delete(obj);
+    }
+
+    if (byScope === undefined) {
+      state.memo.set(obj, new Map([[scope, result]]));
+    } else {
+      byScope.set(scope, result);
+    }
+    return result;
   }
 
   /** Scrub one already-cycle-checked array/object node. See {@link scrubObjectRecursive}. */
   private scrubObjectNode(
     obj: object,
-    ancestors: WeakSet<object>,
+    state: ScrubTraversalState,
     path: string,
     collector: Set<string> | undefined,
   ): unknown {
     if (Array.isArray(obj)) {
-      return obj.map((item) => this.scrubObjectRecursive(item, ancestors, path, collector));
+      return obj.map((item) => this.scrubObjectRecursive(item, state, path, collector));
     }
 
     const redacted: Record<string, unknown> = {};
@@ -484,7 +554,7 @@ export class SecretScrubber {
         this.collect(value, collector);
         redacted[key] = REDACTED_VALUE;
       } else if (typeof value === "object") {
-        redacted[key] = this.scrubObjectRecursive(value, ancestors, childPath, collector);
+        redacted[key] = this.scrubObjectRecursive(value, state, childPath, collector);
       } else if (typeof value === "string") {
         redacted[key] = this.scrub(value);
       } else {
