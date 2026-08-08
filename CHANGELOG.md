@@ -33,6 +33,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `min`/`mins`/`minutes`, `hr`/`hrs`/`hours`, `day`/`days`, `week`/`weeks`, `msec(s)`/`millisecond(s)` —
   alongside the short forms `ms`/`s`/`m`/`h`/`d`/`w`. So `"1min"` and `"2hrs"` parse, not just `"1m"`
   and `"2h"`. `formatDuration` still emits the canonical short units.
+- **TOML is scrubbed AS AN OBJECT** (`scrubTomlContent`, wired into `scrubByMimeType`): content whose
+  mimeType contains `toml` is now parsed, run through `scrubObject` and re-serialized, exactly like the
+  existing JSON branch. Text redaction cannot express the declarative rules — `dropKeys`,
+  `sensitivePaths` and `maskWhenSibling` all need real structure — and its `key=value` pattern
+  simultaneously mangles allowlisted flags (`is_secret = true` became a masked string, which alone is
+  enough to stop a config document from parsing). Unparseable content falls back to the text scrub, so
+  a mislabelled payload is still redacted. Consumers that hand structured content to a registry should
+  declare its real mimeType: `text/plain` silently downgrades it to regex redaction.
+- **`optionalBooleanFromEnv` is exported** from the package root and the `utils` barrel, alongside the
+  existing `booleanFromEnv`. Consumers layering their own switch over a framework one need the
+  tri-state (`undefined` when unset) to tell "not configured" from an explicit `false`.
+
+### Fixed (scrubbing engine)
+
+- **`scrubObject` no longer destroys `Date` values**: a `Date` was walked as a plain record and came
+  back as `{}`. Value objects that serialize to a primitive now pass through untouched — which is also
+  what keeps `TomlDate` intact on the new TOML path.
+- **Shared references are no longer reported as `"[Circular]"`**: the cycle guard marked every visited
+  node for the whole traversal, so a diamond — the same object reachable by two paths, e.g. one tag
+  object on two resources, or one `Date` in two fields — collapsed into the string `"[Circular]"` on
+  its second occurrence instead of being scrubbed. The guard now tracks only the current path.
+  Genuine cycles are still detected.
+- **`allowKeys` is honored in the flat-text `key=value` pass**: the pattern matches the sensitive
+  *fragment*, so `secret` inside `is_secret` triggered redaction even when `is_secret` was explicitly
+  allowlisted. The pass now widens the match to the surrounding compound key before consulting the
+  allowlist (a linear character scan — the pattern itself is unchanged, so no added backtracking
+  cost). Exact-match semantics still hold: allowlisting `secret` does not exempt `webhook_secret`.
+  The URL-query-parameter pass still matches on the fragment alone and may over-redact there.
 
 ### Changed
 
@@ -555,12 +583,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`LogEntryBuilder` / `createLogEntry` removed**: the deprecated fluent log-entry builder
   (superseded by `buildLogEntry()`) had no remaining callers.
 - **Narrowed top-level package exports**: several internal/advanced symbols are no longer re-exported
-  from the main package entrypoint — `isFullOAuthProvider`, `authInfoExpiry`, `ServerState`,
+  from the main package entrypoint — `isFullOAuthProvider`, `ServerState`,
   `TaskToolRegistry`/`globalTaskToolRegistry`, `parseDuration`/`formatDuration`, and most of the config
   barrel (`getConfigSource`, `CONFIG_FILE_ENV_VAR`, `DISCOVERY_FILENAMES`, `frameworkEnvSchema`,
-  `validateConfigConstraints`, `booleanFromEnv`, `commaSeparatedList`, `optionalCommaSeparatedList`,
+  `validateConfigConstraints`, `commaSeparatedList`, `optionalCommaSeparatedList`,
   `ConfigSource`, `ConfigFileFormat`). Most remain reachable via their internal module paths — this
   only narrows what the top-level package surface promises to keep stable.
+  `authInfoExpiry` and `booleanFromEnv` were listed here in an earlier draft but were never actually
+  removed — both are still exported from the package root.
 - **`DynamicResource*` type exports narrowed**: only `DynamicResourceEntry` remains at the top level;
   `DynamicResourceRegistryOptions`, `RegisterDynamicResourceOptions`, `RegisterDynamicResourceResult`,
   `ReadDynamicResourceResult`, `DefineDynamicResourceTemplateOptions` are no longer re-exported from

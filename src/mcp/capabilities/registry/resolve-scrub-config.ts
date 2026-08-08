@@ -27,6 +27,16 @@ import type { ScrubToolResultsConfig } from "./result-scrub.js";
  * meant to be re-invoked mid-session; scrub rules stay immutable for the process
  * lifetime once passed to `createServer()` / `configureDynamicResourceRegistry()`.
  *
+ * **Opt-in.** Nothing in the framework calls this for you: a consumer that passes its
+ * own config straight to `createServer({ scrubToolResults })` never sees `MCP_SCRUB_*`
+ * take effect. Route the config through here to make those variables live.
+ *
+ * **Caveat when re-enabling.** `base === false` carries no rules, so
+ * `MCP_SCRUB_ENABLED=true` on top of it yields the generic heuristics ONLY — the
+ * consumer's `dropKeys` / `sensitivePaths` / `maskWhenSibling` are gone, because a
+ * disabled base never supplied them. Consumers whose domain rules must survive every
+ * combination of switches should compose explicitly rather than rely on this override.
+ *
  * @param base - The consumer's programmatic scrub config (e.g. domain `dropKeys` /
  *   `sensitivePaths` rules). Omit for env-only configuration.
  */

@@ -186,7 +186,7 @@ await server.start();
 | `defineResourceTemplate()` | URI-template Resource with parameters | `globalResourceRegistry` |
 | `definePrompt()` | MCP Prompt with optional arguments | `globalPromptRegistry` |
 | `defineApp()` | MCP App (Tool + Resource composition) | `globalToolRegistry` + `globalResourceRegistry` |
-| `defineTask()` | Async background task tool (experimental) | `globalTaskToolRegistry` |
+| `defineTask()` | Async background task tool (experimental) | the task-tool registry (internal) |
 
 ## Response Helpers
 
@@ -359,6 +359,11 @@ createServer({
   stages instead: ephemeral resources are scrubbed on register in the `DynamicResourceRegistry`
   (same `scrub` option shape on `configureDynamicResourceRegistry`); static resources/templates
   are scrubbed on read (same scrubber as `scrubToolResults`, wired automatically).
+- **Declare the real mimeType for structured content.** Registry content whose mimeType contains
+  `json` or `toml` is parsed, scrubbed as an object and re-serialized, so the declarative rules
+  above apply with full structural fidelity. Everything else — including structured data labelled
+  `text/plain` — gets regex redaction only, which cannot drop a nested field and which
+  over-redacts allowlisted keys.
 - `resolveScrubConfig(base?)` layers the `MCP_SCRUB_ENABLED` / `MCP_SCRUB_ADDITIONAL_KEYS` /
   `MCP_SCRUB_ALLOW_KEYS` env vars onto a programmatic `base` (env wins on the master switch;
   key lists are unioned) — pass its result to both `scrubToolResults` and
@@ -368,6 +373,10 @@ createServer({
   createServer({ scrubToolResults: scrub });
   configureDynamicResourceRegistry({ scrub });
   ```
+  It is **opt-in**: a consumer that passes its own config straight to `createServer()` never sees
+  `MCP_SCRUB_*` take effect. Note also that `base: false` carries no rules, so re-enabling via
+  `MCP_SCRUB_ENABLED=true` yields the generic heuristics without your domain rules — compose
+  explicitly if yours must survive every switch combination.
 
 ## Authentication
 
