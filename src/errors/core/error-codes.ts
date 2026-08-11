@@ -68,27 +68,3 @@ export const ErrorCodes = {
 } as const;
 
 export type ErrorCodeType = (typeof ErrorCodes)[keyof typeof ErrorCodes];
-
-// ============================================================================
-// Error Categories
-// ============================================================================
-
-/**
- * Error categories for grouping and handling.
- */
-export const ErrorCategory = {
-  /** API communication errors */
-  API: "api",
-  /** MCP protocol errors */
-  MCP: "mcp",
-  /** Input validation errors */
-  VALIDATION: "validation",
-  /** Configuration errors */
-  CONFIGURATION: "configuration",
-  /** Operation lifecycle errors */
-  OPERATION: "operation",
-  /** Internal system errors */
-  SYSTEM: "system",
-} as const;
-
-export type ErrorCategoryType = (typeof ErrorCategory)[keyof typeof ErrorCategory];

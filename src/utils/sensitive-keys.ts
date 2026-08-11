@@ -79,12 +79,24 @@ export const SENSITIVE_KEY_BLOCKLIST = [
 /** Separator pattern for splitting compound keys into segments */
 const SEGMENT_SEPARATORS = /[_\-.\s]+/;
 
-/** Pre-compiled blocklist patterns for word-boundary matching */
+/**
+ * Pre-compiled blocklist patterns for word-boundary matching.
+ * Built from the internal SENSITIVE_KEY_BLOCKLIST, each word regex-escaped — never user input.
+ */
 const BLOCKLIST_PATTERNS = SENSITIVE_KEY_BLOCKLIST.map(
-  (word) => new RegExp(`(?:^|[_\\-.\\s])${escapeRegex(word.toLowerCase())}(?:$|[_\\-.\\s])`, "i"),
+  (word) =>
+    // eslint-disable-next-line security/detect-non-literal-regexp -- see note above; escaped internal constant.
+    new RegExp(`(?:^|[_\\-.\\s])${escapeRegex(word.toLowerCase())}(?:$|[_\\-.\\s])`, "i"),
 );
 
-function escapeRegex(str: string): string {
+/**
+ * Escape a string for literal use inside a RegExp alternation.
+ *
+ * Exported for pattern compilers that embed consumer-provided key names
+ * (e.g. the `SecretScrubber`'s `additionalKeys`) — escaping guarantees the
+ * fragments stay literal alternations with no regex semantics.
+ */
+export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -134,8 +146,8 @@ export function isSensitiveKey(key: string): boolean {
       const isSensitive = SENSITIVE_KEYS.some((sk) => segment.includes(sk.toLowerCase()));
       if (!isSensitive) return false;
 
-      const isBlocked = SENSITIVE_KEY_BLOCKLIST.some((blocked) => segment === blocked.toLowerCase());
-      return isSensitive && !isBlocked;
+      // Sensitive here (early-returned otherwise) — keep only if not on the exact-match blocklist.
+      return !SENSITIVE_KEY_BLOCKLIST.some((blocked) => segment === blocked.toLowerCase());
     });
   }
 

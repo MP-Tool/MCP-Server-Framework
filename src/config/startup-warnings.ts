@@ -52,14 +52,3 @@ export function flushStartupWarnings(logFn: (message: string) => void): void {
   }
   warnings.length = 0;
 }
-
-/**
- * Reset the warning buffer.
- *
- * Intended for testing only.
- *
- * @internal
- */
-export function resetStartupWarnings(): void {
-  warnings.length = 0;
-}

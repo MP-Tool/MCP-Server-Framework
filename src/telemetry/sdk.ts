@@ -16,7 +16,7 @@
  * **Framework-managed** (with defaults):
  * - `OTEL_ENABLED` — Master toggle (default: false)
  * - `OTEL_SERVICE_NAME` — Service name (default: 'mcp-server')
- * - `OTEL_METRICS_EXPORTER` — Metric exporters (default: 'otlp,prometheus')
+ * - `OTEL_METRICS_EXPORTER` — Metric exporters (default: 'prometheus')
  * - `OTEL_LOGS_EXPORTER` — Log exporter (default: 'none' — framework has own logger)
  *
  * **Standard OTEL (pass-through, no defaults)**:
@@ -438,6 +438,7 @@ export async function shutdownTelemetry(): Promise<void> {
  * Check if the SDK is currently initialized.
  *
  * @returns true if SDK is initialized
+ * @internal
  */
 export function isSdkInitialized(): boolean {
   return sdk !== null;
@@ -586,11 +587,8 @@ function buildMetricReaders(config: TelemetryConfig, otel: OtelModules): MetricR
         prometheusExporter = new otel.PrometheusExporter({
           preventServerStart: true,
         });
-        // @type-variance — PrometheusExporter and MetricReader each declare
-        // _shutdown as a private property, causing TypeScript structural
-        // incompatibility despite identical runtime shape (version skew between
-        // @opentelemetry/exporter-prometheus and @opentelemetry/sdk-metrics).
-        readers.push(prometheusExporter as unknown as MetricReader);
+        // PrometheusExporter extends MetricReader — assignable directly.
+        readers.push(prometheusExporter);
         logger.debug(SdkLogMessages.PROMETHEUS_EXPORTER_ADDED);
         break;
       }

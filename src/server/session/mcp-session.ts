@@ -18,6 +18,7 @@ import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
   SetLevelRequestSchema,
+  type Icon,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import type { TaskStore, TaskMessageQueue } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
@@ -29,6 +30,7 @@ import type {
   ResourceStaticDefinition,
   ResourceTemplateDefinition,
   PromptDefinition,
+  AuditToolIoLevel,
 } from "../../mcp/types/index.js";
 import { setupPingHandler } from "../../mcp/handlers/index.js";
 import {
@@ -39,7 +41,8 @@ import {
 } from "../../mcp/capabilities/registry/index.js";
 import { hasAllRequiredScopes } from "../../mcp/capabilities/registry/scope-enforcement.js";
 import { logger as frameworkLogger } from "../../logger/index.js";
-import type { LogNotificationHandler, McpLogLevel } from "../../logger/index.js";
+import type { SecretScrubber } from "../../logger/index.js";
+import type { LogNotificationHandler, McpLogLevel } from "../../logger/core/index.js";
 import { MCP_LEVEL_ORDER } from "../../logger/core/constants.js";
 
 // ============================================================================
@@ -47,19 +50,30 @@ import { MCP_LEVEL_ORDER } from "../../logger/core/constants.js";
 // ============================================================================
 
 /**
- * Options for creating an McpSession instance.
+ * Server identity, shared by every option layer (`createServer()` → builder →
+ * session factory → session) instead of re-declaring the same four fields.
  */
-export interface McpSessionOptions {
-  /** Server name */
-  name: string;
+export interface ServerIdentity {
+  /** Server name displayed to MCP clients */
+  readonly name: string;
   /** Server version */
-  version: string;
-  /** Pre-built SDK capabilities (from builder) */
-  capabilities: Record<string, unknown>;
+  readonly version: string;
+  /** Human-friendly display name, distinct from `name` */
+  readonly title?: string | undefined;
+  /** Icons representing this server */
+  readonly icons?: Icon[] | undefined;
+}
+
+/**
+ * Per-session runtime settings, threaded unchanged from the server build into
+ * each session — shared by `SessionFactoryConfig` and `McpSessionOptions` so
+ * the two layers cannot drift apart.
+ */
+export interface SessionRuntimeOptions {
   /** Protocol handler hooks */
-  handlers?: HandlersConfig | undefined;
+  readonly handlers?: HandlersConfig | undefined;
   /** Whether this session operates in stateless mode */
-  stateless?: boolean | undefined;
+  readonly stateless?: boolean | undefined;
   /**
    * Task store for experimental task support.
    *
@@ -68,7 +82,7 @@ export interface McpSessionOptions {
    *
    * @experimental MCP Tasks is an experimental SDK feature
    */
-  taskStore?: TaskStore | undefined;
+  readonly taskStore?: TaskStore | undefined;
   /**
    * Task message queue for experimental task support.
    *
@@ -77,7 +91,35 @@ export interface McpSessionOptions {
    *
    * @experimental MCP Tasks is an experimental SDK feature
    */
-  taskMessageQueue?: TaskMessageQueue | undefined;
+  readonly taskMessageQueue?: TaskMessageQueue | undefined;
+  /**
+   * Central tool-result secret scrubber (shared per server build). Applied to
+   * every tool and task-tool result bound on this session. `undefined`
+   * disables result scrubbing.
+   */
+  readonly resultScrubber?: SecretScrubber | undefined;
+
+  /**
+   * Scopes granted to anonymous (unauthenticated) requests. When set, anonymous
+   * traffic is subject to the same scope RBAC as authenticated traffic: a tool is
+   * visible/callable only if its `requiredScopes ⊆ anonymousScopes`. `undefined`
+   * (default) leaves anonymous access unrestricted. See `ServerOptions.anonymousScopes`.
+   */
+  readonly anonymousScopes?: readonly string[] | undefined;
+
+  /**
+   * How much request/response detail the per-call `tool.call` audit records
+   * (always secret-scrubbed). Defaults to `"summary"` when omitted.
+   */
+  readonly auditToolIo?: AuditToolIoLevel | undefined;
+}
+
+/**
+ * Options for creating an McpSession instance.
+ */
+export interface McpSessionOptions extends ServerIdentity, SessionRuntimeOptions {
+  /** Pre-built SDK capabilities (computed once by the session factory) */
+  readonly capabilities: Record<string, unknown>;
 }
 
 /**
@@ -170,7 +212,12 @@ export class McpSession implements LogNotificationHandler {
 
     // Create the underlying SDK server with pre-built capabilities
     this.sdk = new McpServer(
-      { name: options.name, version: options.version },
+      {
+        name: options.name,
+        version: options.version,
+        ...(options.title && { title: options.title }),
+        ...(options.icons && { icons: options.icons }),
+      },
       {
         capabilities: options.capabilities,
         ...(options.taskStore && { taskStore: options.taskStore }),
@@ -238,8 +285,10 @@ export class McpSession implements LogNotificationHandler {
       await this.sdk.close();
       // No logging here — sdk.close() triggers onclose/onerror callbacks
       // which are the canonical logging source (setupLifecycleCallbacks)
-    } catch {
-      // Swallowed — onerror callback already logs at ERROR level
+    } catch (err) {
+      // sdk.close() normally fires onerror before throwing, which logs at ERROR level.
+      // If it throws before onerror fires we'd lose the error silently — log here as fallback.
+      this.logger.error("McpSession dispose error during sdk.close()", err);
     } finally {
       // Release callback references to allow GC of captured closures
       this.onCloseCallback = undefined;
@@ -260,6 +309,9 @@ export class McpSession implements LogNotificationHandler {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
       logNotificationHandler: this,
+      resultScrubber: this.options.resultScrubber,
+      anonymousScopes: this.options.anonymousScopes,
+      auditToolIo: this.options.auditToolIo,
     });
   }
 
@@ -273,6 +325,7 @@ export class McpSession implements LogNotificationHandler {
     TaskToolRegistry.bindToSdk(this.sdk, taskTools, {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
+      resultScrubber: this.options.resultScrubber,
     });
   }
 
@@ -286,6 +339,7 @@ export class McpSession implements LogNotificationHandler {
   ): void {
     ResourceRegistry.bindToSdk(this.sdk, resources, templates, {
       logger: this.logger,
+      resultScrubber: this.options.resultScrubber,
     });
   }
 
@@ -427,22 +481,20 @@ export class McpSession implements LogNotificationHandler {
     prompts: readonly PromptDefinition[];
   }): void {
     // Build scope lookup maps
-    const toolScopes = new Map<string, readonly string[]>();
-    for (const t of options.tools) {
-      if (t.requiredScopes?.length) toolScopes.set(t.name, t.requiredScopes);
-    }
-    const resourceScopes = new Map<string, readonly string[]>();
-    for (const r of options.resources) {
-      if (r.requiredScopes?.length) resourceScopes.set(r.uri, r.requiredScopes);
-    }
-    const templateScopes = new Map<string, readonly string[]>();
-    for (const t of options.templates) {
-      if (t.requiredScopes?.length) templateScopes.set(t.name, t.requiredScopes);
-    }
-    const promptScopes = new Map<string, readonly string[]>();
-    for (const p of options.prompts) {
-      if (p.requiredScopes?.length) promptScopes.set(p.name, p.requiredScopes);
-    }
+    const scopeMapOf = <T extends { requiredScopes?: readonly string[] | undefined }>(
+      items: readonly T[],
+      keyOf: (item: T) => string,
+    ): Map<string, readonly string[]> => {
+      const map = new Map<string, readonly string[]>();
+      for (const item of items) {
+        if (item.requiredScopes?.length) map.set(keyOf(item), item.requiredScopes);
+      }
+      return map;
+    };
+    const toolScopes = scopeMapOf(options.tools, (t) => t.name);
+    const resourceScopes = scopeMapOf(options.resources, (r) => r.uri);
+    const templateScopes = scopeMapOf(options.templates, (t) => t.name);
+    const promptScopes = scopeMapOf(options.prompts, (p) => p.name);
 
     // Skip if nothing has scopes
     const totalScoped = toolScopes.size + resourceScopes.size + templateScopes.size + promptScopes.size;
@@ -451,15 +503,23 @@ export class McpSession implements LogNotificationHandler {
       return;
     }
 
-    // @sdk-constraint — _requestHandlers is private on Protocol but accessible at runtime.
-    // We wrap the SDK's original list handlers to add scope-based filtering.
-    // Guard: if the SDK changes its internal structure, fail gracefully instead of crashing.
+    // @sdk-constraint — Scope-based list *visibility* filtering relies on the private
+    // `_requestHandlers` Map on the SDK's Protocol class. This is NOT a public SDK API and may
+    // break on an SDK version bump. If the field is absent or renamed, list filtering silently
+    // degrades to a no-op: scoped tools/resources/prompts become VISIBLE in the `*/list`
+    // responses regardless of token scopes. This is a **visibility-only** degradation — call-time
+    // scope enforcement is independent (`enforceScopeOrThrow` on every tool call, resource read,
+    // and prompt get), so an unauthorized capability still cannot be invoked.
+    //
+    // Long-term fix: request a public list-handler override API from the SDK maintainers.
     const rawHandlers = (this.sdk.server as unknown as Record<string, unknown>)._requestHandlers;
 
     if (!rawHandlers || !(rawHandlers instanceof Map)) {
       this.logger.error(
-        "Cannot install scope-filtered list handlers: SDK _requestHandlers is %s. " +
-          "This may indicate an incompatible SDK version — scope filtering is disabled.",
+        "Scope-filtered list VISIBILITY disabled: SDK _requestHandlers is %s — scoped " +
+          "tools/resources/prompts will be LISTED regardless of token scopes (call-time scope " +
+          "enforcement is unaffected, so they still cannot be invoked). May indicate an " +
+          "incompatible SDK version.",
         rawHandlers === undefined ? "undefined" : typeof rawHandlers,
       );
       return;
@@ -467,90 +527,43 @@ export class McpSession implements LogNotificationHandler {
 
     const handlers = rawHandlers as Map<string, (...args: unknown[]) => Promise<Record<string, unknown>>>;
 
+    // Anonymous requests (no authInfo) fall back to the granted anonymous scope set,
+    // so the same visibility rules gate them; `undefined` → `[]` (nothing scoped visible).
+    const anonymousScopes = this.options.anonymousScopes;
     const getTokenScopes = (extra: Record<string, unknown>): readonly string[] => {
       const authInfo = extra.authInfo as { scopes?: readonly string[] } | undefined;
-      return authInfo?.scopes ?? [];
+      return authInfo?.scopes ?? anonymousScopes ?? [];
     };
 
-    // Override tools/list
-    if (toolScopes.size > 0) {
-      const original = handlers.get("tools/list");
-      if (original) {
-        handlers.set("tools/list", async (request: unknown, extra: unknown) => {
-          const result = await original(request, extra);
-          const tokenScopes = getTokenScopes(extra as Record<string, unknown>);
-          const tools = (result.tools ?? []) as Array<{ name: string }>;
-          return {
-            ...result,
-            tools: tools.filter((tool) => {
-              const required = toolScopes.get(tool.name);
-              return !required || hasAllRequiredScopes(required, tokenScopes);
-            }),
-          };
-        });
-      }
-    }
+    // One generic wrapper for all four list methods — they differ only in the
+    // result key, the identifying item field, and the scope lookup map.
+    const installScopeFilter = (
+      method: string,
+      resultKey: string,
+      itemKey: string,
+      scopeMap: ReadonlyMap<string, readonly string[]>,
+    ): void => {
+      if (scopeMap.size === 0) return;
+      const original = handlers.get(method);
+      if (!original) return;
+      handlers.set(method, async (request: unknown, extra: unknown) => {
+        const result = await original(request, extra);
+        const tokenScopes = getTokenScopes(extra as Record<string, unknown>);
+        const items = (result[resultKey] ?? []) as Array<Record<string, string>>;
+        return {
+          ...result,
+          [resultKey]: items.filter((item) => {
+            const required = scopeMap.get(item[itemKey] ?? "");
+            return !required || hasAllRequiredScopes(required, tokenScopes);
+          }),
+        };
+      });
+    };
 
-    // Override resources/list (filter static resources by URI)
-    if (resourceScopes.size > 0) {
-      const original = handlers.get("resources/list");
-      if (original) {
-        handlers.set("resources/list", async (request: unknown, extra: unknown) => {
-          const result = await original(request, extra);
-          const tokenScopes = getTokenScopes(extra as Record<string, unknown>);
-          const resources = (result.resources ?? []) as Array<{
-            uri: string;
-          }>;
-          return {
-            ...result,
-            resources: resources.filter((resource) => {
-              const required = resourceScopes.get(resource.uri);
-              return !required || hasAllRequiredScopes(required, tokenScopes);
-            }),
-          };
-        });
-      }
-    }
-
-    // Override resources/templates/list (filter by template name)
-    if (templateScopes.size > 0) {
-      const original = handlers.get("resources/templates/list");
-      if (original) {
-        handlers.set("resources/templates/list", async (request: unknown, extra: unknown) => {
-          const result = await original(request, extra);
-          const tokenScopes = getTokenScopes(extra as Record<string, unknown>);
-          const templates = (result.resourceTemplates ?? []) as Array<{
-            name: string;
-          }>;
-          return {
-            ...result,
-            resourceTemplates: templates.filter((template) => {
-              const required = templateScopes.get(template.name);
-              return !required || hasAllRequiredScopes(required, tokenScopes);
-            }),
-          };
-        });
-      }
-    }
-
-    // Override prompts/list
-    if (promptScopes.size > 0) {
-      const original = handlers.get("prompts/list");
-      if (original) {
-        handlers.set("prompts/list", async (request: unknown, extra: unknown) => {
-          const result = await original(request, extra);
-          const tokenScopes = getTokenScopes(extra as Record<string, unknown>);
-          const prompts = (result.prompts ?? []) as Array<{ name: string }>;
-          return {
-            ...result,
-            prompts: prompts.filter((prompt) => {
-              const required = promptScopes.get(prompt.name);
-              return !required || hasAllRequiredScopes(required, tokenScopes);
-            }),
-          };
-        });
-      }
-    }
+    installScopeFilter("tools/list", "tools", "name", toolScopes);
+    installScopeFilter("resources/list", "resources", "uri", resourceScopes);
+    installScopeFilter("resources/templates/list", "resourceTemplates", "name", templateScopes);
+    installScopeFilter("prompts/list", "prompts", "name", promptScopes);
 
     this.logger.debug(
       LogMessages.SCOPE_FILTER_INSTALLED,

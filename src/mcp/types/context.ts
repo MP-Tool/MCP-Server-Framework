@@ -15,7 +15,7 @@
  */
 
 import type { ServerNotification } from "@modelcontextprotocol/sdk/types.js";
-import type { RequestTaskStore } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { RequestTaskStore, RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type {
   CreateMessageRequest,
@@ -26,6 +26,18 @@ import type {
   ElicitRequestURLParams,
   ElicitResult,
 } from "@modelcontextprotocol/sdk/types.js";
+
+// ============================================================================
+// Audit Types
+// ============================================================================
+
+/**
+ * How much request/response detail the per-call `tool.call` audit records:
+ * - `"off"` — no request args, no result body (still records outcome + affected resources).
+ * - `"summary"` — scrubbed request args + a result summary (`isError` / content counts).
+ * - `"full"` — additionally the scrubbed, size-bounded result `structuredContent`.
+ */
+export type AuditToolIoLevel = "off" | "summary" | "full";
 
 // ============================================================================
 // Progress Reporting Types (MCP Specification)
@@ -149,6 +161,27 @@ export interface ToolContext {
    * @returns true if notification was sent successfully, false if rate-limited
    */
   readonly reportProgress?: ProgressReporter | undefined;
+
+  /**
+   * Attach domain detail to this call's `tool.call` audit entry.
+   *
+   * The framework already records who / which tool / outcome / duration and (per the
+   * `auditToolIo` level) the scrubbed request args and a result summary. Use this to add
+   * what the generic layer cannot know — most importantly **which resources were affected**
+   * — so the audit trail reconstructs *what was done*.
+   *
+   * Merged into the event's `detail`: **array-valued keys are appended** (so calling it
+   * repeatedly with `{ affected: [...] }` accumulates), other keys replace. The merged
+   * detail is secret-scrubbed before it is written, so ids/names stay readable while any
+   * sensitive values are masked.
+   *
+   * @example
+   * ```typescript
+   * context.recordAuditDetail({ affected: [{ type: 'Stack', id: 'web-prod' }] });
+   * context.recordAuditDetail({ effect: { updateId: '123', status: 'Complete' } });
+   * ```
+   */
+  readonly recordAuditDetail: (detail: Record<string, unknown>) => void;
 
   /**
    * AbortSignal that triggers when the request is cancelled.
@@ -301,6 +334,7 @@ export interface ToolContext {
    */
   readonly elicitInput?: (
     params: ElicitRequestFormParams | ElicitRequestURLParams,
+    options?: RequestOptions,
   ) => Promise<ElicitResult> | undefined;
 
   /**

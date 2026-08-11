@@ -163,6 +163,14 @@ export type AuthenticatedExtra = Record<string, unknown>;
  * ```
  */
 export interface AuthOptions {
+  /**
+   * Master switch for authentication. When `false`, the framework mounts neither the auth
+   * middleware nor the OAuth routes — the server runs open. Treated as `true` when omitted.
+   * Lets a consumer pass a fully-resolved auth config but keep it inert, and guards against
+   * accidentally serving authenticated routes when auth was meant to be off.
+   */
+  readonly enabled?: boolean;
+
   /** Authentication provider (full OAuth or token verifier) */
   readonly provider: AuthProvider;
 
@@ -194,13 +202,9 @@ export interface AuthOptions {
    */
   readonly issuerUrl?: URL;
 
-  /**
-   * Protected Resource Metadata URL (RFC 9728).
-   *
-   * Included in `WWW-Authenticate` headers for 401 responses,
-   * allowing clients to discover the authorization server.
-   */
-  readonly resourceMetadataUrl?: string;
+  // The RFC 9728 Protected Resource Metadata URL is not a consumer option: the server
+  // derives it from `issuerUrl.origin` (`{origin}/.well-known/oauth-protected-resource`),
+  // which in turn comes from the public base URL (`MCP_BASE_URL`).
 
   /**
    * Custom header name for token extraction.
@@ -237,4 +241,12 @@ export interface AuthOptions {
    * Only effective when a full OAuth provider is configured.
    */
   readonly callbackHandler?: RequestHandler;
+
+  /**
+   * Express handler for the local username/password login route (`POST /authorize/local`).
+   *
+   * Provided by {@link createOAuthProvider} (as `localLoginHandler`) when a `localLogin`
+   * verifier is configured. Mounted only alongside a full OAuth provider.
+   */
+  readonly localLoginHandler?: RequestHandler;
 }

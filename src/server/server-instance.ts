@@ -24,13 +24,17 @@ import { startStdioTransport } from "./transport/stdio-transport.js";
 import type { TransportHandle } from "./transport/types.js";
 import { SessionManagerImpl } from "./session/index.js";
 import type { SessionManager } from "./session/index.js";
-import { Logger, logger as frameworkLogger, configureLogger } from "../logger/index.js";
+import { Logger, logger as frameworkLogger } from "../logger/index.js";
+import { configureLoggerFromEnv } from "./logger-config.js";
 import { initializeTelemetry, shutdownTelemetry } from "../telemetry/index.js";
 import { DEFAULT_SHUTDOWN_CONFIG } from "./lifecycle.js";
 import type { McpSessionFactory } from "./session/session-factory.js";
-import { applyConfigOverrides, getFrameworkConfig, flushStartupWarnings, setConfigLogger } from "../config/index.js";
+import { getFrameworkConfig } from "../config/index.js";
+import { applyConfigOverrides, setConfigLogger } from "../config/config-cache.js";
+import { flushStartupWarnings } from "../config/startup-warnings.js";
 import { isFullOAuthProvider } from "./auth/types.js";
 import { getDynamicResourceRegistry } from "../mcp/capabilities/resources/index.js";
+import { initializeAuditLog, resolveAuditFilePath } from "../logger/audit/index.js";
 
 // ============================================================================
 // Constants
@@ -74,6 +78,7 @@ const RuntimeLogMessages = {
   AUTH_NO_TRUST_PROXY:
     "Auth is enabled without trust proxy — client IP detection may be inaccurate behind a reverse proxy",
   AUTH_PROVIDER_DISPOSED: "Auth provider disposed",
+  EVENT_STORE_DISPOSED: "Event store disposed",
   // Shutdown cleanup
   SHUTDOWN_STEP_FAILED: "Shutdown step %s failed: %s",
   // Process error handlers
@@ -226,6 +231,18 @@ export class McpServerInstance implements ServerInstance {
       // Bridge config file values → logger (must run after config resolution)
       this.applyLoggerConfig();
 
+      // Eagerly open the audit-log stream — same reasoning as the file logger above:
+      // create it now (path visible in startup logs) instead of only after the first
+      // audited event, which reads as "audit logging isn't working" during a smoke test.
+      // The audit sink reads no config itself (logger block stays config-free) — resolve
+      // its destination and the shared LOG_* rotation limits here instead.
+      const auditConfig = getFrameworkConfig();
+      initializeAuditLog({
+        filePath: resolveAuditFilePath(auditConfig.LOG_DIR, auditConfig.LOG_AUDIT_FILE),
+        maxSizeBytes: auditConfig.LOG_MAX_FILE_SIZE,
+        maxFiles: auditConfig.LOG_MAX_FILES,
+      });
+
       // Inject logger into config module (breaks config→logger dependency)
       setConfigLogger(frameworkLogger.child({ component: "config" }));
 
@@ -244,8 +261,10 @@ export class McpServerInstance implements ServerInstance {
       this.sessionManager = this.createSessionManager();
       this.transportHandle = await this.startTransport(sessionFactory, this.sessionManager);
 
-      // Log stateless mode warning after transport is started
-      if (this.options.transport && isHttpTransport(this.options.transport) && this.options.transport.stateless) {
+      // Log stateless mode warning after transport is started. Resolved from config for the
+      // same reason as the handler selection above: reading `transport.stateless` alone would
+      // stay silent for an operator who enabled stateless via MCP_STATELESS or the config file.
+      if (this.options.transport && isHttpTransport(this.options.transport) && getFrameworkConfig().MCP_STATELESS) {
         logger.warn(RuntimeLogMessages.STATELESS_MODE);
 
         // Warn about ineffective config combinations
@@ -319,69 +338,49 @@ export class McpServerInstance implements ServerInstance {
 
     // Each cleanup step is individually guarded so that a failure in one
     // step does not prevent the remaining steps from running (error isolation).
+    const runShutdownStep = async (step: string, fn: () => Promise<void> | void): Promise<void> => {
+      try {
+        await fn();
+      } catch (error) {
+        logger.warn(
+          RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
+          step,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    };
 
-    try {
+    await runShutdownStep("sessions", async () => {
       if (this.sessionManager) {
         await this.sessionManager.closeAll();
         this.sessionManager.dispose();
       }
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "sessions",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
-      if (this.transportHandle) {
-        await this.transportHandle.shutdown();
-      }
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "transport",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
-      await this.disposeAuthProvider();
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "auth-provider",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
+    });
+    await runShutdownStep("transport", async () => {
+      await this.transportHandle?.shutdown();
+    });
+    await runShutdownStep("auth-provider", () => this.disposeAuthProvider());
+    await runShutdownStep("event-store", () => this.disposeEventStore());
+    await runShutdownStep("telemetry", async () => {
       if (this.options.telemetryEnabled) {
         await shutdownTelemetry();
       }
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "telemetry",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-
-    try {
-      await Logger.closeStreams();
-    } catch (error) {
-      logger.warn(
-        RuntimeLogMessages.SHUTDOWN_STEP_FAILED,
-        "logger",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    });
 
     this.transitionState("stopped");
 
     await this.invokeLifecycleHook("onStopped", () => this.options.lifecycle?.onStopped?.());
 
+    // Log the final "stopped" message before closing streams so it is flushed
+    // to file-based log targets (N1: previously closeStreams ran first).
     logger.info(RuntimeLogMessages.SERVER_STOPPED);
+
+    try {
+      await Logger.closeStreams();
+    } catch (error) {
+      // Streams already closed or failed — nothing more we can log reliably.
+      console.error("[server] Logger.closeStreams() failed:", error instanceof Error ? error.message : String(error));
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -444,20 +443,7 @@ export class McpServerInstance implements ServerInstance {
    * forwarding them to `configureLogger()`.
    */
   private applyLoggerConfig(): void {
-    const config = getFrameworkConfig();
-    configureLogger({
-      LOG_LEVEL: config.LOG_LEVEL,
-      LOG_FORMAT: config.LOG_FORMAT,
-      LOG_DIR: config.LOG_DIR,
-      LOG_MAX_FILE_SIZE: config.LOG_MAX_FILE_SIZE,
-      LOG_MAX_FILES: config.LOG_MAX_FILES,
-      LOG_RETENTION_DAYS: config.LOG_RETENTION_DAYS,
-      LOG_TIMESTAMP: config.LOG_TIMESTAMP,
-      LOG_COMPONENT: config.LOG_COMPONENT,
-      MCP_TRANSPORT: config.MCP_TRANSPORT,
-      SERVER_NAME: this.options.name,
-      SERVER_VERSION: this.options.version,
-    });
+    configureLoggerFromEnv({ name: this.options.name, version: this.options.version });
   }
 
   /**
@@ -509,17 +495,25 @@ export class McpServerInstance implements ServerInstance {
       const trustProxy = await resolveTrustProxy(resolvedConfig.MCP_TRUST_PROXY);
 
       const resolvedJsonResponse = resolvedConfig.MCP_JSON_RESPONSE;
+      // Resolved, not read straight off `transport` — `applyConfigOverrides()` already folded
+      // the programmatic value into the config chain, so reading it back here is what lets
+      // `MCP_STATELESS` / `[transport].stateless` take effect at all. Taking `transport.stateless`
+      // directly made those two settable but inert: the value was written into the overrides and
+      // never read again, so the server stayed stateful no matter what the operator configured.
+      const resolvedStateless = resolvedConfig.MCP_STATELESS;
 
       const app = createExpressApp(sessionFactory, sessionManager, {
-        stateless: transport.stateless,
+        stateless: resolvedStateless,
         eventStore: transport.eventStore,
         enableJsonResponse: resolvedJsonResponse,
         health: this.options.health,
         auth: this.options.auth,
+        configureApp: this.options.configureHttpApp,
         trustProxy,
         corsOrigin: resolvedConfig.MCP_CORS_ORIGIN,
         corsCredentials: resolvedConfig.MCP_CORS_CREDENTIALS,
         helmetHsts: resolvedConfig.MCP_HELMET_HSTS,
+        tlsTerminated: transport.mode === "https",
         helmetCsp: resolvedConfig.MCP_HELMET_CSP,
         helmetFrameOptions: resolvedConfig.MCP_HELMET_FRAME_OPTIONS,
         bodyLimit: resolvedConfig.MCP_BODY_SIZE_LIMIT,
@@ -662,6 +656,7 @@ export class McpServerInstance implements ServerInstance {
     } catch (error) {
       stopError = error;
     } finally {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- timedOut is set asynchronously by the timeout callback; not statically const-false.
       if (!timedOut) {
         clearTimeout(timeout);
       }
@@ -671,6 +666,7 @@ export class McpServerInstance implements ServerInstance {
     // scheduled setImmediate(exit(1)), the promise resolution (microtask)
     // can race ahead and trigger .then(exit(0)) first. Throwing here
     // ensures the caller's .catch(exit(1)) wins.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- timedOut is set asynchronously by the timeout callback; not statically const-false.
     if (timedOut) {
       throw new Error("Shutdown completed after timeout — forcing exit(1)");
     }
@@ -745,6 +741,23 @@ export class McpServerInstance implements ServerInstance {
       // Support both sync and async dispose() implementations
       await provider.dispose();
       logger.debug(RuntimeLogMessages.AUTH_PROVIDER_DISPOSED);
+    }
+  }
+
+  /**
+   * Dispose the transport's event store if it has a `dispose()` method.
+   *
+   * `EventStore` doesn't declare `dispose()` (the SDK interface has no shutdown hook), so
+   * this is a duck-typed opportunistic call — implementations like `createInMemoryEventStore()`
+   * that hold a cleanup timer can still be released without the consumer keeping a reference.
+   */
+  private async disposeEventStore(): Promise<void> {
+    const transport = this.options.transport;
+    const eventStore = transport && isHttpTransport(transport) ? transport.eventStore : undefined;
+    if (eventStore && "dispose" in eventStore && typeof eventStore.dispose === "function") {
+      // Support both sync and async dispose() implementations
+      await eventStore.dispose();
+      logger.debug(RuntimeLogMessages.EVENT_STORE_DISPOSED);
     }
   }
 }

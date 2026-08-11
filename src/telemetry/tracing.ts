@@ -8,14 +8,8 @@
  * @module server/telemetry/tracing
  */
 
-import type { Span, Attributes, Tracer } from "@opentelemetry/api";
-import {
-  getTelemetryConfig,
-  type SpanOptions,
-  type TraceContext,
-  type SpanCallback,
-  type AsyncSpanCallback,
-} from "./core/index.js";
+import type { Span, Tracer } from "@opentelemetry/api";
+import { getTelemetryConfig, type SpanOptions, type SpanCallback, type AsyncSpanCallback } from "./core/index.js";
 
 // ============================================================================
 // Lazy-loaded @opentelemetry/api cache
@@ -69,13 +63,6 @@ export const FrameworkSpanKind = {
   CLIENT: 2,
   PRODUCER: 3,
   CONSUMER: 4,
-} as const;
-
-/** @public SpanStatusCode constants — numeric-compatible with `@opentelemetry/api.SpanStatusCode` */
-export const FrameworkSpanStatusCode = {
-  UNSET: 0,
-  OK: 1,
-  ERROR: 2,
 } as const;
 
 /**
@@ -245,53 +232,4 @@ export function withSpanSync<T>(name: string, fn: SpanCallback<T>, options: Span
   } finally {
     span.end();
   }
-}
-
-/**
- * Get the currently active span.
- * Returns undefined if no span is active or OTEL API is not loaded.
- */
-export function getActiveSpan(): Span | undefined {
-  const api = getCachedOtelApi();
-  if (!api) return undefined;
-  return api.trace.getActiveSpan();
-}
-
-/**
- * Add attributes to the active span.
- * Does nothing if no span is active.
- */
-export function addSpanAttributes(attributes: Attributes): void {
-  const span = getActiveSpan();
-  if (span) {
-    span.setAttributes(attributes);
-  }
-}
-
-/**
- * Add an event to the active span.
- * Does nothing if no span is active.
- */
-export function addSpanEvent(name: string, attributes?: Attributes): void {
-  const span = getActiveSpan();
-  if (span) {
-    span.addEvent(name, attributes);
-  }
-}
-
-/**
- * Get the current trace context for propagation.
- * Useful for passing context to external services.
- */
-export function getTraceContext(): TraceContext | undefined {
-  const span = getActiveSpan();
-  if (!span) {
-    return undefined;
-  }
-
-  const spanContext = span.spanContext();
-  return {
-    traceId: spanContext.traceId,
-    spanId: spanContext.spanId,
-  };
 }

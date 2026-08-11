@@ -24,8 +24,8 @@ export interface SerializedError {
   message: string;
   /** Unique error ID for tracking/support */
   errorId: string;
-  /** Application-specific error code */
-  code: ErrorCodeType | string;
+  /** Application-specific error code. `(string & {})` keeps known-code autocomplete while allowing any string. */
+  code: ErrorCodeType | (string & {});
   /** HTTP status code (if applicable) */
   statusCode?: number;
   /** MCP error code (if applicable) */
@@ -50,8 +50,8 @@ export interface SerializedError {
  * Base options for creating errors.
  */
 export interface BaseErrorOptions {
-  /** Application error code */
-  code?: ErrorCodeType | string;
+  /** Application error code. `(string & {})` keeps known-code autocomplete while allowing any string. */
+  code?: ErrorCodeType | (string & {});
   /** HTTP status code override */
   statusCode?: number;
   /** MCP error code override */
@@ -94,4 +94,4 @@ export interface ValidationIssue {
 // Re-export Error Code Types for convenience
 // ============================================================================
 
-export type { ErrorCodeType, ErrorCategoryType } from "./error-codes.js";
+export type { ErrorCodeType } from "./error-codes.js";

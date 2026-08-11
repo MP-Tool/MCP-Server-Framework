@@ -25,9 +25,11 @@ import type {
   ResourceReadResult,
   CompletionCallback,
 } from "../../types/index.js";
-import type { Logger } from "../../../logger/index.js";
+import type { SecretScrubber } from "../../../utils/scrubbing/index.js";
+import { scrubByMimeType } from "../../../utils/scrubbing/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
+import type { ScrubbingBindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow } from "./scope-enforcement.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 
@@ -59,12 +61,13 @@ const RegistryLogMessages = {
 // ============================================================================
 
 /**
- * Options for binding resources to an MCP SDK server.
+ * Options for binding resources to an MCP SDK server. The scrubber applies to
+ * string content on read — this registry has no scrub-on-register stage
+ * (content is produced live by consumer `read()` handlers); binary
+ * (`Uint8Array`/blob) content passes through verbatim.
  * @internal
  */
-export interface ResourceBindOptions {
-  readonly logger: Logger;
-}
+export type ResourceBindOptions = ScrubbingBindOptions;
 
 // ============================================================================
 // Internal Registry Classes (extend BaseRegistry for CRUD)
@@ -309,7 +312,7 @@ export class ResourceRegistry implements ResourceProvider {
    * @param sdk - The MCP SDK server instance
    * @param resources - Static resource definitions
    * @param templates - Resource template definitions
-   * @param options - Registration context (logger)
+   * @param options - Registration context (logger, resultScrubber)
    * @internal
    */
   static bindToSdk(
@@ -318,7 +321,7 @@ export class ResourceRegistry implements ResourceProvider {
     templates: readonly ResourceTemplateDefinition[],
     options: ResourceBindOptions,
   ): void {
-    const { logger } = options;
+    const { logger, resultScrubber } = options;
 
     if (resources.length === 0 && templates.length === 0) {
       logger.trace(SdkBindingMessages.NO_RESOURCES);
@@ -353,30 +356,7 @@ export class ResourceRegistry implements ResourceProvider {
                   ...(extra.authInfo && { authInfo: extra.authInfo }),
                 };
                 const raw = await resource.read(ctx);
-                const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, resource.mimeType);
-
-                if (typeof content === "string") {
-                  return {
-                    contents: [
-                      {
-                        uri: resource.uri,
-                        ...(mimeType && { mimeType }),
-                        text: content,
-                      },
-                    ],
-                  };
-                } else {
-                  const base64 = Buffer.from(content).toString("base64");
-                  return {
-                    contents: [
-                      {
-                        uri: resource.uri,
-                        ...(mimeType && { mimeType }),
-                        blob: base64,
-                      },
-                    ],
-                  };
-                }
+                return ResourceRegistry.emitResourceContents(resource.uri, raw, resource.mimeType, resultScrubber);
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.RESOURCE_READ_ERROR, resource.uri, msg);
@@ -396,11 +376,12 @@ export class ResourceRegistry implements ResourceProvider {
         ? ResourceRegistry.buildResourceCompleteCallbacks(template.uriTemplate, template.complete)
         : undefined;
 
+      const listFn = template.list;
       const sdkTemplate = new SdkResourceTemplate(template.uriTemplate, {
-        list: template.list
+        list: listFn
           ? async () => {
               try {
-                const items = await template.list!();
+                const items = await listFn();
                 return {
                   resources: items.map((item) => ({
                     uri: item.uri,
@@ -467,21 +448,11 @@ export class ResourceRegistry implements ResourceProvider {
                   ...(extra.authInfo && { authInfo: extra.authInfo }),
                 };
                 const raw = await template.read(params, ctx);
-                const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, template.mimeType);
 
                 // Construct URI from template for the response
                 const uri = template.uriTemplate.replace(/\{(\w+)\}/g, (_, key) => params[key] ?? `{${key}}`);
 
-                if (typeof content === "string") {
-                  return {
-                    contents: [{ uri, ...(mimeType && { mimeType }), text: content }],
-                  };
-                } else {
-                  const base64 = Buffer.from(content).toString("base64");
-                  return {
-                    contents: [{ uri, ...(mimeType && { mimeType }), blob: base64 }],
-                  };
-                }
+                return ResourceRegistry.emitResourceContents(uri, raw, template.mimeType, resultScrubber);
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.TEMPLATE_READ_ERROR, template.uriTemplate, msg);
@@ -499,6 +470,26 @@ export class ResourceRegistry implements ResourceProvider {
   // ──────────────────────────────────────────────────────────────────────────
   // Private SDK Binding Helpers
   // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Normalizes a read result into the SDK `contents` payload — the shared
+   * tail of the static and template read paths: string content is scrubbed
+   * (when a scrubber is bound) and emitted as `text`; binary content passes
+   * through verbatim as base64 `blob` (value-shape scrubbing would corrupt it).
+   */
+  private static emitResourceContents(
+    uri: string,
+    raw: string | Uint8Array | ResourceReadResult,
+    fallbackMimeType: string | undefined,
+    resultScrubber: SecretScrubber | undefined,
+  ): { contents: Array<{ uri: string; mimeType?: string } & ({ text: string } | { blob: string })> } {
+    const { content, mimeType } = ResourceRegistry.normalizeReadReturn(raw, fallbackMimeType);
+    if (typeof content === "string") {
+      const text = resultScrubber ? scrubByMimeType(content, mimeType ?? "", resultScrubber) : content;
+      return { contents: [{ uri, ...(mimeType && { mimeType }), text }] };
+    }
+    return { contents: [{ uri, ...(mimeType && { mimeType }), blob: Buffer.from(content).toString("base64") }] };
+  }
 
   /**
    * Normalizes a resource read return value into a `{ content, mimeType }` pair.
@@ -524,6 +515,7 @@ export class ResourceRegistry implements ResourceProvider {
    */
   private static extractUriTemplateVariables(uriTemplate: string): string[] {
     const matches = uriTemplate.matchAll(/\{(\w+)\}/g);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- group 1 is required, always present on a match.
     return [...matches].map((m) => m[1]!);
   }
 

@@ -5,7 +5,702 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - feat: fail-closed secret scrubbing, unified auth factories, anonymous scope gating, server branding
+
+### Added
+
+- **Request=>response audit trail on every `tool.call`**: the per-call audit entry now reconstructs
+  *what was requested, what was affected, and what came back*. It carries a top-level `requestId`
+  (`AuditEvent.requestId`) so a tool call and its related `permission.*` / `confirmation.*` entries
+  stitch into one trail, plus a `detail` with the **scrubbed request args** and a **result summary**
+  (`isError`, content counts). Depth is set by `LOG_AUDIT_TOOL_IO` / `createServer({ auditToolIo })`:
+  `off` (outcome + affected only) | `summary` (**default**) | `full` (adds the scrubbed, size-bounded
+  result `structuredContent`). Consumers attach domain detail — most importantly **which resources
+  were affected** — via the new `ToolContext.recordAuditDetail(detail)` hook (array-valued keys append,
+  so repeated `{ affected: [...] }` calls accumulate). Everything written is secret-scrubbed with the
+  configured scrubber, or a base scrubber when result scrubbing is disabled, so the audit **never
+  records unscrubbed I/O**; resource ids/names stay readable.
+- **`MCP_BASE_URL` — public base URL of the server (`[transport].base_url`)**: one setting for the
+  externally reachable URL (scheme + host + optional port, e.g. `https://mcp.example.com`) when the
+  server runs behind a reverse proxy or on a domain. `deriveServerBaseUrl()` now prefers it (falling
+  back to `MCP_TRANSPORT` + `MCP_BIND_HOST` + `MCP_PORT` when unset), so it flows to the OAuth
+  `serverUrl`/`issuerUrl` and redirect URLs, to the RFC 9728 Protected Resource Metadata URL
+  (`{base}/.well-known/oauth-protected-resource`), and to the DNS-rebinding allowed-hosts (its host is
+  trusted automatically — no need to also list it in `MCP_ALLOWED_HOSTS`). Trailing slash normalized.
+- **Friendlier duration units in config** (`parseDuration` / `DURATION_REGEX`): time settings that
+  accept human-readable durations (`MCP_RATE_LIMIT_WINDOW_MS`, `OTEL_METRIC_EXPORT_INTERVAL`, and any
+  consumer using `durationSchema`) now also accept spelled-out unit aliases — `sec`/`secs`/`seconds`,
+  `min`/`mins`/`minutes`, `hr`/`hrs`/`hours`, `day`/`days`, `week`/`weeks`, `msec(s)`/`millisecond(s)` —
+  alongside the short forms `ms`/`s`/`m`/`h`/`d`/`w`. So `"1min"` and `"2hrs"` parse, not just `"1m"`
+  and `"2h"`. `formatDuration` still emits the canonical short units.
+- **TOML is scrubbed AS AN OBJECT** (`scrubTomlContent`, wired into `scrubByMimeType`): content whose
+  mimeType contains `toml` is now parsed, run through `scrubObject` and re-serialized, exactly like the
+  existing JSON branch. Text redaction cannot express the declarative rules — `dropKeys`,
+  `sensitivePaths` and `maskWhenSibling` all need real structure — and its `key=value` pattern
+  simultaneously mangles allowlisted flags (`is_secret = true` became a masked string, which alone is
+  enough to stop a config document from parsing). Unparseable content falls back to the text scrub, so
+  a mislabelled payload is still redacted. Consumers that hand structured content to a registry should
+  declare its real mimeType: `text/plain` silently downgrades it to regex redaction.
+- **`optionalBooleanFromEnv` is exported** from the package root and the `utils` barrel, alongside the
+  existing `booleanFromEnv`. Consumers layering their own switch over a framework one need the
+  tri-state (`undefined` when unset) to tell "not configured" from an explicit `false`.
+
+### Fixed
+
+- **`MCP_STATELESS` / `[transport].stateless` actually take effect now**: the handler selection read
+  `options.transport.stateless` — the programmatic option — while every neighbouring setting
+  (`MCP_JSON_RESPONSE`, `MCP_TRUST_PROXY`, `MCP_CORS_ORIGIN`) was resolved from `getFrameworkConfig()`.
+  `applyConfigOverrides()` folded the programmatic value *into* the config chain but nothing read it
+  back, so the environment variable and the config-file key were settable and documented yet entirely
+  inert: the server stayed stateful, kept issuing session ids and kept rejecting requests without an
+  `Mcp-Session-Id` header. Both the handler selection and the stateless-mode startup warnings now
+  resolve through the config chain like their neighbours. Stateless mode behaves as documented again
+  (no session ids, `GET`/`DELETE` → 405); stateful mode is unchanged.
+- **Configuration errors are readable again**: `parseFrameworkEnv` called `schema.parse()` and let the
+  raw `ZodError` escape, so a single mistyped variable aborted startup with a stack trace whose first
+  line pointed into `node_modules/zod` — the actual message ("MCP_PORT: Expected number, received nan")
+  was buried below it. Every other validation boundary already converts Zod errors first; config
+  *files* even had a dedicated `ConfigurationError.fileValidationFailed`. The environment path now has
+  its counterpart, `ConfigurationError.envValidationFailed`, and reports each offending variable by
+  name — including cross-field constraints, which list both variables involved.
+- **`ToolContext.sessionId` is now set for stdio too**: the SDK derives every request's
+  `extra.sessionId` from `transport.sessionId` — an optional field on the generic `Transport`
+  interface that `StdioServerTransport` never populates. The framework already created a session
+  (with an id) for stdio, but that id never reached the tool context, so `sessionId` was defined
+  for HTTP transports and `undefined` for stdio alone. Anything keyed on it degraded silently
+  there — most visibly the `DynamicResourceRegistry`, which meant a consumer could not offload
+  large payloads to `ephemeral://` links on the very transport most clients use, even though
+  `resources/read` works perfectly well over stdio. `startStdioTransport` now assigns the
+  session's id to the transport before connecting, so the invariant "every request carries its
+  session id" holds for all transports.
+
+### Fixed (scrubbing engine)
+
+- **`scrubObject` no longer destroys `Date` values**: a `Date` was walked as a plain record and came
+  back as `{}`. Value objects that serialize to a primitive now pass through untouched — which is also
+  what keeps `TomlDate` intact on the new TOML path.
+- **Shared references are no longer reported as `"[Circular]"`**: the cycle guard marked every visited
+  node for the whole traversal, so a diamond — the same object reachable by two paths, e.g. one tag
+  object on two resources, or one `Date` in two fields — collapsed into the string `"[Circular]"` on
+  its second occurrence instead of being scrubbed. The guard now tracks only the current path, and a
+  per-walk memo keyed by node and path scope computes each distinct pair once, so the walk stays
+  linear in the size of the graph rather than in the number of paths through it. Genuine cycles are
+  still detected. The memo is sound because `sensitivePaths` match on suffixes: only the last
+  `longestRule - 1` path segments above a node can influence its subtree, and with no path rules
+  configured the path cannot influence anything at all.
+- **`allowKeys` is honored in the flat-text `key=value` pass**: the pattern matches the sensitive
+  *fragment*, so `secret` inside `is_secret` triggered redaction even when `is_secret` was explicitly
+  allowlisted. The pass now widens the match to the surrounding compound key before consulting the
+  allowlist (a linear character scan — the pattern itself is unchanged, so no added backtracking
+  cost). Exact-match semantics still hold: allowlisting `secret` does not exempt `webhook_secret`.
+  One narrow exception remains by design: the URL-query-parameter pass runs first and matches bare
+  base names, so `?secret=x` stays masked even when `secret` is allowlisted, while `secret=x` in
+  plain text does not — over-redaction, the safe direction.
+
+### Changed
+
+- **`validateProtocolVersion` — spec-correct MCP protocol negotiation over HTTP**: the middleware now
+  **exempts the `initialize` request** (its version is negotiated in the JSON-RPC body by the SDK, not
+  the header — passing it through untouched is what lets auto-negotiation work with clients like MCP
+  Inspector v2), and assumes the SDK's `DEFAULT_NEGOTIATED_PROTOCOL_VERSION` (`2025-03-26`) instead of a
+  stale hardcoded `2024-11-05` when a *non*-initialize request omits the `MCP-Protocol-Version` header.
+  Unsupported header versions on post-init requests are still rejected with `400`.
+- **RFC 9728 metadata URL is derived, not configured**: removed the standalone
+  `MCP_AUTH_RESOURCE_METADATA_URL` env var / `[auth].resource_metadata_url` file key and the
+  `AuthOptions.resourceMetadataUrl` override. The Protected Resource Metadata URL is now always built
+  from the issuer origin (which comes from `MCP_BASE_URL`) as
+  `{origin}/.well-known/oauth-protected-resource`. `MCP_AUTH_REQUIRED_SCOPES` is unaffected.
+
+- **`filterTools` — prune the registered tool surface (`createServer({ filterTools })`)**: a predicate
+  `(tool: ToolDefinition) => boolean` applied once at build time to the collected tools. Tools it
+  rejects are never bound to any session — absent from `tools/list` and not callable, for every
+  request. Intended as an operator knob to shrink a client's context/token load (e.g. by
+  `_meta.category` or name). Purely **subtractive**: it can only remove tools, never expose more, so it
+  composes safely with `anonymousScopes` and any per-request scope/permission gating (those still apply
+  to whatever remains). The framework does not interpret tool metadata — the consumer supplies the
+  semantics. `undefined` (default) registers all tools. Logs `registered X of Y` (with removed names at
+  debug) when it prunes anything.
+- **`anonymousScopes` — scope-gate unauthenticated traffic (`createServer({ anonymousScopes })`)**:
+  by default a request that carries no `authInfo` bypasses scope RBAC entirely (scope enforcement and
+  the scope-filtered list handlers both no-op without a token). Setting `anonymousScopes` treats an
+  anonymous request as holding exactly that scope set: a tool/resource/prompt is listed and callable
+  only when its `requiredScopes ⊆ anonymousScopes`; everything above the granted set is hidden from
+  the `*/list` response and rejected with `AuthorizationError` on call. It never fabricates an
+  identity — `ToolContext.auth` stays `undefined` for anonymous requests, so a consumer's own
+  auth-derived logic is unaffected — and authenticated requests always use their real token scopes.
+  Intended for servers that run without per-user auth on a network transport: grant a read-only scope
+  so an open deployment is read-only. Omitted (default) preserves unrestricted anonymous access.
+- **Central tool-result secret scrubbing (`scrubToolResults`, default ON)**: every tool and
+  task-tool `CallToolResult` now passes a single redaction boundary between the handler and the
+  SDK — the one place all results cross before they reach the client transcript and the model
+  provider. `structuredContent` is scrubbed recursively; `text`, embedded-resource `text`, and
+  `resource_link` string fields are scrubbed as text; binary payloads (`image`/`audio` `data`,
+  resource `blob`) pass through verbatim so base64 is never corrupted. `isError` results and the
+  `McpError` wrap message are scrubbed too (upstream errors embed API responses). **Fail-closed**:
+  if scrubbing itself throws, the result is withheld and replaced by a generic error carrying zero
+  fragments of the original. Configure via `createServer({ scrubToolResults })`: `true`/omitted →
+  base heuristics, `false` → off, `{ additionalKeys, allowKeys }` → extend/exempt keys. Tools
+  whose purpose is returning a secret (e.g. a create-API-key tool) opt out individually via
+  `defineTool({ scrubResult: false })` — document the exposure in the tool description.
+  Unknown/future content-block types are scrubbed as objects rather than passed through
+  (fail-closed; only the known binary types `image`/`audio`/resource-`blob` pass verbatim).
+- **`DynamicResourceRegistry` scrub-on-register (`scrub` option, default ON)**: offloaded
+  resources bypass the tool-result boundary (they are served later via `resources/read`), so
+  string content is scrubbed when it is registered — secrets never sit in the store. `Uint8Array`
+  content passes through verbatim. Accepts the same `boolean | SecretScrubberOptions` shape;
+  a scrub failure makes `register()` throw (fail-closed: callers that fall back to inlining get
+  the boundary scrub instead).
+- **`SecretScrubberOptions` with `allowKeys`**: `new SecretScrubber({ additionalKeys, allowKeys })`
+  — `allowKeys` exempts exact key names (case-insensitive) from key-based redaction, for
+  false-positive keys like `public_key` that contain a sensitive fragment but are not secrets.
+  Exact match only, so an allowlist entry like `key` can never exempt `api_key` wholesale; values
+  of allowlisted keys still pass the string/value-shape scrubbing. Scope: `allowKeys` applies
+  wherever the full key name is known (object keys, JSON pairs); the flat-text `key=value` and
+  URL-param passes may over-redact allowlisted compound keys — the safe direction. The legacy
+  `new SecretScrubber(additionalKeys)` array form keeps working.
+- **`additionalKeys` now apply to the flat-text passes too**: the `key=value` and URL-query-param
+  patterns are compiled per scrubber instance (base keys + regex-escaped `additionalKeys`) instead
+  of once at module load from the base list only — previously a consumer-declared key was redacted
+  as an object key and in JSON text but silently NOT in env-block strings (`MY_CUSTOM=secret`),
+  its primary use case. Instances without `additionalKeys` share the precompiled default patterns.
+- **Declarative domain-redaction rules** (`SecretScrubberOptions`): consumers now DECLARE
+  redaction policy instead of writing bespoke masking code — `dropKeys` (field removed entirely,
+  e.g. bulky post-interpolation deploy artifacts), `sensitivePaths` (dot-path suffixes masked —
+  keys innocuous by NAME but secret in CONTEXT, e.g. `endpoint.params.url`; array elements keep
+  their parent's path), and `maskWhenSibling` (mask named keys when a sibling flag matches, e.g.
+  `{ sibling: "is_secret", keys: ["value"] }`; the flag key itself is implicitly allowlisted).
+  Explicit rules win over `allowKeys`.
+- **Value collector — object rules reach rendered text**: `scrubObject(obj, collector?)` reports
+  every masked/dropped string leaf (min length 4), and the tool-result boundary purges exactly
+  those literals (plain and JSON-escaped form) from all text blocks of the same result. Text is
+  rendered from the RAW object in handlers before the boundary runs — without this, a path/
+  sibling/drop rule would sanitize `structuredContent` while the same value survived in the
+  rendered text. Also strengthens the generic pass: heuristically masked values now vanish from
+  markdown shapes no text regex matches.
+- **`DynamicResourceRegistry` scrubs JSON as JSON**: registered content with a JSON mime type is
+  parsed, scrubbed via `scrubObject` (all declarative rules apply with structural fidelity —
+  a text regex could never drop a nested field), and re-serialized; unparseable/non-JSON content
+  falls back to the text scrub.
+- **`createSecretScrubber(config)` + `SecretScrubberConfig`**: the shared
+  `boolean | SecretScrubberOptions → SecretScrubber | undefined` factory, exported from
+  `mcp-server-framework/logger` and used by both the tool-result boundary and the
+  dynamic-resource registry (one config shape, one resolution).
+- **MCP log notifications scrub with the configured instance**: `logger.*()` calls inside a tool
+  handler that are forwarded to the client as `notifications/message` are now scrubbed with the
+  same `scrubToolResults`-configured scrubber as tool results
+  (`mcpLogger.createContextLogger(handler, scrubber?)`) — previously only the base heuristics
+  applied there, so a consumer-declared `additionalKeys` secret could reach the client transcript
+  via a log line while being redacted in the tool result. With result scrubbing disabled, log
+  notifications still fall back to the base scrubber — they never fall open.
+- **JSON key/value pass in `SecretScrubber.scrub()`**: rendered JSON (`"webhook_secret": "…"`,
+  plain and `\"`-escaped) is now redacted in text — the existing `key=value` / `key: value` pass
+  cannot match JSON's quoted keys. Callback-based, so `additionalKeys`/`allowKeys` apply to text
+  scrubbing as well.
+- **`elicitConfirmation(options)` — user confirmation via MCP Elicitation**: Asks the human
+  operator to approve an action through the client's elicitation UI (`elicitation/create`) before
+  the server executes it. The prompt carries no form fields — the client's **accept** action is
+  the approval (a single click), so there is no separate checkbox to tick. Configurable
+  `timeoutMs` (default `DEFAULT_CONFIRMATION_TIMEOUT_MS` = 5 min, up from the SDK's 60 s request
+  default) — humans need longer than a machine call. Never throws; every failure mode maps to an
+  explicit `ElicitConfirmationOutcome` (`accepted` / `declined` / `cancelled` / `timeout` /
+  `unsupported`) so callers can implement their own fail-open/fail-closed policy. Reads the
+  ambient `ToolContext` from AsyncLocalStorage by default (works from anywhere inside a tool
+  handler); a `context` override is available for tests. Clients that advertise the `elicitation`
+  capability without the `form` sub-capability (the SDK rejects those before sending) fold into
+  `unsupported` rather than surfacing an error.
+- **`booleanFromEnv` exported from the package root**: The strict boolean env-var schema helper
+  (only `"true"` maps to true; native booleans pass through) was previously only available via
+  internal subpaths, while `parseEnvBoolean` was already public. Consumers defining their own env
+  schemas can now use the same convention as the framework.
+- **`SecretScrubber` + `REDACTED_VALUE` exported from `mcp-server-framework/logger`**: consumers
+  scrub secrets out of their own payloads (e.g. MCP tool output before it reaches the client
+  transcript) with the same engine and redaction marker the framework uses for logs.
+  `REDACTED_VALUE` is public alongside it so consumers' bespoke masking can present one consistent
+  marker instead of duplicating the constant.
+- **`configureLoggerFromEnv({ name?, version? })` exported**: applies the resolved `LOG_*` /
+  `MCP_TRANSPORT` config to the global logger — the same bridge `createServer()` runs internally,
+  now reusable so consumers that log during bootstrap (before `createServer()`) get consistent
+  formatting instead of a few bare-format lines first. Safe to call more than once (the previous
+  file streams are disposed before reapplying).
+- **CI typecheck/lint/build gate + `SECURITY.md`**: PRs and pushes to `main` now run `tsc`,
+  `eslint`, and a production build in CI (`.github/workflows/ci.yml`) — previously no workflow
+  verified the codebase before publish. Added a `SECURITY.md` vulnerability-disclosure policy
+  (GitHub private reporting), addressing an OpenSSF Scorecard check the repo's existing
+  `scorecard.yml` workflow already evaluates.
+- **`title?`/`icons?` on `CreateServerOptions` / `ServerOptions` — MCP-spec server branding**:
+  Threaded through to the SDK's `Implementation` object returned during `initialize`, so MCP
+  clients can display a human-friendly name and icon distinct from the machine-readable `name`.
+  Added `iconFromFile(filePath, mimeType, options?)` (new: `mcp-server-framework`) as a reusable
+  primitive — reads a local image file synchronously and returns an `Icon` with the bytes embedded
+  as a base64 `data:` URI, which works identically across stdio and HTTP transports since the icon
+  travels inline in the JSON-RPC response (no separate asset serving needed). Files over 1 MB are
+  rejected with a `ConfigurationError` — the encoded icon is embedded in every `initialize`
+  response, so an oversized file (e.g. a mistaken path) would bloat every session handshake.
+  `Icon`/`Icons` re-exported from the SDK for consumers building entries by hand.
+- **`configureHttpApp?: (app: Application) => void` on `CreateServerOptions` / `ServerOptions`**:
+  Optional hook to register additional Express routes on the MCP HTTP server. Runs after base
+  security middleware (Helmet, DNS rebinding, rate limiting) and before health, metrics, and MCP
+  transport routes are mounted. Useful for OAuth callback endpoints (`/auth/google/callback`),
+  custom health routes, or any server-side HTTP handler that shares the MCP host. Ignored in
+  stdio mode.
+- **`AuthContext`, `createAuthContext`, `ANONYMOUS_AUTH`** exported from the main package: The
+  auth context type and its factory are now part of the public API. `ANONYMOUS_AUTH` is the
+  canonical unauthenticated context sentinel. Previously these were only accessible via internal
+  subpaths.
+- **`onClientConnected` receives `auth?: AuthContext`**: The `ServerLifecycleHooks.onClientConnected`
+  callback now receives the session's `AuthContext` as an optional second argument. Populated
+  whenever `options.auth` is configured and the session was established with a valid token;
+  `undefined` for unauthenticated sessions or stdio mode. Existing zero-argument / one-argument
+  callbacks continue to work unchanged.
+
+- **`createOAuthProvider(config | config[], options)` — unified OAuth provider factory**: Replaces the two
+  separate factories (`createUpstreamOAuthProvider`, `createOidcProvider`). Config is a discriminated
+  union on `type`: `"github" | "google" | "oidc" | "oauth2"`. GitHub and Google require only a
+  `clientId`/`clientSecret`; `"oidc"` performs automatic endpoint discovery from the issuer URL;
+  `"oauth2"` is the explicit-endpoints escape hatch for arbitrary providers. Pass an array of configs to
+  enable multi-provider mode — users see an auto-rendered provider-selection page when no `?provider=`
+  parameter is present.
+- **`ProviderContext` hook context**: `mapUserInfo` and `onTokenExchanged` now receive a `ProviderContext`
+  (`{ type, name, issuer? }`) as their first argument. `ctx.type` is a stable discriminant for switch
+  statements; `ctx.name` is the unique routing key. This fixes a latent bug where the internal
+  `oidc:<issuer>` routing name leaked into hook arguments when using `createOidcProvider`.
+- **`authInfoExpiry(ttlSeconds?, nowMs?)` helper**: Returns a correctly-shaped expiry timestamp in epoch
+  seconds, compatible with the SDK's bearer-auth token validation. Exported from the main package.
+- **New types**: `OAuthProviderConfig`, `GithubProviderConfig`, `GoogleProviderConfig`,
+  `OidcProviderConfig`, `OAuth2ProviderConfig`, `CreateOAuthProviderOptions`, `OAuthProviderResult`,
+  `OAuthProviderType`, `ProviderContext`, `MapUserInfo`, `OnTokenExchanged` — all exported from the main
+  package for fully typed consumer configuration.
+
+- **`createAuthMiddleware(options)` — unified auth middleware**: Replaces `createBearerAuth` and
+  `createCustomHeaderAuth` with a single factory driven by two orthogonal options. `tokenSource`
+  controls where the token is read from (`"bearer"` for `Authorization: Bearer` or
+  `{ header: "X-API-Key" }` for a custom header). `enforcement` controls what happens on
+  missing/invalid tokens: `"required"` (default) rejects with 401/403; `"optional"` calls
+  `next()` without setting `req.auth`, allowing anonymous access alongside authenticated
+  requests from one route definition. The `required` + `bearer` combination delegates to the
+  SDK's `requireBearerAuth` to keep RFC 6750 / RFC 9728 `WWW-Authenticate` discovery intact.
+- **`extractBearerToken(authHeader)` helper**: Extracts the token string from a well-formed
+  `Authorization: Bearer <token>` header value. Returns `undefined` for missing, malformed, or
+  non-Bearer headers. Exported from the main package.
+- **`onAuthenticated` hook on `AuthMiddlewareOptions`**: Optional async callback invoked after
+  successful token verification. Its return value is merged into `req.auth.extra`, making
+  consumer-specific context (user ID, role, tenant) available to route handlers without a
+  separate middleware. Hook errors are logged and swallowed — a failing hook never rejects a
+  valid session.
+- **`AuthTokenSource`, `AuthEnforcement`, `AuthMiddlewareOptions`**: New types exported from
+  the main package for typed middleware configuration.
+
+- **`ReadinessConfig.checkTimeoutMs` / `HealthRouterOptions.checkTimeoutMs`**: Bounds how long
+  `/ready` waits for a consumer-provided `readinessCheck()` before returning `503`. Prevents a
+  stalled dependency (e.g. a hung DB connection) from blocking the endpoint indefinitely and
+  delaying Graceful Shutdown. Defaults to `5000`ms. The deadline timer is cleared as soon as the
+  check settles — readiness probes fire frequently (container orchestrators poll every few
+  seconds), so a lingering timer per probe would accumulate and delay process exit on shutdown.
+- **HTTPS server enforces a TLS 1.2 floor**: `startHttpsServer()` now sets `minVersion: "TLSv1.2"`
+  on the TLS context, rejecting legacy TLS 1.0/1.1 handshakes.
+- **`resolveAuthConfig()` + `toOAuthProviderConfigs()` — declarative `[auth]` config-file support**:
+  Turns a config-file `[auth]` section (master switch + a `[auth.providers.<name>]` table) into the
+  `OAuthProviderConfig[]` consumed by `createOAuthProvider`, plus the resolved `enabled` flag and the
+  optional `/mcp` `required_scopes`. The master switch honours `MCP_AUTH_ENABLED` (env var or `.env` file —
+  now resolved through `getFrameworkConfig()`, like every other framework env var, instead of reading
+  `process.env` directly) → `[auth].enabled` (file) → an optional `resolveAuthConfig({ defaultEnabled })`
+  argument → "enabled when at least one provider is configured". The `defaultEnabled` override lets a
+  consumer with a non-provider login method (e.g. local username/password) default auth *on* even with
+  zero OAuth providers configured, without changing the framework's own default for other consumers.
+  Provider entries accept `id`/`secret` aliases alongside `client_id`/`client_secret` and infer `type`
+  from the table key when omitted. Exposed via `ResolvedAuthConfig`, `AuthProviderInput`.
+- **`AuthOptions.enabled` — master switch for authentication**: When `false`, the framework mounts
+  neither the auth middleware nor the OAuth routes on any transport route (SSE and `/mcp` share the
+  same auth middleware instance now, built once). Treated as `true` when omitted. Lets a consumer
+  pass a fully-resolved auth config but keep it inert, and guards against accidentally serving
+  authenticated routes when auth was meant to be off.
+- **`localLogin` — username/password login alongside OAuth on the unified login page**: Configure a
+  `verify(username, password)` callback on `CreateOAuthProviderOptions.localLogin`; a successful
+  verification mints a session through the same authorization-code/PKCE machinery as an OAuth login,
+  so a local login is exactly as isolated as an OAuth one. May be the only login method (no OAuth
+  providers required). Mounted at `POST /authorize/local` (via `AuthOptions.localLoginHandler`).
+- **`renderLoginPage` — custom login page branding**: Pass a `LoginPageRenderer` (`renderSelectionPage`
+  / `renderSuccessRedirectPage`) to `createOAuthProvider` to replace the framework's generic,
+  neutral-themed (light/dark) login page with an application-branded one. Exposed via
+  `LoginPageRenderer`, `SelectableProvider`, `LocalLoginForm`.
+- **`createBrowserOAuthLogin()` — interactive browser OAuth/OIDC login**: A generic
+  Authorization-Code-with-PKCE flow for stdio-mode servers (or any server needing the operator to
+  log in via a browser). Supports a generic OIDC issuer, Google, and GitHub; reuses the framework's
+  cached, SSRF-guarded `getOidcDiscovery()`. Returns the validated upstream provider token
+  (OIDC/Google `id_token` or GitHub `access_token`) with its identity claims — no token minting or
+  consumer-specific credential mapping baked in. `registerCallbackRoutes(app)` mounts the
+  `GET /auth/:provider/callback` handlers (designed for the `configureHttpApp` hook). Exposed via
+  `BrowserOAuthLogin`, `BrowserOAuthConfig`, `BrowserOAuthResult`, `BrowserOAuthProvider`.
+- **`deriveServerBaseUrl()` helper**: Computes this server's public base URL from the transport
+  config (`MCP_TRANSPORT`/`MCP_BIND_HOST`/`MCP_PORT`), rewriting a wildcard bind host to `localhost`.
+- **`jwks_uri` on `OidcDiscoveryDocument`**: The discovery document now carries the provider's JWKS
+  URI, enabling ID-token signature validation.
+- **`defineAuthExtra<T>(guard)` — typed `auth.extra` binding**: A small read/write codec for the
+  consumer-defined `extra` payload carried on `AuthInfo` / `AuthContext` / `ToolContext.auth`.
+  Replaces ad-hoc `auth.extra["x"] as string` casts and reads uniformly across stateful
+  (`session.auth`) and stateless (`ToolContext.auth`) contexts. Exposed via `AuthExtraBinding`,
+  `HasAuthExtra`.
+- **`createIdentityStore<T>(options)` + `authIdentityKey(auth)` — identity-scoped binding**: A
+  get-or-create cache keyed by a stable user identity, for binding per-user state (e.g. a downstream
+  service connection) and reusing it across requests in **both stateful and stateless** transports.
+  Concurrent creates for one key share a single in-flight factory; entries fall out via idle TTL, LRU
+  cap, and explicit `evict()` (with an `onDispose` hook). `authIdentityKey()` derives a stable key
+  from an `AuthContext` or `ToolContext.auth`. Exposed via `IdentityStore`, `IdentityStoreOptions`,
+  `AuthIdentitySource`.
+- **`getCurrentToolContext()` — AsyncLocalStorage-backed tool context accessor**: Returns the
+  `ToolContext` for the currently executing tool call from anywhere in the call stack (helpers,
+  connection managers, etc.) without threading it through as a parameter. `undefined` outside a tool
+  handler.
+- **Acting user identity in log output**: `LogContext.user` (human-readable username/email) is now
+  shown in the text-formatter log prefix (`u:<user>`). Tool execution derives it from the
+  conventional `username` field on `auth.extra`, falling back to the token's `clientId`.
+- **`ToolContext.auth.extra` is now populated for stateless tool calls**: previously hardcoded to
+  `undefined`; now carries the same `onAuthenticated`-hook result as `session.auth.extra` does for
+  stateful sessions.
+- **Observability parity for task tools**: `createTask`/`getTask`/`getTaskResult` are now wrapped in
+  the same tracing span, request-duration metric, and debug/error logging as regular tool calls —
+  previously only synchronous tools had this instrumentation.
+- **`logAuditEvent()` — parallel JSON-Lines audit trail, on by default**: A security/activity log
+  written to a dedicated file (one JSON object per line), in parallel to the normal application logs
+  and independent of `LOG_LEVEL`. `LOG_AUDIT_FILE` (or `[logging].audit_file`) overrides the
+  destination; when unset, events land in `<LOG_DIR or the framework's default log dir>/audit.log`
+  (see `resolveAuditFilePath()`) — the trail is always active, not opt-in. Emitted for tool calls
+  (`tool.call`), session lifecycle (`session.open`/`session.close`), and security events (denied
+  auth, DNS-rebinding rejections, rate-limit hits). Exposed via `AuditEvent`, `AuditActor`,
+  `AuditCategory`, `AuditOutcome`, `resolveAuditFilePath`.
+- **`createInMemoryEventStore()` — bounded `EventStore` for stream resumability**: Replaces the
+  re-export of the SDK's example `InMemoryEventStore`, which the SDK itself documents as "not for
+  production use": it never evicts anything (unbounded memory growth), replays by sorting *every*
+  event ever stored across *all* streams on every reconnect, and recovers a stream ID by splitting
+  the event ID on `_` — which silently breaks for the SDK's own standalone GET SSE stream (whose ID
+  is the literal string `_GET_stream`). The framework's implementation keeps one bounded,
+  insertion-ordered event log per stream plus a flat event-to-stream index, so replay only touches
+  the relevant stream (O(events since `lastEventId`), not a global sort) and no ID is ever parsed.
+  Bounded by `maxEventsPerStream` and `maxStreams` (oldest/least-recently-written evicted first,
+  default 1000 each) plus an idle `ttlMs` sweep (default 5 minutes). Exposed via
+  `InMemoryEventStoreOptions`, `InMemoryEventStoreResult`. **Breaking rename** for existing
+  consumers: replace `new InMemoryEventStore()` (from the SDK's `examples/` path) with
+  `createInMemoryEventStore()` (from `mcp-server-framework`). Messages are stored by value
+  (`structuredClone`), so later mutation of a caller's message object can never alter what a
+  replay delivers. `evictStreams(predicate)` supports bulk eviction (used by the framework to
+  reclaim a closed session's streams promptly, see below). `dispose()` stops the idle-sweep
+  timer and is now called automatically on server shutdown when `transport.eventStore` was
+  provided.
+- **`apiAccessLog` middleware — HTTP access logging**: Logs one line per request (method, path,
+  status, duration) to the `"api"` file-log component — previously an empty, unused stream slot
+  (`api.log` alongside `server.log`, both created eagerly but only `server.log` was ever written
+  to). Mounted first in the Express pipeline, so requests rejected later by DNS-rebinding
+  protection, auth, or rate limiting are still captured. Also populates the existing `HttpContext`
+  (`method`/`path`/`statusCode`/`durationMs`) for JSON-format consumers. Deliberately separate
+  from `logAuditEvent()`/`audit.log` — mirroring all traffic there, including health/metrics
+  polling, would flood the audit trail with low-value noise. Query strings are never logged (OAuth
+  flows carry `code`/`state` there). Internal middleware, automatically applied — not part of the
+  public API surface.
+
+### Dependencies
+
+- Added **`jose`** (`^6.2.3`) for OIDC ID-token (JWKS) validation in the browser login flow.
+- **OpenTelemetry packages moved to `optionalDependencies`**: the SDK, exporters, and
+  instrumentation packages (`@opentelemetry/sdk-node`, `sdk-metrics`, the exporters,
+  `instrumentation-http`/`-express`, `resources`, `semantic-conventions`) are already loaded
+  exclusively via dynamic `import()` (never at module-parse time — see `telemetry/sdk.ts`), so
+  moving them out of `dependencies` lets a stdio-only install skip ~15-20 MB with
+  `npm install --omit=optional`; telemetry degrades gracefully when absent, as already designed.
+  `@opentelemetry/api` stays a regular dependency — its types are re-exported from this
+  package's public surface (`Span`, `SpanKind`, etc.), so it must always resolve. README and the
+  `sdk.ts` module doc previously described this dependency split incorrectly (as "peer
+  dependencies"); both now match the real `package.json` classification.
+
+### Fixed
+
+- **Log files kept appending across a `configureLogger()` reconfigure**: resources were reset via
+  a fire-and-forget `resetLoggerResources()`, which nulled the global handle only after its async
+  close completed — a line logged in that window hit the already-closing stream and was dropped.
+  In practice, this showed up as existing log files silently no longer being written to on
+  startup. The handle is now nulled synchronously so the next log call opens a fresh writer (in
+  append mode) right away; an unchanged reconfigure is now also a no-op instead of reopening the
+  files.
+- **`FileWriter` rotation no longer corrupts the replacement stream**: rotating a component whose
+  stream still had a buffered write surfaced a late `ERR_STREAM_DESTROYED` whose self-heal handler
+  logged a spurious stderr `Stream error` and deleted the freshly-created replacement stream from
+  the map, spilling that component's logs into the fallback for ~1s. The handler is now detached
+  before the intentional `destroy()`.
+- **Audit log rotates by size instead of growing unbounded**: `audit.log` now honors the same
+  `LOG_MAX_FILE_SIZE` / `LOG_MAX_FILES` limits as the general file logger
+  (`audit.log` → `audit.log.1` → …).
+- **`FileWriter` self-heals after a transient failure instead of going silently dark**: a
+  stream error (directory removed, disk briefly full, file descriptor limit, ...) used to
+  either recover only for the one special-cased `ENOENT` case, or permanently drop every future
+  log line for that component with no further attempt — until the next process restart.
+  `write()` now retries creating the stream on the next call when it's missing, throttled to at
+  most once per second per component so a persistently broken filesystem isn't hit with a
+  `createWriteStream`/`statSync` pair on every single log line. A component's own file is
+  restored once the underlying issue clears, rather than commingling its lines into the
+  fallback file forever after one blip. A component's failure (init, runtime stream error, or a
+  failed recreate) is now also reported on stderr — previously `createStream()`'s own init-time
+  failure path was completely silent — once per outage, not once per line.
+
+- **SSE sessions and tool calls now carry the authenticated identity**: the legacy SSE
+  transport never threaded a connecting client's verified auth into either of the two places
+  that needed it, so a successful login had no effect over SSE — sessions and tool calls were
+  indistinguishable from anonymous:
+  - `SseRequestHandler.handleConnection()` never read `req.auth` from the initiating
+    `GET /sse` request, so `session.auth` was always unset (session logging, audit, and the
+    `onClientConnected` lifecycle hook all saw an anonymous session regardless of login).
+  - `SseTransport.handlePostMessage()` never passed `req.auth` from each `POST /sse/message`
+    through to the SDK's `onmessage` callback, so `extra.authInfo` — and therefore
+    `getCurrentToolContext().auth` inside a tool handler — was always `undefined`.
+
+  Both now mirror the patterns the Streamable HTTP stateful handler and the SDK's own
+  `StreamableHTTPServerTransport` already use (`createAuthContext(req.auth, ...)` for the
+  session, `{ authInfo: req.auth }` for each message), which was unaffected by either gap.
+
+- **Documentation defaults corrected to match the actual schema**: `MCP_TRANSPORT`'s JSDoc said
+  "default: http" while the schema (and README) default is `stdio`; `json_response`'s doc said
+  "default: true" while the actual default is `false`; the `metrics_exporter` doc and
+  `telemetry/sdk.ts`'s module comment said "default: 'otlp,prometheus'" while the real default is
+  `'prometheus'`. No behavior changes — only the comments were wrong.
+
+- **Client-supplied `Mcp-Session-Id` truncated before entering the access log**: the API access
+  log middleware was the only transport log site that didn't length-bound this client-controlled
+  header (up to ~16 KB), unlike every other request field it logs. Now truncated the same way.
+- **Invalid `byteSizeSchema`/`durationSchema` env values now raise a proper `ZodError`**: these
+  transforms previously threw a bare `Error` from inside `.transform()` on malformed input (e.g.
+  `MCP_RATE_LIMIT_WINDOW_MS=abc`), bypassing the `ConfigurationError` taxonomy every other invalid
+  config field goes through. Now reported as a Zod issue like the rest of the schema.
+- **`iconFromFile()` checks the file size before reading, not after**: the 1 MB cap previously
+  only rejected an oversized file post-read, so a mis-pointed path at a very large file would be
+  pulled fully into memory first. Now `stat`s the file and rejects oversized files before the read.
+- **File-log retention no longer deletes the audit trail or foreign logs**: `FileWriter`'s
+  retention sweep previously `unlink`ed *any* `.log` file in `LOG_DIR` past its retention age —
+  not scoped to its own components. Since the audit trail (`audit.log`) defaults to the same
+  directory, a quiet server could have its audit log silently deleted by the sweep (with the
+  audit module's open append fd then writing into the deleted inode). Retention is now scoped to
+  each writer's own component files (base + rotated variants) only.
+- **Audit sink now actually disables itself on a write error, as documented**: the stream
+  `'error'` handler logged a warning but never stopped `getStream()` from handing back the
+  errored stream, so every subsequent event silently failed to write instead of becoming a clean
+  no-op. Matches the documented "a write failure disables the sink for the rest of the process".
+- **`FileWriter` stream map keyed consistently by the sanitized component name**: previously keyed
+  by the raw name while the file path used the sanitized one, so two raw names that sanitize to
+  the same file (e.g. `a/b` and `a_b`) could open two independent streams appending to one file
+  with split byte-accounting (premature or delayed rotation).
+- **OAuth client auto-registration no longer trusts query-param casts**: `client_id`/`redirect_uri`
+  at `/authorize` were read via `as string` casts, but Express yields an *array* for repeated query
+  params (`?client_id=a&client_id=b`), which the casts let through unchecked into
+  `getClient()`/`registerClient()`. Now narrowed with `typeof === "string"` (the same pattern the
+  authorize handler already used for `?provider=`); non-string values fall through to the SDK's own
+  validation.
+- **Refresh-token exchange now registers the new access token and fires `onTokenExchanged`**:
+  `exchangeRefreshToken()` previously returned the refreshed tokens without updating
+  `tokenRegistry` or invoking the exchange hook, so verification only worked via the
+  single-provider fallback and consumers relying on `onTokenExchanged` (e.g. to rotate a
+  downstream credential) never saw the refresh. Now mirrors the authorization-code exchange path.
+- **Browser-login upstream fetches now have a timeout**: `exchangeCode()` and
+  `validateGitHubToken()` in the stdio browser-login flow omitted `AbortSignal.timeout(...)`,
+  unlike every other upstream OAuth call — a hung token/userinfo endpoint could stall the pending
+  login flow indefinitely. Now bounded by the same `OAUTH_FETCH_TIMEOUT_MS`.
+- **`/ready` no longer reflects raw readiness-check errors to unauthenticated callers**: a
+  consumer-provided `readinessCheck()` throwing (e.g. `Error("connect ECONNREFUSED 10.2.3.4:5432")`)
+  had its `message` embedded verbatim in the JSON body of the unauthenticated, unrate-limited
+  `/ready` endpoint. The client now sees a generic `"<serviceLabel> readiness check failed"`
+  reason; the full detail is logged server-side.
+- **Graceful HTTP shutdown drains in-flight requests instead of aborting them**: `shutdown()`
+  previously called `closeAllConnections()` before `server.close()`, killing any in-flight POST
+  immediately. Now `server.close()` + `closeIdleConnections()` run first, giving active requests a
+  bounded 3s grace window to finish before a force-close backstop.
+- **CORS now exposes the `Mcp-Session-Id` response header**: without `exposedHeaders`, a
+  cross-origin browser MCP client could not read the session ID the SDK returns on `initialize`
+  and so could never establish a stateful session.
+- **Quality/audit pass**: removed a stale `as unknown as MetricReader` cast in the telemetry SDK
+  (the OpenTelemetry version skew it worked around is resolved; `PrometheusExporter` now extends
+  `MetricReader`); repaired two OAuth provider tests that broke when the callback flow switched from
+  an HTTP 302 to an HTML success-redirect page (they now assert the client code carried by the
+  `<meta refresh>` page — restoring real coverage of the code-exchange and PKCE-TTL paths); and
+  resolved the full ESLint warning backlog (real fixes where genuine — e.g. `(string & {})` on error
+  `code` unions to keep known-code autocomplete — and reasoned, documented suppressions where the
+  flag was a false positive on trusted-config regexes or intentional boundary/race defense).
+- **`AuthOptions.onAuthenticated` now actually called**: The hook was documented since 1.0.x but
+  was never invoked — its return value was silently discarded. It is now wired to the auth
+  middleware and called after every successful token verification. The result is merged into
+  `req.auth.extra` and flows through to `context.auth.extra` in tool handlers as documented.
+- **`McpSession.dispose()` no longer silently swallows `sdk.close()` errors**: if the SDK throws
+  before its `onerror` callback fires, the error is now logged as a fallback instead of being lost.
+- **Final "stopped" log message no longer dropped on shutdown**: `McpServerInstance.stop()` closed
+  log streams before logging `SERVER_STOPPED`, so file-based log targets never saw it. The message
+  is now logged before `Logger.closeStreams()` runs.
+- **`booleanFromEnv()` accepts more truthy spellings**: now uses `parseEnvBoolean()`
+  (`1`/`true`/`yes`/`on`, case-insensitive) instead of a bare `=== "true"` comparison.
+- **Circular-import crash on startup (`ReferenceError: Cannot access 'CONFIG_FILE_SECTIONS' before
+  initialization`)**: `config/extensions.ts` imported `CONFIG_FILE_SECTIONS` via the `config/file`
+  barrel instead of directly from the module that defines it, landing in the same import cycle as
+  `config/file/loader.ts` and `config/config-cache.ts`. Depending on which module a given entry point
+  happened to touch first, ESM's cycle resolution could return that barrel's namespace before its own
+  re-export of `CONFIG_FILE_SECTIONS` had run, crashing at module-evaluation time on a `const` still in
+  the temporal dead zone. Fixed by importing directly from `config/file/schema.ts` (the actual leaf
+  module — matching the pattern `config/file/loader.ts` already used), which is unaffected by the
+  cycle regardless of entry order.
+- **Server crashed on startup with `Content-Security-Policy received a duplicate directive
+  "form-action"` whenever no custom `MCP_HELMET_CSP` was configured**: the default-CSP branch in
+  `createExpressApp()` unconditionally added a `formAction` directive on top of Helmet's own
+  `getDefaultDirectives()`, which — depending on the installed Helmet version — may already include
+  `form-action`; Helmet treats the kebab-case and camelCase spellings as the same directive and
+  throws rather than silently merging them. Now only added when not already present in the defaults.
+
+### Changed
+
+- **Reorganized into self-contained building blocks** (internal; no public API or runtime-behavior
+  change beyond the pruning under Removed): `utils/` is now dependency-free; the `utils`↔`errors`
+  cycle is broken by moving the MCP icon helper to `mcp/icon` (`iconFromFile` still exported from
+  the root); the audit trail moved under `logger/audit` as a level-independent sink and no longer
+  reads config itself (the composition root passes the resolved path + `LOG_*` limits). Public
+  re-exports (`logAuditEvent`, `iconFromFile`, …) are unchanged.
+- **Collapsed duplicated server internals**: the four-layer server-option plumbing now flows through
+  shared `ServerIdentity` / `SessionRuntimeOptions` (and `ServerOptions` derives from
+  `CreateServerOptions`); the per-registry SDK-binding boilerplate and the two transport handlers'
+  session auth/close wiring are de-duplicated into shared helpers. No API or behavior change.
+- **Quieter access log**: `apiAccessLog` now logs routine traffic — CORS `OPTIONS` preflights,
+  `.well-known/*` discovery probes, and `3xx` responses — at `debug`; substantive calls and
+  `4xx`/`5xx` errors stay at `info`.
+- **Tidier startup logs**: dropped the redundant `Security:` message prefix (the `[Security]`
+  component tag already conveys it) and the duplicate OAuth-issuer log line (kept once, on the
+  "OAuth authentication enabled" confirmation).
+- **Typed OAuth token-exchange response**: `parseTokenResponse()` now returns a `TokenResponse`
+  type that encodes its existing runtime guarantee (`access_token` is a non-empty string),
+  removing two `as string` casts in the token-exchange path (`buildOAuthTokens()` and
+  `exchangeAuthorizationCode()`). The OAuth debug log now truncates the upstream authorization
+  code via the shared `truncateId()` helper instead of an inline `slice(0, 8)`.
+- **Auth-endpoint rate-limit parameters named**: the brute-force limiter's capacity/window
+  (CWE-307, see Security) are now `AUTH_RATE_LIMIT_MAX`/`AUTH_RATE_LIMIT_WINDOW_MS` constants
+  instead of inline magic numbers.
+- **Internal `sanitizeForLog()` renamed to `truncateForLog()`** (transport middleware): the old name
+  wrongly implied CWE-117 injection sanitization, but the function only trims and length-bounds
+  untrusted input (now via a named `MAX_LOG_INPUT_LENGTH` constant instead of an inline `200`) — the
+  actual control-character escaping is applied separately by the Logger pipeline's `InjectionGuard`.
+  Renamed for honesty and to disambiguate it from the scrubber's `sanitizeForLogging()`. Internal
+  helper (not part of the public package surface); no consumer impact.
+- **`mapUserInfo` and `onTokenExchanged` are now ctx-first**: Signature changed from `(token, data) => …`
+  to `(ctx: ProviderContext, token, data) => …`. The compiler catches every call site that needs updating.
+- **`serverUrl` replaces `serverCallbackUrl`**: The option key in `CreateOAuthProviderOptions` is now
+  `serverUrl` (the server base URL; `/callback` is appended internally). The old name is removed.
+- **`UpstreamEndpoints` moved to main package**: Previously only accessible as an internal type of
+  `upstream-provider.ts`; now a first-class export usable independently of the provider factory.
+- **OIDC discovery utilities promoted to first-class exports**: `fetchOidcDiscovery()`,
+  `getOidcDiscovery()`, `clearOidcDiscoveryCache()` were previously only reachable as a side-effect of
+  `createOidcProvider`. They are now exported from the main package and usable independently.
+- **OIDC UserInfo claims validated via Zod**: the default `google`/`oidc` userinfo mapper now runs the
+  provider's response through a Zod schema instead of ad-hoc `typeof` casts. A response with a missing
+  or wrong-typed `sub`, or a wrong-typed optional claim, now fails with a clear validation error
+  instead of silently coercing to `undefined`.
+- **`[logging].dir` renamed to `[logging].log_dir`** in the config file (the `LOG_DIR` env var is
+  unchanged). Consistent with the key now doubling as the default base directory for the audit trail
+  (see `resolveAuditFilePath()` above) — existing config files using `dir` need updating.
+
+### Removed
+
+- **Pruned unused public exports** (each was exported but consumed by nobody): config
+  `getConfigSource`; errors `redactIfSensitive`, `getHttpStatusForErrorCode`,
+  `isValidJsonRpcErrorCode`, `ErrorCategory`; telemetry `getActiveSpan`, `addSpanAttributes`,
+  `addSpanEvent`, `getTraceContext`, `FrameworkSpanStatusCode`; and the unused top-level
+  `mcp/index.ts` barrel. `BaseRegistry` and `resetAllRegistries` are demoted to internal.
+- **`createUpstreamOAuthProvider`** and its types (`UpstreamOAuthOptions`, `UpstreamOAuthProviderResult`)
+  — replaced by `createOAuthProvider({ type: "oauth2", ... })`. Clean break; no compatibility aliases.
+- **`createOidcProvider`** and its type (`OidcProviderOptions`) — replaced by
+  `createOAuthProvider({ type: "oidc", ... })`. Clean break; no compatibility aliases.
+- **`createBearerAuth`** and `BearerAuthOptions` — replaced by
+  `createAuthMiddleware({ tokenSource: "bearer", ... })`. Clean break; no compatibility aliases.
+- **`createCustomHeaderAuth`** and `CustomHeaderAuthOptions` — replaced by
+  `createAuthMiddleware({ tokenSource: { header: "..." }, ... })`. Clean break; no compatibility
+  aliases.
+- **Test-only reset hooks removed from the public API**: `resetConfigCache`, `resetConfigExtensions`,
+  `resetStartupWarnings`, `resetDynamicResourceRegistry`, `resetAllRegistries`. These existed only to
+  support test isolation and were never meant for application code.
+- **`LogEntryBuilder` / `createLogEntry` removed**: the deprecated fluent log-entry builder
+  (superseded by `buildLogEntry()`) had no remaining callers.
+- **Narrowed top-level package exports**: several internal/advanced symbols are no longer re-exported
+  from the main package entrypoint — `isFullOAuthProvider`, `ServerState`,
+  `TaskToolRegistry`/`globalTaskToolRegistry`, `parseDuration`/`formatDuration`, and most of the config
+  barrel (`getConfigSource`, `CONFIG_FILE_ENV_VAR`, `DISCOVERY_FILENAMES`, `frameworkEnvSchema`,
+  `validateConfigConstraints`, `commaSeparatedList`, `optionalCommaSeparatedList`,
+  `ConfigSource`, `ConfigFileFormat`). Most remain reachable via their internal module paths — this
+  only narrows what the top-level package surface promises to keep stable.
+  `authInfoExpiry` and `booleanFromEnv` were listed here in an earlier draft but were never actually
+  removed — both are still exported from the package root.
+- **`DynamicResource*` type exports narrowed**: only `DynamicResourceEntry` remains at the top level;
+  `DynamicResourceRegistryOptions`, `RegisterDynamicResourceOptions`, `RegisterDynamicResourceResult`,
+  `ReadDynamicResourceResult`, `DefineDynamicResourceTemplateOptions` are no longer re-exported from
+  the main package.
+- **`tools.log` / `transport.log` file-log slots**: `DEFAULT_LOG_COMPONENTS` no longer includes
+  `"tools"`/`"transport"` — nothing in the framework or a consuming server ever logged under those
+  exact component names, so the two files were created eagerly on every startup but stayed
+  permanently empty. Tool-call visibility already lives in the audit trail (`logAuditEvent`). File
+  logging now creates only `server.log` and `api.log` by default.
+
+### Security
+
+- **CWE-117 injection guard now covers Unicode line-break forging, not just `\n`**: the control-
+  character pattern escaped C0 controls and DEL but missed the C1 range (U+0080–U+009F, including
+  NEL U+0085) and the Unicode line/paragraph separators U+2028/U+2029 — none of these are `\n`, but
+  many terminals, editors, and log viewers render them as a line break, allowing a forged log entry
+  to slip past scrubbing that only checked for `\n`/`\r`. All are now escaped.
+- **Open-redirect in local-login guarded**: `POST /authorize/local` accepted any `authorize_url`
+  starting with `/` as "same-origin" before re-rendering the selection page — but protocol-relative
+  (`//evil.com`) and backslash (`/\evil.com`) forms also start with `/` and resolve to a foreign
+  origin in a browser, which was then reflected unescaped into the page's provider-button `href`s
+  (an open redirect from an otherwise-trusted login page). Now rejected explicitly, falling back to
+  `/authorize`.
+- **OIDC discovery endpoints re-validated against the SSRF allowlist**: `fetchOidcDiscovery()`
+  validated only the `.well-known` discovery URL itself; the `token_endpoint`/`userinfo_endpoint`/
+  `revocation_endpoint`/`jwks_uri` values *inside* the returned document were trusted implicitly,
+  even though the framework later POSTs the OAuth `client_secret` and user bearer tokens to them.
+  A compromised or MITM'd provider could point these at an internal address (e.g. cloud metadata).
+  Every discovered endpoint now passes through the same host-allowlist check as the discovery URL.
+- **Empty PKCE challenge rejected in local-login**: a `POST /authorize/local` omitting
+  `code_challenge` previously stored an empty string and relied entirely on the SDK's `/token`
+  handler to enforce PKCE. Now rejected with 400 at the point the code is minted.
+- **Upstream authorization code no longer logged, even truncated**: the debug-level token-exchange
+  log previously included the first 8 characters of the upstream `code` — inconsistent with the
+  module's otherwise strict no-code-logging discipline. Now logs only the provider name.
+- **`req.query` array-injection guard**: Query parameters in the OAuth authorize handler (`provider`,
+  `code`, `state`, `error`, `error_description`) are now validated with `typeof value === "string"`
+  before use. Express coerces repeated keys to arrays (`?provider=a&provider=b`); the previous casts
+  silently coerced `string[]` to `"[object Array]"`.
+- **PKCE authorization-code TTL**: `challengeForAuthorizationCode` now throws `InvalidGrantError` when
+  the stored PKCE context is older than `codeContextTtlMs`, preventing indefinite replay of stale codes.
+- **Provider name removed from 400 responses**: Unknown `?provider=` values are no longer reflected back
+  to the client (information disclosure); the value is logged server-side at `warn` level only.
+- **Discovery document element-type validation**: `scopes_supported` and
+  `token_endpoint_auth_methods_supported` fields from OIDC discovery documents are filtered to `string[]`
+  before use, preventing non-string elements from propagating into provider configuration.
+- **`form-action 'self'` in the default CSP**: prevents login-CSRF (an attacker page submitting
+  credentials cross-origin to `/authorize/local`). A custom `MCP_HELMET_CSP` without `form-action`
+  now logs a warning explaining the gap instead of silently omitting it.
+- **HSTS defaults on when the framework terminates TLS**: `MCP_HELMET_HSTS` is now tri-state
+  (unset / `true` / `false`) instead of a plain boolean defaulting to `false`. When unset, HSTS is
+  enabled automatically for `transport.mode: "https"` and left off for plain HTTP or HTTPS
+  terminated by a reverse proxy — previously it required an explicit `MCP_HELMET_HSTS=true` even
+  when the framework itself served TLS. The warning now fires whenever TLS is terminated here but
+  HSTS is off (regardless of `NODE_ENV`), replacing the old production-only check.
+- **DNS-rebinding protection now also validates `Origin`**: previously only the `Host` header was
+  checked (MCP spec MUST); `Origin` validation is added as the spec-recommended second layer — a
+  request whose `Origin` host doesn't match the same allowlist is rejected with 403, same as a bad
+  `Host`. Requests without an `Origin` header (non-browser MCP clients) are unaffected.
+- **Bounded `redirect_uris` per auto-registered OAuth client**: capped at 20 (CWE-770); further
+  updates are rejected with a warning instead of growing the array unboundedly.
+- **Dedicated rate limiter on auth endpoints**: `/authorize`, `/token`, `/register`, `/callback`, and
+  `/authorize/local` now sit behind their own low-capacity limiter (30 req / 15 min) and DNS-rebinding
+  protection, separate from the MCP transport limiter — mitigates auth brute-force (CWE-307).
+- **Event stores are now session-scoped — cross-session replay closed**: The SDK's `EventStore`
+  contract carries no session context, so with one shared store two gaps existed: (1) the SDK stores
+  standalone-GET-stream events under the hardcoded constant `_GET_stream` for *every* session, so all
+  sessions' GET-stream events interleaved in one record and a client resuming its own stream could
+  replay other sessions' events; (2) a client that learned an event ID from another session's stream
+  could replay that stream's messages. The stateful handler now wraps the supplied store in a
+  per-session namespacing decorator — replay of any stream outside the session's own scope fails
+  closed. On session close, the session's stored events are evicted from the inner store immediately
+  (data minimization; the TTL sweep remains the backstop). Applies transparently to **any**
+  `EventStore` implementation (in-memory, Redis, ...); no changes needed in consumer code or custom
+  stores.
 
 ## [1.1.2]
 

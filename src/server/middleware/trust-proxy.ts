@@ -164,6 +164,7 @@ async function resolveSegment(segment: string): Promise<string> {
  */
 async function resolveHostname(hostname: string): Promise<string> {
   // Basic hostname validation (RFC 1123)
+  // eslint-disable-next-line security/detect-unsafe-regex -- input is the trusted MCP_TRUST_PROXY env var, never attacker-controlled.
   if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/.test(hostname)) {
     throw ConfigurationError.invalidEnvVar(
       ENV_VAR,

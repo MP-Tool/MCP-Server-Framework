@@ -26,6 +26,13 @@ const LogMessages = {
   SHUTDOWN_ERROR: "Error during HTTP server shutdown: %s",
 } as const;
 
+/**
+ * Grace window for in-flight HTTP requests to finish during shutdown before their sockets
+ * are force-closed. Bounded so a stuck request can't hang the process; the outer
+ * server-instance shutdown timeout is the ultimate backstop.
+ */
+const SHUTDOWN_DRAIN_MS = 3000;
+
 // ============================================================================
 // Options
 // ============================================================================
@@ -83,13 +90,17 @@ export async function startHttpTransport(
 
   return {
     async shutdown(): Promise<void> {
-      // Close existing keep-alive connections before stopping the server.
-      // server.close() alone only stops accepting NEW connections — existing
-      // idle keep-alive connections hang indefinitely until they time out,
-      // blocking graceful shutdown. Available since Node.js 18.2+.
-      server.closeAllConnections();
-
-      await new Promise<void>((resolve, reject) => {
+      // Graceful drain (Node ≥18.2):
+      //   1. server.close() stops accepting new connections and resolves once all active
+      //      requests have finished.
+      //   2. closeIdleConnections() immediately drops keep-alive sockets with no in-flight
+      //      request — otherwise close() would block waiting for them to time out.
+      //   3. A bounded grace timer then force-closes any still-active sockets, so a slow or
+      //      stuck in-flight request cannot hang shutdown indefinitely.
+      // This gives in-flight POSTs a short window to complete instead of the previous
+      // unconditional closeAllConnections() that aborted them immediately. SSE streams are
+      // already closed upstream by sessionManager.closeAll() before this runs.
+      const closed = new Promise<void>((resolve, reject) => {
         server.close((err) => {
           if (err) {
             logger.error(LogMessages.SHUTDOWN_ERROR, err.message);
@@ -100,6 +111,16 @@ export async function startHttpTransport(
           }
         });
       });
+
+      server.closeIdleConnections();
+      const forceTimer = setTimeout(() => server.closeAllConnections(), SHUTDOWN_DRAIN_MS);
+      forceTimer.unref();
+
+      try {
+        await closed;
+      } finally {
+        clearTimeout(forceTimer);
+      }
     },
 
     info(): TransportInfo {

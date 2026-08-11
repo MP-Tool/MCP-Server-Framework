@@ -123,18 +123,21 @@ export interface BaseHttpTransportOptions {
    * client reconnection via the `Last-Event-ID` header. Only meaningful
    * in stateful mode — stateless requests have no persistent streams.
    *
-   * The SDK provides `InMemoryEventStore` as a reference implementation.
-   * For production horizontal scaling, implement the `EventStore` interface
-   * with Redis, PostgreSQL, or another shared backend.
+   * The framework provides `createInMemoryEventStore()` as a bounded, single-instance
+   * implementation. For production horizontal scaling, implement the `EventStore`
+   * interface with Redis, PostgreSQL, or another shared backend.
+   *
+   * The framework transparently scopes the store per session: streams stored through one
+   * session can never be replayed by another, so implementations need no ownership logic.
    *
    * @example
    * ```typescript
-   * import { InMemoryEventStore } from '@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js';
+   * import { createInMemoryEventStore } from 'mcp-server-framework';
    *
    * createServer({
    *   name: 'my-server',
    *   version: '1.0.0',
-   *   transport: { mode: 'http', eventStore: new InMemoryEventStore() },
+   *   transport: { mode: 'http', eventStore: createInMemoryEventStore() },
    * });
    * ```
    */

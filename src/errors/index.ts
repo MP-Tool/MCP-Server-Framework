@@ -34,29 +34,20 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 export {
-  // Error Codes & Categories
+  // Error Codes
   ErrorCodes,
-  ErrorCategory,
   type ErrorCodeType,
-  type ErrorCategoryType,
   // HTTP
   HttpStatus,
   ErrorCodeToHttpStatus,
-  getHttpStatusForErrorCode,
-  type HttpStatusType,
   // JSON-RPC
   JsonRpcErrorCode,
-  isSpecDefinedJsonRpcError,
-  isServerDefinedJsonRpcError,
-  isValidJsonRpcErrorCode,
   createJsonRpcError,
   type JsonRpcErrorCodeType,
   type JsonRpcErrorResponse,
   // Validation
   VALIDATION_LIMITS,
   REDACTED_PLACEHOLDER,
-  isSensitiveKey,
-  redactIfSensitive,
   // Base Error
   AppError,
   // Transport Error Messages

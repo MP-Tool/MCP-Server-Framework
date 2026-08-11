@@ -19,14 +19,46 @@ export { isFullOAuthProvider } from "./types.js";
 // Auth Guards
 export { requireAuth, requireScope, requireScopes, hasScope, hasAllScopes, hasAnyScope } from "./guards.js";
 
-// Upstream OAuth Provider (generic server-side callback pattern)
-export { createUpstreamOAuthProvider } from "./upstream-provider.js";
-export type { UpstreamOAuthOptions, UpstreamOAuthProviderResult, UpstreamEndpoints } from "./upstream-provider.js";
+// OAuth Provider
+export { createOAuthProvider, authInfoExpiry } from "./oauth/index.js";
+export type {
+  OAuthProviderConfig,
+  GithubProviderConfig,
+  GoogleProviderConfig,
+  OidcProviderConfig,
+  OAuth2ProviderConfig,
+  CreateOAuthProviderOptions,
+  OAuthProviderResult,
+  OAuthProviderType,
+  ProviderContext,
+  MapUserInfo,
+  OnTokenExchanged,
+  UpstreamEndpoints,
+  LocalLoginConfig,
+} from "./oauth/index.js";
 
-// OIDC Provider (auto-discovery for OIDC-compliant providers)
-export { createOidcProvider } from "./oidc-provider.js";
-export type { OidcProviderOptions } from "./oidc-provider.js";
+// Login page rendering (custom branding via LoginPageRenderer)
+export type { LoginPageRenderer, SelectableProvider, LocalLoginForm } from "./login.js";
 
-// OIDC Discovery (for advanced use cases)
-export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./oidc-discovery.js";
-export type { OidcDiscoveryDocument } from "./oidc-discovery.js";
+// OAuth Discovery
+export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./oauth/index.js";
+export type { OidcDiscoveryDocument } from "./oauth/index.js";
+
+// Browser-based OAuth/OIDC login (interactive, for stdio-mode servers)
+export { createBrowserOAuthLogin, deriveServerBaseUrl } from "./browser-login.js";
+export type {
+  BrowserOAuthLogin,
+  BrowserOAuthConfig,
+  BrowserOAuthResult,
+  BrowserOAuthProvider,
+} from "./browser-login.js";
+
+// Session-auth binding (typed extra + identity-scoped store; stateful & stateless)
+export { defineAuthExtra } from "./auth-extra.js";
+export type { AuthExtraBinding, HasAuthExtra } from "./auth-extra.js";
+export { createIdentityStore, authIdentityKey } from "./identity-store.js";
+export type { IdentityStore, IdentityStoreOptions, AuthIdentitySource } from "./identity-store.js";
+
+// Declarative OAuth config resolution (generic [auth] section → provider configs)
+export { resolveAuthConfig, toOAuthProviderConfigs } from "./auth-config.js";
+export type { ResolvedAuthConfig, AuthProviderInput } from "./auth-config.js";

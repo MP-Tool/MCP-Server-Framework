@@ -52,27 +52,6 @@ export type JsonRpcErrorCodeType = (typeof JsonRpcErrorCode)[keyof typeof JsonRp
 // JSON-RPC Error Code Utilities
 // ============================================================================
 
-/**
- * Check if an error code is a spec-defined JSON-RPC error.
- */
-export function isSpecDefinedJsonRpcError(code: number): boolean {
-  return code >= -32700 && code <= -32600;
-}
-
-/**
- * Check if an error code is an implementation-defined server error.
- */
-export function isServerDefinedJsonRpcError(code: number): boolean {
-  return code >= -32099 && code <= -32000;
-}
-
-/**
- * Check if an error code is a valid JSON-RPC error code.
- */
-export function isValidJsonRpcErrorCode(code: number): boolean {
-  return isSpecDefinedJsonRpcError(code) || isServerDefinedJsonRpcError(code);
-}
-
 // ============================================================================
 // JSON-RPC Error Response
 // ============================================================================
@@ -84,7 +63,7 @@ export function isValidJsonRpcErrorCode(code: number): boolean {
 export interface JsonRpcErrorResponse {
   readonly jsonrpc: "2.0";
   readonly error: {
-    readonly code: JsonRpcErrorCodeType | number;
+    readonly code: JsonRpcErrorCodeType | (number & {});
     readonly message: string;
   };
   readonly id: RequestId | null;
@@ -99,7 +78,7 @@ export interface JsonRpcErrorResponse {
  * @returns Structured JSON-RPC 2.0 error response
  */
 export function createJsonRpcError(
-  code: JsonRpcErrorCodeType | number,
+  code: JsonRpcErrorCodeType | (number & {}),
   message?: string,
   id: RequestId | null = null,
 ): JsonRpcErrorResponse {

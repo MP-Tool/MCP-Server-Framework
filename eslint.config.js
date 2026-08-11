@@ -108,6 +108,16 @@ export default [
     },
   },
 
+  // Test-file relaxations — patterns that are idiomatic in tests but not in src.
+  {
+    files: ["**/*.test.ts", "**/__tests__/**/*.ts"],
+    rules: {
+      // Tests reach into mock internals (`res.send.mock.calls[0]![0]`) and known-shaped
+      // fixtures where a non-null assertion is clearer than a redundant guard.
+      "@typescript-eslint/no-non-null-assertion": "off",
+    },
+  },
+
   // Prettier integration (must be last to override conflicting rules)
   eslintConfigPrettier,
   eslintPluginPrettier,

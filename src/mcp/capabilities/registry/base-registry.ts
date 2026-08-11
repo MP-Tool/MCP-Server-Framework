@@ -8,6 +8,7 @@
  */
 
 import { logger as baseLogger } from "../../../logger/index.js";
+import type { Logger, SecretScrubber } from "../../../logger/index.js";
 import { RegistryError } from "../../../errors/index.js";
 
 // ============================================================================
@@ -33,6 +34,32 @@ const logger = baseLogger.child({ component: LOG_COMPONENT });
  */
 export interface RegistryItem {
   readonly name: string;
+}
+
+// ============================================================================
+// Shared SDK Binding Options
+// ============================================================================
+
+/**
+ * Options common to every registry's `bindToSdk()`.
+ * @internal
+ */
+export interface BindOptions {
+  readonly logger: Logger;
+}
+
+/**
+ * Bind options for registries whose bound output passes the central
+ * secret-redaction boundary (tools, task tools, resources).
+ * @internal
+ */
+export interface ScrubbingBindOptions extends BindOptions {
+  /**
+   * When set, bound output is scrubbed for secrets before it returns to the
+   * SDK (see `scrubCallToolResult` / `scrubByMimeType`). `undefined` disables
+   * scrubbing for this registry.
+   */
+  readonly resultScrubber?: SecretScrubber | undefined;
 }
 
 // ============================================================================

@@ -10,7 +10,7 @@ A production-ready TypeScript framework for building [Model Context Protocol](ht
 
 ## Why This Framework?
 
-When I started building an MCP server for [Komodo MCP Server](https://github.com/MP-Tool/komodo-mcp-server), I quickly realized that the MCP SDK gives you protocol handling, but everything around it — transport management, session lifecycle, security middleware, configuration, observability, error handling — you're on your own. Every MCP server project ends up solving the same problems from scratch if you want a flexible,production-ready MCP server.
+When I started building an MCP server for [Komodo MCP Server](https://github.com/MP-Tool/komodo-mcp-server), I quickly realized that the MCP SDK gives you protocol handling, but everything around it — transport management, session lifecycle, security middleware, configuration, observability, error handling — you're on your own. Every MCP server project ends up solving the same problems from scratch if you want a flexible, production-ready MCP server.
 
 This framework extracts that infrastructure into a reusable foundation. The goal is simple: **you focus on your API, tools, resources and prompts — the framework handles everything else.**
 
@@ -41,6 +41,7 @@ That said: this software is provided **as-is, without warranty of any kind**. Se
 - **Scope-Based Access Control** — Permission guards (`requireAuth`, `requireScope`, `hasScope`) for fine-grained tool access.
 - **Security Middleware Stack** — Helmet headers, DNS rebinding protection, configurable rate limiting, protocol version validation — all enabled by default for HTTP transports.
 - **Secret Scrubbing** — JWT, Bearer tokens, and API keys automatically redacted from logs. CWE-117 log injection guard strips ANSI escapes and neutralizes injection attempts.
+- **Tool-Result Redaction** — every tool result passes a central, fail-closed secret-scrub boundary before it reaches the client transcript (default ON, configurable via `scrubToolResults`).
 
 ### 🛠️ Developer Experience
 
@@ -63,12 +64,11 @@ That said: this software is provided **as-is, without warranty of any kind**. Se
 - **12-Factor Config** — Five-level cascade: defaults → `.env` → config file (TOML/YAML/JSON) → environment variables → programmatic overrides.
 - **Pluggable Session Store** — `SessionStore` interface with in-memory default. Bring your own Redis, PostgreSQL, or any backend.
 - **Session Lifecycle** — Configurable idle timeouts, heartbeat keep-alive, dead connection cleanup, and max session capacity.
-- **Connection State Manager** — Generic `ConnectionStateManager<TApi>` with health checks, state transitions, and reconnection tracking for API clients.
 - **Graceful Shutdown** — SIGINT/SIGTERM handling, session drain, configurable shutdown timeouts.
 
 ### 🧩 Error System
 
-- **Typed Error Hierarchy** — `AppError` base with categories: MCP, Session, Transport, Validation, Configuration, Operation, System.
+- **Typed Error Hierarchy** — `AppError` base with categories: MCP, Session, Transport, Auth, Validation, Configuration, Operation, System.
 - **`FrameworkErrorFactory`** — Single import for all error types with unique IDs, HTTP/JSON-RPC code mappings, recovery hints, and cause chains.
 
 ## Quick Start
@@ -99,11 +99,10 @@ That's it. The tool is auto-registered, the server starts on stdio by default.
 npm install mcp-server-framework @modelcontextprotocol/sdk zod
 ```
 
-**For HTTP transport** (Express is a peer dependency, optional for stdio-only):
-
-```bash
-npm install express
-```
+Express, Zod, and the MCP SDK are regular dependencies, installed automatically — HTTP
+transport works out of the box (set `MCP_TRANSPORT=http`). The OpenTelemetry packages are
+optional dependencies: installed by default, but a stdio-only deployment can skip them with
+`npm install --omit=optional` to save ~15-20 MB. Telemetry degrades gracefully when absent.
 
 **For OpenTelemetry** (all optional):
 
@@ -187,7 +186,7 @@ await server.start();
 | `defineResourceTemplate()` | URI-template Resource with parameters | `globalResourceRegistry` |
 | `definePrompt()` | MCP Prompt with optional arguments | `globalPromptRegistry` |
 | `defineApp()` | MCP App (Tool + Resource composition) | `globalToolRegistry` + `globalResourceRegistry` |
-| `defineTask()` | Async background task tool (experimental) | `globalTaskToolRegistry` |
+| `defineTask()` | Async background task tool (experimental) | the task-tool registry (internal) |
 
 ## Response Helpers
 
@@ -234,13 +233,15 @@ Defaults → .env file → Config file → Environment variables → Programmati
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_TRANSPORT` | `http` | Transport mode: `stdio`, `http`, `https` |
+| `MCP_TRANSPORT` | `stdio` | Transport mode: `stdio`, `http`, `https` |
 | `MCP_BIND_HOST` | `127.0.0.1` | Host to bind to |
 | `MCP_PORT` | `8000` | Port to listen on |
+| `MCP_BASE_URL` | *(derived)* | Public base URL behind a proxy/domain (OAuth issuer/redirects, RFC 9728 metadata URL, trusted host) |
 | `MCP_STATELESS` | `false` | Stateless mode (no sessions) |
 | `MCP_JSON_RESPONSE` | `false` | Prefer JSON over SSE for non-streaming responses |
 | `MCP_BODY_SIZE_LIMIT` | `1mb` | Max request body size |
 | `LOG_LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `LOG_AUDIT_TOOL_IO` | `summary` | Audit request/result depth per tool call (scrubbed): `off` \| `summary` \| `full` |
 | `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing & metrics |
 
 **Config file** (auto-discovered as `mcp-server.toml`, `.yaml`, `.json` in CWD):
@@ -269,8 +270,7 @@ For advanced use cases, internal modules are available via subpath imports:
 | Import Path | Purpose |
 |-------------|---------|
 | `mcp-server-framework` | Main API: `createServer`, `defineTool`, auth providers, guards, helpers |
-| `mcp-server-framework/logger` | Logger configuration, child loggers |
-| `mcp-server-framework/connection` | `ConnectionStateManager` for API clients |
+| `mcp-server-framework/logger` | Logger configuration, child loggers, `SecretScrubber` |
 | `mcp-server-framework/session` | Session internals, `SessionStore` interface |
 | `mcp-server-framework/telemetry` | OpenTelemetry tracing & metrics |
 | `mcp-server-framework/errors` | Error classes & `FrameworkErrorFactory` |
@@ -278,9 +278,9 @@ For advanced use cases, internal modules are available via subpath imports:
 | `mcp-server-framework/config` | Config cache, env schema, Zod helpers |
 
 ```typescript
-import { ConnectionStateManager } from 'mcp-server-framework/connection';
 import { FrameworkErrorFactory } from 'mcp-server-framework/errors';
 import { withSpan } from 'mcp-server-framework/telemetry';
+import { SecretScrubber } from 'mcp-server-framework/logger';
 import type { SessionStore } from 'mcp-server-framework/session';
 ```
 
@@ -300,20 +300,19 @@ src/
 │   ├── middleware/     # Helmet, DNS rebinding, rate limiting, auth
 │   ├── routes/        # Health, readiness, metrics, streamable HTTP, SSE
 │   ├── session/       # SessionManager, SessionStore, Housekeeper, auth context
-│   ├── transport/     # Stdio, Streamable HTTP, SSE transports
-│   └── telemetry/     # OpenTelemetry traces, metrics, SDK init (lazy-loaded)
-├── api/           # API Client Abstraction
-│   └── connection/    # ConnectionStateManager<TApi>
+│   └── transport/     # Stdio, Streamable HTTP, SSE transports
+├── telemetry/     # OpenTelemetry traces, metrics, SDK init (lazy-loaded)
 ├── logger/        # Structured Logging
-│   ├── scrubbing/     # Secret scrubbing, injection guard
+│   ├── audit/         # Parallel JSON-Lines security/activity audit trail
+│   ├── core/          # Pipeline, request context, injection guard (CWE-117)
 │   ├── formatters/    # JSON (ECS), text
 │   └── writers/       # Console, file, composite
 ├── errors/        # Error System
 │   ├── core/          # AppError, ErrorCodes, HTTP/JSON-RPC mappings
-│   └── categories/    # Validation, Connection, MCP, Operation, System
+│   └── categories/    # Validation, Protocol, Session, Transport, Auth, Operation, System
 ├── config/        # Configuration
 │   └──                # Env schema (Zod), config cache, file parser
-└── utils/         # Helpers
+└── utils/         # Helpers — SecretScrubber engine, string/env/interpolation helpers
 ```
 
 ## Security
@@ -331,34 +330,91 @@ Request → Trust Proxy → Helmet → DNS Rebinding → Rate Limiter → Auth �
 - **Secret Scrubbing**: JWT, Bearer tokens, API keys automatically redacted from all log output
 - **Log Injection Guard**: CWE-117 protection — ANSI escapes stripped, injection attempts neutralized
 
+### Tool-Result Redaction
+
+Every tool (and task-tool) result passes a single secret-redaction boundary between the handler
+and the SDK — before it reaches the client transcript and the model provider. Default **ON**.
+
+```typescript
+createServer({
+  // true (default) | false | { additionalKeys, allowKeys }
+  scrubToolResults: {
+    additionalKeys: ["fernet"], // extra key-name fragments to redact
+    allowKeys: ["public_key"], // exact key names never redacted by key-matching
+  },
+});
+```
+
+- `structuredContent` is scrubbed recursively; text content, embedded-resource text, and
+  `resource_link` fields are scrubbed as text. Binary payloads (`image`/`audio` data, resource
+  `blob`) pass through verbatim.
+- Domain rules are declared, not coded: `dropKeys` (remove a field entirely), `sensitivePaths`
+  (mask innocuously-named keys in a secret context, e.g. `endpoint.params.url`), and
+  `maskWhenSibling` (flag-driven masking, e.g. `is_secret` → `value`). Values masked in
+  structured content are purged from the same result's rendered text automatically.
+- **Fail-closed**: if scrubbing itself fails, the result is withheld and replaced by a generic
+  error — an unscrubbed result never leaves the server.
+- Tools whose purpose is returning a secret opt out via `defineTool({ scrubResult: false })`.
+- `resources/read` bypasses this boundary entirely, so resources are scrubbed at two sibling
+  stages instead: ephemeral resources are scrubbed on register in the `DynamicResourceRegistry`
+  (same `scrub` option shape on `configureDynamicResourceRegistry`); static resources/templates
+  are scrubbed on read (same scrubber as `scrubToolResults`, wired automatically).
+- **Declare the real mimeType for structured content.** Registry content whose mimeType contains
+  `json` or `toml` is parsed, scrubbed as an object and re-serialized, so the declarative rules
+  above apply with full structural fidelity. Everything else — including structured data labelled
+  `text/plain` — gets regex redaction only, which cannot drop a nested field and which
+  over-redacts allowlisted keys.
+- `resolveScrubConfig(base?)` layers the `MCP_SCRUB_ENABLED` / `MCP_SCRUB_ADDITIONAL_KEYS` /
+  `MCP_SCRUB_ALLOW_KEYS` env vars onto a programmatic `base` (env wins on the master switch;
+  key lists are unioned) — pass its result to both `scrubToolResults` and
+  `configureDynamicResourceRegistry`'s `scrub` option so the two stay in sync:
+  ```typescript
+  const scrub = resolveScrubConfig({ dropKeys: ["deployed_config"] });
+  createServer({ scrubToolResults: scrub });
+  configureDynamicResourceRegistry({ scrub });
+  ```
+  It is **opt-in**: a consumer that passes its own config straight to `createServer()` never sees
+  `MCP_SCRUB_*` take effect. Note also that `base: false` carries no rules, so re-enabling via
+  `MCP_SCRUB_ENABLED=true` yields the generic heuristics without your domain rules — compose
+  explicitly if yours must survive every switch combination.
+
 ## Authentication
 
 OAuth 2.1 and OIDC authentication is **opt-in** — servers work without auth by default.
+A single factory, `createOAuthProvider(config | config[], options)`, builds the provider from a
+config discriminated on `type`: `'github' | 'google' | 'oidc' | 'oauth2'`.
 
 ```typescript
-import { createServer, createOidcProvider } from 'mcp-server-framework';
+import { createServer, createOAuthProvider } from 'mcp-server-framework';
 
 // OIDC auto-discovery (Keycloak, Auth0, Okta, Azure AD, ...)
-const { provider, callbackHandler } = await createOidcProvider({
-  issuer: 'https://auth.example.com',
-  clientId: process.env.OIDC_CLIENT_ID!,
-  clientSecret: process.env.OIDC_CLIENT_SECRET!,
-  serverUrl: 'http://localhost:8000',
-});
+const { provider, callbackHandler } = await createOAuthProvider(
+  {
+    type: 'oidc',
+    issuer: 'https://auth.example.com',
+    clientId: process.env.OIDC_CLIENT_ID!,
+    clientSecret: process.env.OIDC_CLIENT_SECRET!,
+  },
+  { serverUrl: 'http://localhost:8000' },
+);
 
 const { start } = createServer({
   name: 'secure-server',
   version: '1.0.0',
   transport: { mode: 'http' },
-  auth: { provider, callbackHandler },
+  auth: { enabled: true, provider, callbackHandler },
 });
 await start();
 ```
 
+Pass an **array** of configs to enable multi-provider mode — users get an auto-rendered
+provider-selection page when no `?provider=` is present.
+
 **Supported patterns**:
-- **OIDC Auto-Discovery** — `createOidcProvider()` fetches `.well-known/openid-configuration` automatically
-- **Upstream OAuth Proxy** — `createUpstreamOAuthProvider()` for GitHub, Google, and other OAuth services
-- **Custom Token Verifier** — Implement `TokenVerifier` for API keys, custom JWTs, or any auth scheme
+- **OIDC Auto-Discovery** (`type: 'oidc'`) — fetches `.well-known/openid-configuration` from the issuer automatically
+- **Upstream OAuth** (`type: 'github'` / `'google'`) — built-in presets; only `clientId`/`clientSecret` needed
+- **Custom OAuth2** (`type: 'oauth2'`) — the explicit-endpoints escape hatch for any other provider
+- **Custom Token Verifier** — implement `TokenVerifier` for API keys, custom JWTs, or any auth scheme
 - **Permission Guards** — `requireAuth()`, `requireScope()`, `hasScope()` for tool-level access control
 
 Health (`/health`) and metrics (`/metrics`) endpoints remain unauthenticated for liveness/readiness probes.
@@ -418,13 +474,13 @@ process.on('uncaughtException', (error) => {
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| `@opentelemetry/sdk-node` | ^0.213.0 | OTEL SDK orchestration |
+| `@opentelemetry/sdk-node` | ^0.219.0 | OTEL SDK orchestration |
 | `@opentelemetry/api` | ^1.9.0 | Tracing API, span context |
 | `@opentelemetry/sdk-metrics` | ^2.6.0 | Metrics collection & export |
-| `@opentelemetry/instrumentation-http` | ^0.213.0 | Automatic HTTP span instrumentation |
+| `@opentelemetry/instrumentation-http` | ^0.219.0 | Automatic HTTP span instrumentation |
 | `@opentelemetry/instrumentation-express` | ^0.61.0 | Automatic Express route instrumentation |
-| `@opentelemetry/exporter-prometheus` | ^0.213.0 | Prometheus `/metrics` endpoint |
-| `@opentelemetry/exporter-trace-otlp-http` | ^0.213.0 | OTLP trace export (Jaeger, Grafana, etc.) |
+| `@opentelemetry/exporter-prometheus` | ^0.219.0 | Prometheus `/metrics` endpoint |
+| `@opentelemetry/exporter-trace-otlp-http` | ^0.219.0 | OTLP trace export (Jaeger, Grafana, etc.) |
 
 ### Configuration & Utilities
 
@@ -434,4 +490,9 @@ process.on('uncaughtException', (error) => {
 | smol-toml | ^1.3.1 | TOML config file parsing |
 | yaml | ^2.7.1 | YAML config file parsing |
 
-> **Note**: Express, Zod, and all OpenTelemetry packages are **peer dependencies**. OTEL packages are optional — install only what you need. Express is optional, stdio-only servers.
+> **Note**: Express, Zod, and the MCP SDK are regular **dependencies**, installed automatically.
+> The heavy OpenTelemetry packages (SDK, exporters, instrumentation) are **optional
+> dependencies** — installed by default but safe to omit (`npm install --omit=optional`) for
+> stdio-only deployments; telemetry degrades gracefully when absent. `@opentelemetry/api` (the
+> lightweight tracing API re-exported from this package's public types) stays a regular
+> dependency so type resolution never breaks.

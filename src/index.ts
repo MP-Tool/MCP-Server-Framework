@@ -30,7 +30,7 @@
  * ```typescript
  * import { SessionManagerImpl } from 'mcp-server-framework/session';
  * import { startHttpTransport, createExpressApp } from 'mcp-server-framework/http';
- * import { getActiveSpan, SpanKind } from 'mcp-server-framework/telemetry';
+ * import { withSpan, MCP_ATTRIBUTES } from 'mcp-server-framework/telemetry';
  * import { FrameworkErrorFactory } from 'mcp-server-framework/errors';
  * import { Logger } from 'mcp-server-framework/logger';
  * import { getFrameworkConfig } from 'mcp-server-framework/config';
@@ -45,7 +45,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Server creation
-export { createServer } from "./server/index.js";
+export { createServer, configureLoggerFromEnv } from "./server/index.js";
 export { McpServerBuilder } from "./server/index.js";
 
 // Definition helpers (auto-register in global registries)
@@ -60,17 +60,9 @@ export {
   DynamicResourceRegistry,
   getDynamicResourceRegistry,
   configureDynamicResourceRegistry,
-  resetDynamicResourceRegistry,
   defineDynamicResourceTemplate,
 } from "./mcp/capabilities/resources/index.js";
-export type {
-  DynamicResourceEntry,
-  DynamicResourceRegistryOptions,
-  RegisterDynamicResourceOptions,
-  RegisterDynamicResourceResult,
-  ReadDynamicResourceResult,
-  DefineDynamicResourceTemplateOptions,
-} from "./mcp/capabilities/resources/index.js";
+export type { DynamicResourceEntry } from "./mcp/capabilities/resources/index.js";
 
 // Schema validation (Zod re-export — see DD-011)
 export { z } from "zod";
@@ -81,23 +73,51 @@ export { text, json, structured, error, image, audio, multi, resourceLink } from
 // Type guards
 export { isHttpTransport } from "./server/index.js";
 export { isStaticResource, isResourceTemplate } from "./mcp/types/index.js";
-export { isFullOAuthProvider } from "./server/auth/index.js";
 
-// Auth provider factories
-export { createUpstreamOAuthProvider } from "./server/auth/index.js";
-export { createOidcProvider } from "./server/auth/index.js";
+// Auth provider factory
+export { createOAuthProvider, authInfoExpiry } from "./server/auth/index.js";
 export { fetchOidcDiscovery, getOidcDiscovery, clearOidcDiscoveryCache } from "./server/auth/index.js";
+
+// Browser-based OAuth/OIDC login (interactive, for stdio-mode servers)
+export { createBrowserOAuthLogin, deriveServerBaseUrl } from "./server/auth/index.js";
+export type {
+  BrowserOAuthLogin,
+  BrowserOAuthConfig,
+  BrowserOAuthResult,
+  BrowserOAuthProvider,
+} from "./server/auth/index.js";
+
+// Session-auth binding (typed extra + identity-scoped store; stateful & stateless)
+export { defineAuthExtra, createIdentityStore, authIdentityKey } from "./server/auth/index.js";
+export type {
+  AuthExtraBinding,
+  HasAuthExtra,
+  IdentityStore,
+  IdentityStoreOptions,
+  AuthIdentitySource,
+} from "./server/auth/index.js";
+
+// Declarative OAuth config resolution (generic [auth] section → provider configs)
+export { resolveAuthConfig, toOAuthProviderConfigs } from "./server/auth/index.js";
+export type { ResolvedAuthConfig, AuthProviderInput } from "./server/auth/index.js";
+
+// Audit log (parallel JSON-Lines security/activity trail)
+export { logAuditEvent } from "./logger/audit/index.js";
+export type { AuditEvent, AuditActor, AuditCategory, AuditOutcome } from "./logger/audit/index.js";
 
 // Auth providers (re-export SDK types for consumer convenience)
 export { ProxyOAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";
 export type { ProxyOptions, ProxyEndpoints } from "@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js";
 
+// Auth context
+export { createAuthContext, ANONYMOUS_AUTH } from "./server/auth/index.js";
+
 // Auth guards
 export { requireAuth, requireScope, requireScopes, hasScope, hasAllScopes, hasAnyScope } from "./server/auth/index.js";
 
 // Auth middleware
-export { createBearerAuth, createCustomHeaderAuth } from "./server/middleware/index.js";
-export type { BearerAuthOptions, CustomHeaderAuthOptions } from "./server/middleware/index.js";
+export { createAuthMiddleware, extractBearerToken } from "./server/middleware/index.js";
+export type { AuthMiddlewareOptions, AuthTokenSource, AuthEnforcement } from "./server/middleware/index.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -106,16 +126,29 @@ export type { BearerAuthOptions, CustomHeaderAuthOptions } from "./server/middle
 // --- Auth types ---
 export type {
   AuthInfo,
+  AuthContext,
   OAuthServerProvider,
   TokenVerifier,
   AuthProvider,
   AuthenticatedExtra,
   AuthOptions,
-  UpstreamOAuthOptions,
-  UpstreamOAuthProviderResult,
+  OAuthProviderConfig,
+  GithubProviderConfig,
+  GoogleProviderConfig,
+  OidcProviderConfig,
+  OAuth2ProviderConfig,
+  CreateOAuthProviderOptions,
+  OAuthProviderResult,
+  OAuthProviderType,
+  ProviderContext,
+  MapUserInfo,
+  OnTokenExchanged,
   UpstreamEndpoints,
-  OidcProviderOptions,
+  LocalLoginConfig,
   OidcDiscoveryDocument,
+  LoginPageRenderer,
+  SelectableProvider,
+  LocalLoginForm,
 } from "./server/auth/index.js";
 
 // --- Server creation ---
@@ -135,10 +168,12 @@ export type {
   SessionConfigOptions,
   ServerOptions,
   ServerInstance,
-  ServerState,
   ServerLifecycleHooks,
   ShutdownConfig,
 } from "./server/index.js";
+
+// --- Server identity: icons (SDK types) ---
+export type { Icon, Icons } from "@modelcontextprotocol/sdk/types.js";
 
 // --- MCP protocol definitions ---
 export type {
@@ -176,6 +211,13 @@ export type {
   TaskToolProvider,
 } from "./mcp/types/index.js";
 
+// Per-tool-call context accessor — reads current ToolContext from AsyncLocalStorage
+export { getCurrentToolContext } from "./mcp/current-tool-context.js";
+
+// User confirmation via MCP Elicitation (double opt-in confirm prompt)
+export { elicitConfirmation } from "./mcp/elicit-confirmation.js";
+export type { ElicitConfirmationOptions, ElicitConfirmationOutcome } from "./mcp/elicit-confirmation.js";
+
 // --- Tool context & protocol handlers ---
 export type {
   ToolContext,
@@ -203,8 +245,10 @@ export type {
   AudioResponseOptions,
 } from "./mcp/types/index.js";
 
-// --- EventStore (SDK re-exports for stream resumability) ---
+// --- EventStore (interface from the SDK; implementation is the framework's own) ---
 export type { EventStore, EventId, StreamId } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+export { createInMemoryEventStore } from "./server/transport/index.js";
+export type { InMemoryEventStoreOptions, InMemoryEventStoreResult } from "./server/transport/index.js";
 
 // --- Server→Client request types (SDK re-exports for Sampling, Roots, Elicitation) ---
 export type {
@@ -229,23 +273,13 @@ export {
   ToolRegistry,
   ResourceRegistry,
   PromptRegistry,
-  TaskToolRegistry,
   globalToolRegistry,
   globalResourceRegistry,
   globalPromptRegistry,
-  globalTaskToolRegistry,
+  resolveScrubConfig,
 } from "./mcp/capabilities/registry/index.js";
 
-/**
- * `resetAllRegistries` is re-exported from the registry module.
- * Import it directly from the main package:
- * ```typescript
- * import { resetAllRegistries } from 'mcp-server-framework';
- * ```
- */
-export { resetAllRegistries } from "./mcp/capabilities/registry/index.js";
-
-export type { RegistryItem } from "./mcp/capabilities/registry/index.js";
+export type { RegistryItem, ScrubToolResultsConfig } from "./mcp/capabilities/registry/index.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INFRASTRUCTURE — Logger
@@ -288,21 +322,9 @@ export type {
 // INFRASTRUCTURE — Config
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export {
-  getFrameworkConfig,
-  getConfigSource,
-  CONFIG_FILE_ENV_VAR,
-  DISCOVERY_FILENAMES,
-  registerConfigSection,
-  getAppConfig,
-  frameworkEnvSchema,
-  validateConfigConstraints,
-  booleanFromEnv,
-  commaSeparatedList,
-  optionalCommaSeparatedList,
-} from "./config/index.js";
+export { getFrameworkConfig, registerConfigSection, getAppConfig } from "./config/index.js";
 
-export type { ConfigSource, ConfigFileFormat, FrameworkEnvConfig, ConfigConstraintViolation } from "./config/index.js";
+export type { FrameworkEnvConfig, ConfigConstraintViolation } from "./config/index.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INFRASTRUCTURE — Telemetry
@@ -326,11 +348,13 @@ export type { TelemetryConfig, SpanOptions, ServerMetrics, ServerStats } from ".
 
 export {
   parseEnvBoolean,
+  booleanFromEnv,
+  optionalBooleanFromEnv,
   getEnvString,
   getEnvOptional,
   interpolate,
   type MessageParams,
-  parseDuration,
-  formatDuration,
   durationSchema,
 } from "./utils/index.js";
+
+export { iconFromFile } from "./mcp/icon.js";

@@ -38,8 +38,8 @@ import {
   createRateLimiter,
   validateProtocolVersion,
   dnsRebindingProtection,
-  createBearerAuth,
-  createCustomHeaderAuth,
+  createAuthMiddleware,
+  apiAccessLog,
 } from "../middleware/index.js";
 
 // Auth
@@ -72,6 +72,13 @@ const LogMessages = {
   CORS_HTTP_CREDENTIALS:
     "CORS credentials enabled with non-localhost HTTP origin(s): %s — credentials over plain HTTP expose tokens to network sniffing",
 } as const;
+
+/**
+ * Dedicated low-capacity limits for the OAuth endpoints (`/authorize`, `/token`, …),
+ * separate from the MCP transport limiter, to slow credential brute-forcing (CWE-307).
+ */
+const AUTH_RATE_LIMIT_MAX = 30;
+const AUTH_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 /**
  * Known W3C Content Security Policy directive names.
@@ -150,8 +157,19 @@ export interface ExpressAppOptions {
   /** Allow credentials in CORS requests. Only effective when corsOrigin is set. */
   readonly corsCredentials?: boolean | undefined;
 
-  /** Enable HSTS header. Default: false (managed by reverse proxy) */
+  /**
+   * Enable HSTS header (tri-state).
+   * - `true`/`false` — force on/off
+   * - `undefined` — defaults to `tlsTerminated` (on when the framework terminates TLS)
+   */
   readonly helmetHsts?: boolean | undefined;
+
+  /**
+   * Whether the framework itself terminates TLS (`transport.mode: "https"`), as opposed to
+   * plain HTTP or HTTPS fronted by a reverse proxy. Drives the HSTS default when `helmetHsts`
+   * is unset — the header only makes sense on a connection the framework serves over TLS.
+   */
+  readonly tlsTerminated?: boolean | undefined;
 
   /**
    * Content Security Policy.
@@ -182,6 +200,19 @@ export interface ExpressAppOptions {
    * Health and metrics endpoints remain unauthenticated for probe access.
    */
   readonly auth?: AuthOptions | undefined;
+
+  /**
+   * Optional hook to register additional Express routes on the app.
+   *
+   * Runs after global security headers (Helmet/CORS/JSON) and the OAuth router,
+   * but **before** health, metrics, and MCP transport routes are mounted.
+   *
+   * Security scope: DNS-rebinding protection, rate limiting, and auth middleware
+   * are all scoped to `/mcp` only — they do NOT apply to routes registered here.
+   * Consumer is responsible for authenticating and protecting any routes added
+   * via this hook.
+   */
+  readonly configureApp?: ((app: express.Application) => void) | undefined;
 }
 
 // ============================================================================
@@ -194,7 +225,7 @@ export interface ExpressAppOptions {
 function setupSecurityMiddleware(app: express.Application, options?: ExpressAppOptions): void {
   // ── Helmet (Security Headers) ──────────────────────────────────────────
   // Build CSP option
-  let cspOption: { directives: Record<string, string[]> } | boolean | undefined;
+  let cspOption: boolean | { directives: Record<string, string[]> } | undefined;
   if (options?.helmetCsp === "false") {
     cspOption = false;
     logger.warn("Content Security Policy (CSP) is disabled via configuration — this reduces XSS protection");
@@ -213,21 +244,60 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
         directives[name] = values;
       }
     }
+    if (!directives["form-action"]) {
+      logger.warn(
+        "Custom CSP (MCP_HELMET_CSP) does not include 'form-action' — login form submissions are unrestricted. " +
+          "Add \"form-action 'self'\" to restrict submissions to the same origin.",
+      );
+    }
     cspOption = { directives };
+  } else {
+    // No custom CSP — use Helmet defaults, ensuring form-action 'self' is present. Without
+    // it, browsers allow form submissions to any origin, enabling login CSRF (attacker page
+    // submits credentials cross-origin to /authorize/local). Conditional rather than always
+    // spreading it in: depending on the installed Helmet version, the defaults may already
+    // include form-action — adding it again unconditionally makes Helmet throw ("duplicate
+    // directive"), since it treats the kebab-case and camelCase spellings as the same directive.
+    // getDefaultDirectives() returns string-array values at runtime; cast is safe.
+    const defaultDirectives = helmet.contentSecurityPolicy.getDefaultDirectives() as Record<string, string[]>;
+    cspOption = {
+      directives:
+        "form-action" in defaultDirectives ? defaultDirectives : { ...defaultDirectives, formAction: ["'self'"] },
+    };
   }
 
-  // Build frameguard option (CWE-693: disabling X-Frame-Options is not allowed)
-  const frameguardOption: { action: "deny" | "sameorigin" } =
-    options?.helmetFrameOptions === "SAMEORIGIN" ? { action: "sameorigin" } : { action: "deny" };
+  // Build frameguard option. 'false' disables X-Frame-Options (not recommended).
+  const frameguardOption: { action: "deny" | "sameorigin" } | false =
+    options?.helmetFrameOptions === "SAMEORIGIN"
+      ? { action: "sameorigin" }
+      : options?.helmetFrameOptions === "false"
+        ? false
+        : { action: "deny" };
+
+  // HSTS is tri-state: honor an explicit setting, otherwise default it to whether the
+  // framework itself terminates TLS. Sending Strict-Transport-Security only makes sense on
+  // a connection we serve over HTTPS; on plain HTTP it is ignored by browsers, and behind a
+  // TLS-terminating proxy the proxy owns the header.
+  const hstsEnabled = options?.helmetHsts ?? options?.tlsTerminated ?? false;
 
   app.use(
     helmet({
-      strictTransportSecurity: options?.helmetHsts === true ? { maxAge: 15552000, includeSubDomains: true } : false,
-      ...(cspOption !== undefined && { contentSecurityPolicy: cspOption }),
-      frameguard: frameguardOption,
+      strictTransportSecurity: hstsEnabled ? { maxAge: 15552000, includeSubDomains: true } : false,
+      contentSecurityPolicy: cspOption,
+      ...(frameguardOption !== false ? { frameguard: frameguardOption } : { frameguard: false }),
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     }),
   );
+
+  // Warn when the framework terminates TLS but HSTS is nonetheless off (operator set it to
+  // false explicitly) — the HTTPS connection then ships no Strict-Transport-Security header,
+  // leaving clients open to SSL-strip on later visits.
+  if (!hstsEnabled && options?.tlsTerminated) {
+    logger.warn(
+      "HSTS (Strict-Transport-Security) is disabled while the server terminates TLS. " +
+        "Remove MCP_HELMET_HSTS=false to enable it, or ensure an upstream sets the header.",
+    );
+  }
 
   // ── CORS ────────────────────────────────────────────────────────────────
   if (options?.corsOrigin && options.corsOrigin.length > 0) {
@@ -261,6 +331,10 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
       cors({
         origin,
         credentials: options.corsCredentials ?? false,
+        // Let browser MCP clients read the session ID the SDK returns on initialize —
+        // without this it is hidden by the CORS response-header allowlist, so a cross-origin
+        // browser client cannot establish a stateful session.
+        exposedHeaders: [MCP_HEADERS.SESSION_ID],
       }),
     );
   }
@@ -308,11 +382,17 @@ function isValidRedirectUri(uri: string): boolean {
  *   does the same thing lazily. The SDK authorize handler then finds the client and
  *   proceeds normally.
  */
+/** Maximum redirect_uris stored per client — prevents unbounded accumulation (CWE-770). */
+const MAX_REDIRECT_URIS_PER_CLIENT = 20;
+
 function createClientAutoRegistration(provider: OAuthServerProvider): express.RequestHandler {
   return async (req, _res, next) => {
     try {
-      const clientId = req.query.client_id as string | undefined;
-      const redirectUri = req.query.redirect_uri as string | undefined;
+      // typeof narrowing instead of a cast — Express yields an array for
+      // repeated query params (?client_id=a&client_id=b), which a plain
+      // `as string` would let through unchecked.
+      const clientId = typeof req.query.client_id === "string" ? req.query.client_id : undefined;
+      const redirectUri = typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : undefined;
 
       if (!clientId || !redirectUri || !provider.clientsStore.registerClient) {
         next();
@@ -336,14 +416,22 @@ function createClientAutoRegistration(provider: OAuthServerProvider): express.Re
           redirect_uris: [redirectUri],
           client_id_issued_at: Math.floor(Date.now() / 1000),
         } as Parameters<typeof provider.clientsStore.registerClient>[0]);
-        logger.info("Auto-registered unknown client %s at /authorize", clientId);
+        logger.debug("Auto-registered unknown client %s at /authorize", clientId);
       } else if (!existing.redirect_uris.includes(redirectUri)) {
-        // Known client but new redirect_uri (e.g., VS Code with different port) — update
-        await provider.clientsStore.registerClient({
-          ...existing,
-          redirect_uris: [...existing.redirect_uris, redirectUri],
-        });
-        logger.debug("Updated client %s redirect_uris at /authorize", clientId);
+        if (existing.redirect_uris.length >= MAX_REDIRECT_URIS_PER_CLIENT) {
+          logger.warn(
+            "Rejected redirect_uri update for client %s: limit of %d reached",
+            clientId,
+            MAX_REDIRECT_URIS_PER_CLIENT,
+          );
+        } else {
+          // Known client but new redirect_uri (e.g., VS Code with different port) — update
+          await provider.clientsStore.registerClient({
+            ...existing,
+            redirect_uris: [...existing.redirect_uris, redirectUri],
+          });
+          logger.debug("Updated client %s redirect_uris at /authorize", clientId);
+        }
       }
     } catch (err) {
       // Non-fatal — let the SDK handler deal with the original request
@@ -374,52 +462,55 @@ function setupMcpRoutes(
       TRANSPORT_ROUTES.SSE_MESSAGE,
     );
   }
-  // Always mount the router — returns 501 if feature is disabled
-  // Apply DNS rebinding protection to SSE routes (MCP spec MUST requirement)
-  app.use([TRANSPORT_ROUTES.SSE, TRANSPORT_ROUTES.SSE_MESSAGE, TRANSPORT_ROUTES.MCP_MESSAGE], dnsRebindingProtection);
+
+  // ── Build auth middleware once — shared by SSE routes and /mcp ─────────────
+  // Building it once avoids duplicating the construction logic for two route groups.
+  let sharedAuthMiddleware: ReturnType<typeof createAuthMiddleware> | undefined;
+  if (options?.auth && options.auth.enabled !== false) {
+    const { provider, headerName, requiredScopes, onAuthenticated } = options.auth;
+    if (headerName !== undefined && headerName === "") {
+      logger.warn(
+        "AuthOptions.headerName is an empty string — falling back to Bearer auth. Set a non-empty header name or remove the option.",
+      );
+    }
+    const useCustomHeader = headerName !== undefined && headerName !== "" && !isFullOAuthProvider(provider);
+    // Resource Metadata URL (RFC 9728) is always auto-derived from the issuer origin for full
+    // OAuth providers (the issuer comes from the public base URL, MCP_BASE_URL); N/A for custom headers.
+    const resourceMetadataUrl =
+      !useCustomHeader && isFullOAuthProvider(provider) && options.auth.issuerUrl
+        ? `${options.auth.issuerUrl.origin}/.well-known/oauth-protected-resource`
+        : undefined;
+    sharedAuthMiddleware = createAuthMiddleware({
+      provider,
+      ...(useCustomHeader && headerName ? { tokenSource: { header: headerName } } : {}),
+      requiredScopes,
+      resourceMetadataUrl,
+      onAuthenticated,
+    });
+  }
+
+  // Single shared rate limiter for all MCP transport routes (SSE + /mcp).
+  // One instance = one shared bucket per client IP — prevents bypassing the
+  // limit by splitting requests between endpoints (CWE-770).
+  const mcpRateLimiter = createRateLimiter({ trustProxyConfigured: options?.trustProxy !== undefined });
+
+  // ── SSE routes: DNS rebinding + rate limiting + auth ───────────────────────
+  // Always mounted — returns 501 when SSE is disabled (ensures DNS rebinding protection).
+  const sseRoutes = [TRANSPORT_ROUTES.SSE, TRANSPORT_ROUTES.SSE_MESSAGE, TRANSPORT_ROUTES.MCP_MESSAGE];
+  app.use(sseRoutes, dnsRebindingProtection); // 1. DNS Rebinding Protection (MUST)
+  app.use(sseRoutes, mcpRateLimiter); // 2. Rate Limiting (shared bucket with /mcp)
+  if (sharedAuthMiddleware) {
+    app.use(sseRoutes, sharedAuthMiddleware); // 3. Auth (when configured)
+  }
   app.use(createSseRouter(sessionFactory, sessionManager));
 
   // ===== MCP Transport Routes =====
   // Streamable HTTP transport on /mcp endpoint
   // Security middleware (Express level — not handled by SDK)
   app.use(TRANSPORT_ROUTES.MCP, dnsRebindingProtection); // 1. DNS Rebinding Protection (MUST)
-  app.use(
-    TRANSPORT_ROUTES.MCP,
-    createRateLimiter({
-      trustProxyConfigured: options?.trustProxy !== undefined,
-    }),
-  ); // 2. Rate Limiting (before auth to mitigate brute-force, CWE-770)
-
-  // 3. Bearer Auth / Custom Header Auth (only when auth is configured)
-  if (options?.auth) {
-    if (options.auth.headerName && !isFullOAuthProvider(options.auth.provider)) {
-      // Custom header auth (e.g. X-API-Key) — only with TokenVerifier
-      app.use(
-        TRANSPORT_ROUTES.MCP,
-        createCustomHeaderAuth({
-          headerName: options.auth.headerName,
-          verifier: options.auth.provider,
-          requiredScopes: options.auth.requiredScopes,
-        }),
-      );
-    } else {
-      // Auto-derive resourceMetadataUrl from issuerUrl when using a full OAuth provider (RFC 9728)
-      const resourceMetadataUrl =
-        options.auth.resourceMetadataUrl ??
-        (isFullOAuthProvider(options.auth.provider) && options.auth.issuerUrl
-          ? `${options.auth.issuerUrl.origin}/.well-known/oauth-protected-resource`
-          : undefined);
-
-      // Standard Bearer auth (OAuth or TokenVerifier without custom header)
-      app.use(
-        TRANSPORT_ROUTES.MCP,
-        createBearerAuth({
-          provider: options.auth.provider,
-          requiredScopes: options.auth.requiredScopes,
-          resourceMetadataUrl,
-        }),
-      );
-    }
+  app.use(TRANSPORT_ROUTES.MCP, mcpRateLimiter); // 2. Rate Limiting (shared bucket with SSE routes)
+  if (sharedAuthMiddleware) {
+    app.use(TRANSPORT_ROUTES.MCP, sharedAuthMiddleware); // 3. Auth (when configured)
   }
 
   app.use(TRANSPORT_ROUTES.MCP, validateProtocolVersion); // 4. Protocol Version (early rejection)
@@ -481,13 +572,28 @@ export function createExpressApp(
     app.set("trust proxy", options.trustProxy);
   }
 
+  // API Access Log — mounted first so every request is captured, including ones
+  // later rejected by DNS-rebinding protection, auth, or rate limiting.
+  app.use(apiAccessLog);
+
   setupSecurityMiddleware(app, options);
 
   // ===== OAuth Router (before health routes, needs express.json()) =====
-  if (options?.auth && isFullOAuthProvider(options.auth.provider)) {
+  if (options?.auth && options.auth.enabled !== false && isFullOAuthProvider(options.auth.provider)) {
     if (!options.auth.issuerUrl) {
       throw new Error("issuerUrl is required when using a full OAuth provider");
     }
+
+    // Dedicated low-capacity rate limiter for auth endpoints (see constants above).
+    const authRateLimiter = createRateLimiter({
+      max: AUTH_RATE_LIMIT_MAX,
+      windowMs: AUTH_RATE_LIMIT_WINDOW_MS,
+      // options is narrowed to defined by the enclosing `if (options?.auth && …)`.
+      trustProxyConfigured: options.trustProxy !== undefined,
+    });
+    const oauthRoutes = ["/authorize", "/token", "/register", "/callback", "/authorize/local"];
+    app.use(oauthRoutes, dnsRebindingProtection); // DNS Rebinding Protection on all auth endpoints
+    app.use(oauthRoutes, authRateLimiter);
 
     // Auto-register unknown clients at /authorize (before SDK router handles it).
     // Handles clients with cached credentials that skip /register.
@@ -506,6 +612,17 @@ export function createExpressApp(
     if (options.auth.callbackHandler) {
       app.get("/callback", options.auth.callbackHandler);
     }
+
+    // Optional local username/password login (unified login page → isolated session).
+    // Needs urlencoded form-body parsing for the POSTed credentials.
+    if (options.auth.localLoginHandler) {
+      app.post("/authorize/local", express.urlencoded({ extended: false }), options.auth.localLoginHandler);
+    }
+  }
+
+  // ===== Consumer App Customization Hook =====
+  if (options?.configureApp) {
+    options.configureApp(app);
   }
 
   // ===== Health & Metrics Routes (exempt from auth and rate limiting) =====
@@ -513,6 +630,7 @@ export function createExpressApp(
     createHealthRouter({
       sessionManager,
       readinessCheck: options?.health?.readinessCheck,
+      checkTimeoutMs: options?.health?.checkTimeoutMs,
       serviceLabel: options?.health?.serviceLabel,
       sseInfo: {
         enabled: isSseEnabled(),

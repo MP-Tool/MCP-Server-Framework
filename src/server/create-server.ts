@@ -121,19 +121,16 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
     );
   }
 
-  // Configure server options
+  // Configure server options. ServerOptions derives from CreateServerOptions,
+  // so everything passes through as-is — only identity defaults, the transport
+  // config-cascade fallback, and the resolved telemetry toggle are applied here.
+  const { telemetry, ...passthrough } = options;
   builder.withOptions({
+    ...passthrough,
     name: options.name ?? DEFAULT_SERVER_NAME,
     version: options.version ?? DEFAULT_SERVER_VERSION,
     transport: options.transport ?? resolveTransportFromConfig(),
-    capabilities: options.capabilities,
-    lifecycle: options.lifecycle,
-    shutdown: options.shutdown,
-    health: options.health,
-    session: options.session,
-    auth: options.auth,
-    telemetryEnabled: options.telemetry ?? getTelemetryConfig().enabled,
-    onBeforeTelemetryInit: options.onBeforeTelemetryInit,
+    telemetryEnabled: telemetry ?? getTelemetryConfig().enabled,
   });
 
   // Register global registries as providers.

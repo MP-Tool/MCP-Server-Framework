@@ -105,13 +105,3 @@ export const ErrorCodeToHttpStatus: Partial<Record<ErrorCodeType, HttpStatusType
   [ErrorCodes.API_CLIENT_NOT_CONFIGURED]: HttpStatus.PRECONDITION_REQUIRED,
   [ErrorCodes.API_AUTHENTICATION_ERROR]: HttpStatus.UNAUTHORIZED,
 };
-
-/**
- * Get HTTP status code for an error code.
- *
- * @param code - The application error code
- * @returns HTTP status code (defaults to 500 if not mapped)
- */
-export function getHttpStatusForErrorCode(code: ErrorCodeType): HttpStatusType {
-  return ErrorCodeToHttpStatus[code] ?? HttpStatus.INTERNAL_SERVER_ERROR;
-}

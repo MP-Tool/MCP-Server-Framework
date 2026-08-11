@@ -47,8 +47,8 @@ export class AppError extends Error {
   /** Unique identifier for this error instance (for tracking/support) */
   readonly errorId: string;
 
-  /** Application-specific error code */
-  readonly code: ErrorCodeType | string;
+  /** Application-specific error code. `(string & {})` keeps known-code autocomplete while allowing any string. */
+  readonly code: ErrorCodeType | (string & {});
 
   /** HTTP status code for REST API responses */
   readonly statusCode: number;
@@ -83,6 +83,7 @@ export class AppError extends Error {
 
     // Maintain proper stack trace in V8 environments
     /* v8 ignore start - V8-specific runtime feature */
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- V8-only API; guard kept for non-V8 runtimes.
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
     }

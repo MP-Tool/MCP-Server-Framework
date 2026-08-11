@@ -83,23 +83,12 @@ export interface ConfigFileResult {
   readonly sourcePath: string;
   /** Format of the loaded file */
   readonly format: ConfigFileFormat;
-}
-
-/**
- * Metadata about which config source is active.
- *
- * Stored alongside the cached config so the server can log
- * which source was used after the logger is initialized.
- */
-export interface ConfigSource {
-  /** How the config was loaded */
-  readonly type: "env" | "file";
-  /** Absolute path to the config file (only when type is 'file') */
-  readonly path?: string;
-  /** Format of the config file (only when type is 'file') */
-  readonly format?: ConfigFileFormat;
-  /** Whether a `.env` file was found and loaded */
-  readonly dotenvLoaded: boolean;
+  /**
+   * The parsed `[auth]` section, retained verbatim because its nested `providers`
+   * table cannot be flattened into the env-style `overrides`. Consumed by
+   * `resolveAuthConfig()`. `undefined` when the file has no `[auth]` section.
+   */
+  readonly rawAuth?: AuthSectionData | undefined;
 }
 
 // ============================================================================
@@ -114,11 +103,13 @@ const transportSection = z
     port: z.number().int().min(1).max(65535),
     /** Host to bind to */
     host: z.string().min(1),
+    /** Public base URL behind a proxy/domain (e.g. 'https://mcp.example.com'). Env: MCP_BASE_URL */
+    base_url: z.string().url(),
     /** Enable SSE transport (legacy protocol 2024-11-05) */
     sse_enabled: z.boolean(),
     /** Operate in stateless mode (no session IDs) */
     stateless: z.boolean(),
-    /** Prefer JSON responses over SSE for simple request-response (default: true) */
+    /** Prefer JSON responses over SSE for simple request-response (default: false) */
     json_response: z.boolean(),
     /** TLS configuration (required when mode is 'https') */
     tls: z
@@ -186,7 +177,11 @@ const loggingSection = z
     /** Include component name in text log output */
     component: z.boolean(),
     /** Directory for log files */
-    dir: z.string().min(1),
+    log_dir: z.string().min(1),
+    /** Path to a dedicated audit-log file (JSON Lines), parallel to normal logs */
+    audit_file: z.string().min(1),
+    /** Per-tool-call audit request/result depth (scrubbed): 'off' | 'summary' | 'full' */
+    audit_tool_io: z.enum(["off", "summary", "full"]),
     /** Maximum log file size before rotation (e.g. "10mb", "500kb") */
     max_file_size: z.string().regex(BYTE_SIZE_REGEX),
     /** Maximum number of rotated log files to keep */
@@ -214,20 +209,53 @@ const telemetrySection = z
     metric_export_interval: z.union([z.number().int().positive(), z.string().regex(DURATION_REGEX)]),
     /**
      * Metric exporters (comma-separated): otlp, prometheus, console, none.
-     * Default: 'otlp,prometheus'
+     * Default: 'prometheus'
      */
     metrics_exporter: z.string().min(1),
   })
   .partial();
 
-const authSection = z
+/**
+ * One upstream OAuth provider entry under `[auth.providers.<name>]`.
+ *
+ * Generic across MCP servers. The table key (e.g. `google`, `github`, `acme`) is the
+ * routing name; `type` may be omitted when the key is a known preset. Accepts both the
+ * `id`/`secret` aliases (mirroring some IdP configs) and `client_id`/`client_secret`.
+ */
+const authProviderSection = z
   .object({
-    /** Required OAuth scopes for the /mcp endpoint (array of scope strings) */
-    required_scopes: z.array(z.string().min(1)),
-    /** Protected Resource Metadata URL (RFC 9728) */
-    resource_metadata_url: z.string().url(),
+    /** Whether this provider is active. Defaults to true when omitted. */
+    enabled: z.boolean(),
+    /** Provider kind. Inferred from the table key when omitted (`google`/`github` presets, else `oidc`). */
+    type: z.enum(["google", "github", "oidc"]),
+    /** OAuth client ID (alias of `client_id`). */
+    id: z.string().min(1),
+    /** OAuth client ID. */
+    client_id: z.string().min(1),
+    /** OAuth client secret (alias of `secret`). */
+    client_secret: z.string().min(1),
+    /** OAuth client secret. */
+    secret: z.string().min(1),
+    /** OIDC issuer URL (required for `oidc`; optional override for `google`). */
+    issuer: z.string().url(),
+    /** Requested upstream scopes. */
+    scopes: z.array(z.string().min(1)),
   })
   .partial();
+
+const authSection = z
+  .object({
+    /** Master switch for MCP-server user authentication. */
+    enabled: z.boolean(),
+    /** Upstream OAuth providers, keyed by routing name (`[auth.providers.<name>]`). */
+    providers: z.record(z.string(), authProviderSection),
+    /** Required OAuth scopes for the /mcp endpoint (array of scope strings) */
+    required_scopes: z.array(z.string().min(1)),
+  })
+  .partial();
+
+/** Parsed `[auth]` section, retained for {@link ConfigFileResult.rawAuth}. */
+export type AuthSectionData = z.infer<typeof authSection>;
 
 // ============================================================================
 // Root Schema
@@ -314,6 +342,7 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
     if (t.mode !== undefined) overrides.MCP_TRANSPORT = t.mode;
     if (t.port !== undefined) overrides.MCP_PORT = t.port;
     if (t.host !== undefined) overrides.MCP_BIND_HOST = t.host;
+    if (t.base_url !== undefined) overrides.MCP_BASE_URL = t.base_url;
     if (t.sse_enabled !== undefined) overrides.MCP_LEGACY_SSE_ENABLED = t.sse_enabled;
     if (t.stateless !== undefined) overrides.MCP_STATELESS = t.stateless;
     if (t.json_response !== undefined) overrides.MCP_JSON_RESPONSE = t.json_response;
@@ -357,7 +386,9 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
     if (l.format !== undefined) overrides.LOG_FORMAT = l.format;
     if (l.timestamp !== undefined) overrides.LOG_TIMESTAMP = l.timestamp;
     if (l.component !== undefined) overrides.LOG_COMPONENT = l.component;
-    if (l.dir !== undefined) overrides.LOG_DIR = l.dir;
+    if (l.log_dir !== undefined) overrides.LOG_DIR = l.log_dir;
+    if (l.audit_file !== undefined) overrides.LOG_AUDIT_FILE = l.audit_file;
+    if (l.audit_tool_io !== undefined) overrides.LOG_AUDIT_TOOL_IO = l.audit_tool_io;
     if (l.max_file_size !== undefined) overrides.LOG_MAX_FILE_SIZE = parseByteSize(l.max_file_size);
     if (l.max_files !== undefined) overrides.LOG_MAX_FILES = l.max_files;
     if (l.retention_days !== undefined) overrides.LOG_RETENTION_DAYS = l.retention_days;
@@ -384,7 +415,6 @@ export function mapConfigToOverrides(config: ConfigFileData): Partial<FrameworkE
   if (config.auth) {
     const a = config.auth;
     if (a.required_scopes !== undefined) overrides.MCP_AUTH_REQUIRED_SCOPES = a.required_scopes;
-    if (a.resource_metadata_url !== undefined) overrides.MCP_AUTH_RESOURCE_METADATA_URL = a.resource_metadata_url;
   }
 
   return overrides;

@@ -9,6 +9,10 @@
 import type { TransportOptions, ServerCapabilities, ReadinessConfig, SessionConfigOptions } from "./server-options.js";
 import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { AuthOptions } from "./auth/types.js";
+import type { ScrubToolResultsConfig } from "../mcp/capabilities/registry/index.js";
+import type { ToolDefinition, AuditToolIoLevel } from "../mcp/types/index.js";
+import type { Application } from "express";
+import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 
 // ============================================================================
 // Create Server Options
@@ -39,14 +43,28 @@ export interface CreateServerOptions {
    *
    * @default 'mcp-server'
    */
-  name?: string;
+  name?: string | undefined;
 
   /**
    * Server version.
    *
    * @default '1.0.0'
    */
-  version?: string;
+  version?: string | undefined;
+
+  /**
+   * Human-friendly display name shown by MCP clients, distinct from the
+   * machine-readable `name`.
+   *
+   * @example 'My MCP Server'
+   */
+  title?: string | undefined;
+
+  /**
+   * Icons representing this server, shown by MCP clients that support
+   * branding. Use `iconFromFile()` to build an entry from a local image file.
+   */
+  icons?: Icon[] | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Transport (Optional — resolved from config cascade if omitted)
@@ -64,7 +82,7 @@ export interface CreateServerOptions {
    * @default Resolved from `MCP_TRANSPORT` (default: `'stdio'`)
    * @see TransportOptions for details
    */
-  transport?: TransportOptions;
+  transport?: TransportOptions | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Capabilities (Optional - sensible defaults)
@@ -75,7 +93,7 @@ export interface CreateServerOptions {
    *
    * @default { tools: { listChanged: true }, logging: true }
    */
-  capabilities?: ServerCapabilities;
+  capabilities?: ServerCapabilities | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Lifecycle (Optional)
@@ -84,12 +102,12 @@ export interface CreateServerOptions {
   /**
    * Lifecycle hooks for startup/shutdown.
    */
-  lifecycle?: ServerLifecycleHooks;
+  lifecycle?: ServerLifecycleHooks | undefined;
 
   /**
    * Shutdown configuration.
    */
-  shutdown?: Partial<ShutdownConfig>;
+  shutdown?: Partial<ShutdownConfig> | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Health Endpoint (Optional)
@@ -103,7 +121,7 @@ export interface CreateServerOptions {
    *
    * @see ReadinessConfig
    */
-  health?: ReadinessConfig;
+  health?: ReadinessConfig | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Session Configuration (Optional)
@@ -117,7 +135,7 @@ export interface CreateServerOptions {
    *
    * @see SessionConfigOptions
    */
-  session?: SessionConfigOptions;
+  session?: SessionConfigOptions | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Authentication (Optional)
@@ -131,7 +149,84 @@ export interface CreateServerOptions {
    *
    * @see AuthOptions
    */
-  auth?: AuthOptions;
+  auth?: AuthOptions | undefined;
+
+  /**
+   * Optional hook to customize the Express app for HTTP/HTTPS transports.
+   *
+   * Useful for registering additional callback endpoints on the MCP host
+   * (for example `/auth/google/callback`). Ignored in stdio mode.
+   */
+  configureHttpApp?: ((app: Application) => void) | undefined;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Security (Optional)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Central secret redaction for tool results.
+   *
+   * Every tool (and task-tool) result is scrubbed for secrets at the single
+   * boundary between the tool handler and the SDK, before it reaches the
+   * client transcript and the model provider. Fail-closed: if scrubbing
+   * itself fails, the result is withheld and replaced by a generic error.
+   *
+   * - `true` / omitted → scrub with the base heuristics (**default ON**)
+   * - `false` → disable scrubbing
+   * - `{ additionalKeys, allowKeys }` → extend the sensitive-key set /
+   *   exempt exact key names (e.g. `public_key`) from key-based redaction
+   *
+   * Individual tools whose purpose is returning a secret can opt out via
+   * `ToolDefinition.scrubResult: false`.
+   *
+   * @default true
+   */
+  scrubToolResults?: ScrubToolResultsConfig | undefined;
+
+  /**
+   * How much request/response detail the per-tool-call audit entry records
+   * (always secret-scrubbed). `off` | `summary` (default) | `full`.
+   *
+   * Overrides the `LOG_AUDIT_TOOL_IO` env var when set. See {@link AuditToolIoLevel}.
+   */
+  auditToolIo?: AuditToolIoLevel | undefined;
+
+  /**
+   * Scopes granted to **anonymous** (unauthenticated) requests.
+   *
+   * When set, a request that carries no `authInfo` is treated as holding exactly
+   * these scopes: a tool/resource/prompt is listed (`tools/list` etc.) and callable
+   * only when its `requiredScopes ⊆ anonymousScopes`. Everything above the granted
+   * set is hidden from the listing and rejected on call — the existing scope RBAC
+   * (scope enforcement + the scope-filtered list handlers) applies to anonymous
+   * traffic instead of being skipped.
+   *
+   * This never fabricates an identity: `ToolContext.auth` stays `undefined` for
+   * anonymous requests, so a consumer's own auth-derived logic is unaffected.
+   * Authenticated requests are unaffected (their real token scopes always win).
+   *
+   * Intended for deployments that run **without per-user auth on a network
+   * transport** — grant `[<read-scope>]` so an open server is read-only. Leave
+   * `undefined` (the default) to preserve unrestricted anonymous access, e.g. for
+   * stdio.
+   */
+  anonymousScopes?: readonly string[] | undefined;
+
+  /**
+   * Predicate deciding which tools are registered. A tool is kept only when this
+   * returns `true`; tools it rejects are never bound to any session — absent from
+   * `tools/list` and not callable, for every request.
+   *
+   * Applied once at build time to the collected tools. Intended as an operator
+   * knob to prune the tool surface (e.g. by `_meta.category` or name) to reduce a
+   * client's context/token load. It is **purely subtractive**: it can only remove
+   * tools, never expose more, so it composes safely with `anonymousScopes` and any
+   * per-request scope/permission gating (those still apply to whatever remains).
+   *
+   * The framework does not interpret tool metadata — supply the semantics here.
+   * `undefined` (the default) registers all tools.
+   */
+  filterTools?: ((tool: ToolDefinition) => boolean) | undefined;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Telemetry (Optional)
@@ -145,7 +240,7 @@ export interface CreateServerOptions {
    *
    * @default undefined (falls back to OTEL_ENABLED)
    */
-  telemetry?: boolean;
+  telemetry?: boolean | undefined;
 
   /**
    * Called before the OpenTelemetry SDK is initialized.
@@ -166,7 +261,7 @@ export interface CreateServerOptions {
    *
    * @see ServerOptions.onBeforeTelemetryInit for the full documentation
    */
-  onBeforeTelemetryInit?: () => void;
+  onBeforeTelemetryInit?: (() => void) | undefined;
 }
 
 /**

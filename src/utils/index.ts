@@ -42,6 +42,7 @@ export {
 // Re-export Zod schema helpers
 export {
   booleanFromEnv,
+  optionalBooleanFromEnv,
   commaSeparatedList,
   optionalCommaSeparatedList,
   byteSizeSchema,

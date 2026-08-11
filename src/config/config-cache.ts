@@ -17,7 +17,7 @@
  * without touching configuration files.
  *
  * Derived caches in middleware (DNS rebinding, rate limiter) register
- * their reset functions so `resetConfigCache()` invalidates everything.
+ * their reset functions so `applyConfigOverrides()` invalidates everything.
  *
  * @module config/config-cache
  */
@@ -26,9 +26,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { parseFrameworkEnv, validateConfigConstraints, type FrameworkEnvConfig } from "./env.js";
-import { resetConfigExtensions } from "./extensions.js";
-import { loadConfigFile, mapConfigToEnvKeys, type ConfigSource } from "./file/index.js";
-import { addStartupWarning, resetStartupWarnings } from "./startup-warnings.js";
+import { loadConfigFile, mapConfigToEnvKeys, type AuthSectionData } from "./file/index.js";
+import { addStartupWarning } from "./startup-warnings.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 // ============================================================================
 // Deferred Logger (injected after logger initialization)
@@ -41,7 +40,6 @@ const LogMessages = {
   DOTENV_NOT_FOUND: "No .env file found — using environment variables only",
   CONFIG_FILE_DETECTED: "Config file detected: %s (format: %s)",
   OVERRIDES_APPLIED: "Programmatic config overrides applied (%d key(s))",
-  CACHE_RESET: "Config cache reset (including %d satellite caches)",
 } as const;
 
 /**
@@ -83,8 +81,8 @@ export function setConfigLogger(injectedLogger: ConfigLogger): void {
 /** Cached config instance (lazy initialization) */
 let cachedConfig: FrameworkEnvConfig | undefined;
 
-/** Metadata about how the config was loaded */
-let configSource: ConfigSource | undefined;
+/** Parsed `[auth]` section from the config file (nested `providers` survive here). */
+let rawAuthConfig: AuthSectionData | undefined;
 
 /** Registered satellite cache reset functions */
 const satelliteResets: Array<() => void> = [];
@@ -125,13 +123,18 @@ export function getFrameworkConfig(): Readonly<FrameworkEnvConfig> {
 }
 
 /**
- * Returns metadata about which config source is active.
+ * Returns the parsed `[auth]` config-file section, or `undefined` when no config
+ * file (or no `[auth]` section) was loaded.
  *
- * Useful for logging after the logger is initialized.
- * Returns `undefined` if the config hasn't been loaded yet.
+ * Exposed because the nested `[auth].providers` table cannot be represented in the
+ * flat `FrameworkEnvConfig`. Lazily triggers config initialization on first access.
+ *
+ * @internal — consumers use `resolveAuthConfig()` rather than this raw accessor.
  */
-export function getConfigSource(): ConfigSource | undefined {
-  return configSource;
+export function getRawAuthConfig(): AuthSectionData | undefined {
+  // Ensure the config file has been loaded (populates rawAuthConfig as a side effect).
+  getFrameworkConfig();
+  return rawAuthConfig;
 }
 
 /**
@@ -139,7 +142,7 @@ export function getConfigSource(): ConfigSource | undefined {
  *
  * Modules that derive cached values from the framework config
  * (e.g., allowed hosts list, rate limiter instance) register their
- * reset functions here so `resetConfigCache()` can invalidate them.
+ * reset functions here so `applyConfigOverrides()` can invalidate them.
  *
  * @param resetFn - Function that clears the satellite cache
  * @internal
@@ -148,26 +151,6 @@ export function registerCacheReset(resetFn: () => void): void {
   if (!satelliteResets.includes(resetFn)) {
     satelliteResets.push(resetFn);
   }
-}
-
-/**
- * Resets the framework config cache and all registered satellite caches.
- *
- * Intended for testing — forces re-parsing of environment
- * variables on the next `getFrameworkConfig()` call and
- * invalidates all derived caches.
- *
- * @internal
- */
-export function resetConfigCache(): void {
-  cachedConfig = undefined;
-  configSource = undefined;
-  resetConfigExtensions();
-  resetStartupWarnings();
-  for (const reset of satelliteResets) {
-    reset();
-  }
-  logger.debug(LogMessages.CACHE_RESET, satelliteResets.length);
 }
 
 /**
@@ -249,15 +232,8 @@ function initializeConfig(): FrameworkEnvConfig {
     validateMergedConfig(config);
   }
 
-  // Step 6: Record which config source is active
-  configSource = fileResult
-    ? {
-        type: "file",
-        path: fileResult.sourcePath,
-        format: fileResult.format,
-        dotenvLoaded: Object.keys(dotenvValues).length > 0,
-      }
-    : { type: "env", dotenvLoaded: Object.keys(dotenvValues).length > 0 };
+  // Retain the parsed [auth] section (nested providers can't live in flat config).
+  rawAuthConfig = fileResult?.rawAuth;
 
   // Log the initialization result
   if (fileResult) {
@@ -290,14 +266,17 @@ function initializeConfig(): FrameworkEnvConfig {
  * @returns Parsed key-value pairs from the `.env` file, or empty object
  */
 function loadDotenvFile(): Record<string, string> {
+  // Fixed path: `.env` in the process working directory. Not derived from any request input.
   const dotenvPath = join(process.cwd(), ".env");
 
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed cwd/.env path, trusted.
   if (!existsSync(dotenvPath)) {
     logger.debug(LogMessages.DOTENV_NOT_FOUND);
     return {};
   }
 
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed cwd/.env path, trusted.
     const content = readFileSync(dotenvPath, "utf-8");
     const parsed = parseDotenv(content);
     logger.debug(LogMessages.DOTENV_LOADED, Object.keys(parsed).length);

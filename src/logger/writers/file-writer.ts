@@ -7,8 +7,10 @@
  * @module logger/writers/file-writer
  */
 
-import * as fs from "fs";
-import * as path from "path";
+/* eslint-disable security/detect-non-literal-fs-filename -- all paths derive from the trusted log
+   directory (config/env) joined with a fixed, sanitized component name; never from request input. */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { LogLevel } from "../core/types.js";
 import { DEFAULT_LOG_COMPONENTS, LOG_FILE_EXTENSION } from "../core/constants.js";
 import { BaseLogWriter } from "./base-writer.js";
@@ -19,7 +21,7 @@ import { BaseLogWriter } from "./base-writer.js";
 export interface FileWriterConfig {
   /** Directory to write log files to */
   logDir: string;
-  /** Component names to create streams for (default: ['server', 'api', 'transport']) */
+  /** Component names to create streams for (default: ['server', 'api']) */
   components?: readonly string[];
   /** File extension for log files (default: '.log') */
   extension?: string;
@@ -82,12 +84,30 @@ export class FileWriter extends BaseLogWriter {
   /** Retention cleanup interval */
   private retentionTimer: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * Components this writer is allowed to (re)create a stream for — the configured
+   * components plus the fallback. Bounds self-healing to known, intentional log files;
+   * an unrecognized component string never spontaneously gets its own file.
+   */
+  private readonly knownComponents: Set<string> = new Set();
+  /** Last failed recreate attempt per component, for the self-heal throttle in write(). */
+  private readonly lastFailedAttempt: Map<string, number> = new Map();
+  /** Components currently missing a stream that have already been warned about on stderr. */
+  private readonly warnedComponents: Set<string> = new Set();
+
   /** Default max file size: 10 MB */
   private static readonly DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
   /** Default max rotated files to keep */
   private static readonly DEFAULT_MAX_FILES = 3;
   /** Retention cleanup interval: once per day */
   private static readonly RETENTION_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  /**
+   * Minimum time between self-heal stream-recreate attempts for the same component.
+   * Bounds retry cost when the underlying filesystem is persistently unavailable —
+   * without this, a broken disk would trigger a fresh createWriteStream()+statSync()
+   * syscall pair on every single log line.
+   */
+  private static readonly RETRY_MIN_INTERVAL_MS = 1000;
 
   /**
    * Create a new FileWriter.
@@ -101,7 +121,12 @@ export class FileWriter extends BaseLogWriter {
     this.maxFileSize = config.maxFileSize ?? FileWriter.DEFAULT_MAX_FILE_SIZE;
     this.maxFiles = config.maxFiles ?? FileWriter.DEFAULT_MAX_FILES;
     this.retentionDays = config.retentionDays ?? 0;
-    this.initialize(config.components ?? DEFAULT_LOG_COMPONENTS);
+
+    const components = config.components ?? DEFAULT_LOG_COMPONENTS;
+    for (const component of components) this.knownComponents.add(this.safeComponent(component));
+    this.knownComponents.add(this.safeComponent(this.fallbackComponent));
+
+    this.initialize(components);
   }
 
   /**
@@ -143,32 +168,41 @@ export class FileWriter extends BaseLogWriter {
    * Create a write stream for a component.
    * Includes error handling to prevent unhandled stream errors.
    * Initializes byte tracking from existing file size for rotation.
+   *
+   * Safe to call repeatedly as a recovery primitive (used both at startup and by write()'s
+   * self-heal path) — re-ensures the log directory exists each time, since the most common
+   * cause of a stream going bad (the directory being removed) needs that regardless of caller.
    */
   private createStream(component: string): boolean {
+    // Key everything by the sanitized name so two raw component names that sanitize to the
+    // same file (e.g. `a/b` and `a_b`) share one stream instead of two streams racing on
+    // one file with split byte-accounting.
+    component = this.safeComponent(component);
     if (this.streams.has(component)) {
       return true;
     }
 
     try {
+      fs.mkdirSync(this.logDir, { recursive: true });
+
       const filePath = this.getFilePath(component);
       const stream = fs.createWriteStream(filePath, { flags: "a" });
 
-      // Handle stream errors to prevent unhandled exceptions
+      // Handle stream errors to prevent unhandled exceptions. Recovery is not attempted here —
+      // it happens uniformly via write()'s self-heal path on the next log call, throttled by
+      // RETRY_MIN_INTERVAL_MS so a persistently broken filesystem doesn't retry on every line.
+      //
+      // Most real failure modes (ENOENT, EACCES, EISDIR, disk full) surface here — the actual
+      // file open happens off-thread, so createWriteStream() itself returns synchronously
+      // without throwing. Recording the throttle timestamp here (not only in tryRecreateStream's
+      // synchronous catch) is what makes the throttle effective for these — otherwise a stream
+      // that "succeeds" synchronously but errors moments later would let every write() in
+      // between synchronously reuse the doomed stream, then each immediately retry on the next
+      // call once it's gone, with no throttle ever engaging.
       stream.on("error", (err: NodeJS.ErrnoException) => {
-        // Log to stderr since our logger might not be available
-        process.stderr.write(`[FileWriter] Stream error for ${component}: ${err.message}\n`);
-        // Remove the broken stream
         this.streams.delete(component);
-
-        // If the log directory was deleted externally, attempt recovery
-        if (err.code === "ENOENT") {
-          try {
-            fs.mkdirSync(this.logDir, { recursive: true });
-            this.createStream(component);
-          } catch {
-            process.stderr.write(`[FileWriter] Directory recovery failed for ${component} — file logging disabled\n`);
-          }
-        }
+        this.lastFailedAttempt.set(component, Date.now());
+        this.warnOnce(component, `Stream error for ${component}: ${err.message}`);
       });
 
       this.streams.set(component, stream);
@@ -181,10 +215,25 @@ export class FileWriter extends BaseLogWriter {
         this.bytesWritten.set(component, 0);
       }
 
+      // Recovered — allow a future failure to be warned about again.
+      this.warnedComponents.delete(component);
       return true;
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.warnOnce(component, `Failed to create stream for ${component}: ${message}`);
       return false;
     }
+  }
+
+  /**
+   * Log a stderr diagnostic for a component's stream failure, once per outage episode.
+   * Cleared on the next successful createStream() so a later, separate failure is still
+   * reported rather than being silenced forever by an earlier warning.
+   */
+  private warnOnce(component: string, message: string): void {
+    if (this.warnedComponents.has(component)) return;
+    this.warnedComponents.add(component);
+    process.stderr.write(`[FileWriter] ${message}\n`);
   }
 
   /**
@@ -198,9 +247,21 @@ export class FileWriter extends BaseLogWriter {
   write(_level: LogLevel, message: string, component: string): void {
     if (!this.enabled || !this.initialized) return;
 
-    // Resolve effective component (fallback if stream missing)
-    const effectiveComponent = this.streams.has(component) ? component : this.fallbackComponent;
-    const stream = this.streams.get(effectiveComponent);
+    // Resolve the stream for the requested component. Normalize first so the lookup key
+    // matches how streams were registered in createStream(). If it's missing but known
+    // (a prior init/runtime failure), self-heal by retrying — restores the component's own
+    // file once the underlying issue clears, instead of silently commingling its lines into
+    // the fallback file forever after one transient blip.
+    const safe = this.safeComponent(component);
+    let effectiveComponent = safe;
+    let stream = this.streams.get(safe) ?? (this.knownComponents.has(safe) ? this.tryRecreateStream(safe) : undefined);
+
+    if (!stream) {
+      // Requested component unavailable (unknown component, or recreate failed) — fall back.
+      effectiveComponent = this.safeComponent(this.fallbackComponent);
+      stream = this.streams.get(effectiveComponent) ?? this.tryRecreateStream(effectiveComponent);
+    }
+
     if (!stream) return;
 
     const data = message + "\n";
@@ -214,6 +275,27 @@ export class FileWriter extends BaseLogWriter {
     if (this.maxFileSize > 0 && written >= this.maxFileSize && !this.rotating.has(effectiveComponent)) {
       this.rotateFile(effectiveComponent);
     }
+  }
+
+  /**
+   * Throttled self-heal: retries {@link createStream} for a component whose stream is
+   * currently missing, at most once per {@link FileWriter.RETRY_MIN_INTERVAL_MS}. Returns the
+   * live stream on success, or `undefined` if recreation failed or was skipped by the throttle.
+   */
+  private tryRecreateStream(component: string): fs.WriteStream | undefined {
+    const now = Date.now();
+    const last = this.lastFailedAttempt.get(component);
+    if (last !== undefined && now - last < FileWriter.RETRY_MIN_INTERVAL_MS) {
+      return undefined;
+    }
+
+    if (this.createStream(component)) {
+      this.lastFailedAttempt.delete(component);
+      return this.streams.get(component);
+    }
+
+    this.lastFailedAttempt.set(component, now);
+    return undefined;
   }
 
   // ---------------------------------------------------------------------------
@@ -239,8 +321,15 @@ export class FileWriter extends BaseLogWriter {
       //    renaming the file in step 4.
       const oldStream = this.streams.get(component);
       if (oldStream) {
-        oldStream.destroy();
         this.streams.delete(component);
+        // Detach the self-heal error handler before the intentional destroy: a still-buffered
+        // write aborted by destroy() surfaces asynchronously as ERR_STREAM_DESTROYED, and that
+        // late event would otherwise (a) log a spurious stderr "Stream error" and (b) delete the
+        // freshly-created replacement stream (step 5) from the map — its handler is keyed by
+        // component. Swallow errors on the discarded stream instead.
+        oldStream.removeAllListeners("error");
+        oldStream.on("error", () => {});
+        oldStream.destroy();
       }
 
       const basePath = this.getFilePath(component);
@@ -286,23 +375,31 @@ export class FileWriter extends BaseLogWriter {
 
     const cutoff = Date.now() - this.retentionDays * 24 * 60 * 60 * 1000;
 
-    try {
-      const entries = fs.readdirSync(this.logDir);
-      for (const entry of entries) {
-        if (!entry.endsWith(this.extension)) continue;
-
-        const filePath = path.join(this.logDir, entry);
-        try {
-          const stats = fs.statSync(filePath);
-          if (stats.isFile() && stats.mtimeMs < cutoff) {
-            fs.unlinkSync(filePath);
-          }
-        } catch {
-          // best-effort: individual file errors are non-fatal
-        }
+    // Only ever delete THIS writer's own files. `LOG_DIR` is shared: the audit trail
+    // (`audit.log`), other writers, and third-party files can live in the same directory,
+    // so a blanket `*.<ext>` sweep by mtime would silently unlink a quiet-but-live
+    // audit.log (its open append fd then writes to a deleted inode). Scope the sweep to
+    // each known component's base file + its rotated variants.
+    const ownFiles = new Set<string>();
+    for (const component of this.streams.keys()) {
+      // streams are already keyed by the sanitized name, but re-apply for safety.
+      const safeName = this.safeComponent(component);
+      ownFiles.add(`${safeName}${this.extension}`);
+      for (let n = 1; n <= this.maxFiles; n++) {
+        ownFiles.add(`${safeName}.${n}${this.extension}`);
       }
-    } catch {
-      // best-effort: directory read errors are non-fatal
+    }
+
+    for (const entry of ownFiles) {
+      const filePath = path.join(this.logDir, entry);
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.isFile() && stats.mtimeMs < cutoff) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {
+        // best-effort: missing file / individual errors are non-fatal
+      }
     }
   }
 
@@ -310,16 +407,22 @@ export class FileWriter extends BaseLogWriter {
   // Path Helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * Sanitize a component name into a filesystem-safe basename. Also blocks path traversal
+   * via component names (`../../x` → `______x`). Idempotent — safe names pass through.
+   */
+  private safeComponent(component: string): string {
+    return component.replace(/[^a-zA-Z0-9_-]/g, "_");
+  }
+
   /** Build the primary log file path for a component. */
   private getFilePath(component: string): string {
-    const safeName = component.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return path.join(this.logDir, `${safeName}${this.extension}`);
+    return path.join(this.logDir, `${this.safeComponent(component)}${this.extension}`);
   }
 
   /** Build the rotated file path: `<component>.<n><extension>` */
   private getRotatedPath(component: string, n: number): string {
-    const safeName = component.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return path.join(this.logDir, `${safeName}.${n}${this.extension}`);
+    return path.join(this.logDir, `${this.safeComponent(component)}.${n}${this.extension}`);
   }
 
   /** Rename a file if it exists; ignore errors silently. */
@@ -398,6 +501,7 @@ export class FileWriter extends BaseLogWriter {
    * @returns true if stream was created successfully
    */
   addStream(component: string): boolean {
+    this.knownComponents.add(this.safeComponent(component));
     return this.createStream(component);
   }
 

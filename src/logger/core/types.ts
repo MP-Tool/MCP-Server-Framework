@@ -73,6 +73,8 @@ export interface LogContext {
   requestId?: string;
   /** Session identifier */
   sessionId?: string;
+  /** Human-readable acting identity (username/email), shown in the log prefix for traceability */
+  user?: string;
   /** Component name for filtering */
   component?: string;
   /** Trace ID for distributed tracing (OpenTelemetry compatible) */

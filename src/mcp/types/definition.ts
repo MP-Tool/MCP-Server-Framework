@@ -152,6 +152,16 @@ export interface ToolDefinition<
   readonly requiredScopes?: readonly string[];
 
   /**
+   * Whether this tool's results pass the central secret-redaction boundary
+   * (only relevant when the server enables `scrubToolResults`). Default `true`.
+   *
+   * Set `false` ONLY for tools whose entire purpose is returning a secret to
+   * the caller (e.g. a create-API-key tool) — the exposure should be documented
+   * in the tool description.
+   */
+  readonly scrubResult?: boolean;
+
+  /**
    * Tool handler function.
    *
    * @param args - Validated input (typed from Zod schema)

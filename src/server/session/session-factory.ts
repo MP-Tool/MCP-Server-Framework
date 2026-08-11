@@ -18,7 +18,6 @@ import type {
   ResourceTemplateDefinition,
   PromptDefinition,
   TaskToolDefinition,
-  HandlersConfig,
 } from "../../mcp/types/index.js";
 import type { ServerCapabilities } from "../server-options.js";
 import type { TaskStore, TaskMessageQueue } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
@@ -28,6 +27,7 @@ import {
 } from "@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js";
 import { buildCapabilities } from "../../mcp/capabilities/index.js";
 import { McpSession } from "./mcp-session.js";
+import type { ServerIdentity, SessionRuntimeOptions } from "./mcp-session.js";
 import { logger as frameworkLogger } from "../../logger/index.js";
 
 // ============================================================================
@@ -51,24 +51,15 @@ const logger = frameworkLogger.child({ component: LOG_COMPONENT });
 /**
  * Configuration for the MCP session factory.
  *
+ * Identity and runtime settings are the shared {@link ServerIdentity} /
+ * {@link SessionRuntimeOptions} shapes (threaded through unchanged); this
+ * config adds the immutable primitive arrays and factory-only toggles.
  * All arrays should be frozen (immutable) after server build.
  * Capabilities are computed once from this config at construction time.
  */
-export interface SessionFactoryConfig {
-  /** Server name passed to each MCP session */
-  readonly name: string;
-
-  /** Server version passed to each MCP session */
-  readonly version: string;
-
-  /** Server capabilities configuration */
+export interface SessionFactoryConfig extends ServerIdentity, SessionRuntimeOptions {
+  /** Declarative server capabilities (computed to SDK shape at construction) */
   readonly capabilities?: ServerCapabilities | undefined;
-
-  /** Custom protocol handler hooks */
-  readonly handlers?: HandlersConfig | undefined;
-
-  /** Whether sessions operate in stateless mode */
-  readonly stateless?: boolean | undefined;
 
   /** Tool definitions to register on each session */
   readonly tools: ReadonlyArray<ToolDefinition>;
@@ -88,26 +79,6 @@ export interface SessionFactoryConfig {
    * @experimental MCP Tasks is an experimental SDK feature
    */
   readonly taskTools: ReadonlyArray<TaskToolDefinition>;
-
-  /**
-   * Task store for experimental task support.
-   *
-   * When task tools are present, this is automatically set to
-   * `InMemoryTaskStore` unless a custom implementation is provided.
-   *
-   * @experimental MCP Tasks is an experimental SDK feature
-   */
-  readonly taskStore?: TaskStore | undefined;
-
-  /**
-   * Task message queue for experimental task support.
-   *
-   * When task tools are present, this is automatically set to
-   * `InMemoryTaskMessageQueue` unless a custom implementation is provided.
-   *
-   * @experimental MCP Tasks is an experimental SDK feature
-   */
-  readonly taskMessageQueue?: TaskMessageQueue | undefined;
 
   /**
    * When `true`, list handlers filter capabilities by user scopes.
@@ -197,11 +168,16 @@ export class McpSessionFactory {
     const session = new McpSession({
       name: this.config.name,
       version: this.config.version,
+      title: this.config.title,
+      icons: this.config.icons,
       capabilities: this.computedCapabilities,
       handlers: this.config.handlers,
       stateless: this.config.stateless,
-      ...(this.taskStore && { taskStore: this.taskStore }),
-      ...(this.taskMessageQueue && { taskMessageQueue: this.taskMessageQueue }),
+      taskStore: this.taskStore,
+      taskMessageQueue: this.taskMessageQueue,
+      resultScrubber: this.config.resultScrubber,
+      anonymousScopes: this.config.anonymousScopes,
+      auditToolIo: this.config.auditToolIo,
     });
 
     // Log session errors (lifecycle managed by SessionManager, not here)
@@ -235,8 +211,10 @@ export class McpSessionFactory {
       session.registerSetLevelHandler();
     }
 
-    // Install scope-filtered list handlers (opt-in via auth.scopeFilterCapabilities)
-    if (this.config.scopeFilterCapabilities) {
+    // Install scope-filtered list handlers when opted in via auth.scopeFilterCapabilities,
+    // OR when anonymous requests are scope-restricted (so sensitive tools are hidden from
+    // tools/list for unauthenticated callers, not just rejected on call).
+    if (this.config.scopeFilterCapabilities || this.config.anonymousScopes != null) {
       session.registerScopeFilteredListHandlers({
         tools: this.config.tools,
         resources: this.config.resources,

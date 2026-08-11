@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export { createServer } from "./create-server.js";
+export { configureLoggerFromEnv } from "./logger-config.js";
 
 export type { CreateServerOptions, CreateServerResult } from "./types.js";
 
@@ -40,7 +41,7 @@ export type {
 // Lifecycle Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type { ServerState, ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
+export type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Builder

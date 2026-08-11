@@ -78,6 +78,13 @@ export interface HealthRouterOptions {
   readinessCheck?: (() => boolean | string | Promise<boolean | string>) | undefined;
 
   /**
+   * Maximum ms to wait for `readinessCheck` to resolve before returning 503.
+   * Prevents a stalled check from blocking `/ready` and delaying Graceful Shutdown.
+   * @default 5000
+   */
+  checkTimeoutMs?: number | undefined;
+
+  /**
    * Label for the service in health responses.
    * @default 'service'
    */
@@ -116,8 +123,16 @@ export interface HealthRouterOptions {
  * });
  * ```
  */
+const DEFAULT_READINESS_TIMEOUT_MS = 5_000;
+
 export function createHealthRouter(options: HealthRouterOptions): Router {
-  const { sessionManager, readinessCheck, serviceLabel = "service", sseInfo } = options;
+  const {
+    sessionManager,
+    readinessCheck,
+    checkTimeoutMs = DEFAULT_READINESS_TIMEOUT_MS,
+    serviceLabel = "service",
+    sseInfo,
+  } = options;
 
   const router = Router();
 
@@ -161,20 +176,36 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
     // Determine status code
     let status: ReadinessStatusValue;
     let reason: string;
+    // Detailed readiness-check failure, kept server-side only (never sent to the client).
+    let readinessCheckError: string | undefined;
 
     if (sessionsAtLimit) {
       status = ReadinessStatus.TOO_MANY_REQUESTS;
-      if (totalAtLimit) {
-        reason = `Total session limit reached (${totalSessionCount}/${maxSessions})`;
-      } else if (streamableHttpAtLimit) {
-        reason = `Streamable HTTP session limit reached (${streamableHttpSessionCount}/${maxStreamableHttpSessions})`;
-      } else {
-        reason = `SSE session limit reached (${sseSessionCount}/${maxSseSessions})`;
-      }
+      // The client learns THAT capacity is exhausted, never the numbers: /ready is
+      // unauthenticated, and exact counts plus configured limits tell an attacker
+      // how much load it takes to push the server over. Operators get the detail
+      // from the log line below, where it belongs.
+      reason = "Session capacity reached";
+      const which = totalAtLimit
+        ? `total ${totalSessionCount}/${maxSessions}`
+        : streamableHttpAtLimit
+          ? `streamable-http ${streamableHttpSessionCount}/${maxStreamableHttpSessions}`
+          : `sse ${sseSessionCount}/${maxSseSessions}`;
+      logger.warn("Readiness: session capacity reached (%s)", which);
     } else if (readinessCheck) {
-      // Run consumer-provided readiness check
+      // Run consumer-provided readiness check with a deadline. The timer is
+      // cleared once the race settles — readiness probes fire frequently
+      // (container orchestrators poll every few seconds), so a lingering
+      // timer per probe would accumulate and delay process exit on shutdown.
+      let timeoutTimer: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutTimer = setTimeout(
+          () => reject(new Error(`readinessCheck timed out after ${checkTimeoutMs}ms`)),
+          checkTimeoutMs,
+        );
+      });
       try {
-        const result = await readinessCheck();
+        const result = await Promise.race([readinessCheck(), timeoutPromise]);
         if (result === true) {
           status = ReadinessStatus.READY;
           reason = "Server is ready";
@@ -188,7 +219,14 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
         }
       } catch (err) {
         status = ReadinessStatus.SERVICE_UNAVAILABLE;
-        reason = `${serviceLabel} readiness check failed: ${err instanceof Error ? err.message : String(err)}`;
+        // `/ready` is unauthenticated: never reflect the raw error to the client — a
+        // readinessCheck like `db.ping()` can throw a message carrying internal hosts,
+        // ports, or credentials. The detail is logged server-side (below); the client sees
+        // only a generic reason.
+        reason = `${serviceLabel} readiness check failed`;
+        readinessCheckError = err instanceof Error ? err.message : String(err);
+      } finally {
+        clearTimeout(timeoutTimer);
       }
     } else {
       status = ReadinessStatus.READY;
@@ -197,9 +235,10 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
 
     const isReady = status === ReadinessStatus.READY;
 
-    // Log readiness state — warn on not-ready, debug on ready
+    // Log readiness state — warn on not-ready, debug on ready. The full error detail (kept
+    // out of the client response above) is logged here for operators.
     if (!isReady) {
-      logger.warn(LogMessages.NOT_READY, reason);
+      logger.warn(LogMessages.NOT_READY, readinessCheckError ? `${reason}: ${readinessCheckError}` : reason);
     } else {
       logger.debug(LogMessages.READINESS_CHECK, status, reason);
     }

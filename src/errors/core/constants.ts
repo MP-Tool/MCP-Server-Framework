@@ -31,8 +31,6 @@ export const VALIDATION_LIMITS = {
 // Sensitive Field Patterns
 // ============================================================================
 
-import { isSensitiveKey } from "../../utils/sensitive-keys.js";
-
 /**
  * Redaction placeholder for sensitive values in error serialization.
  *
@@ -41,14 +39,3 @@ import { isSensitiveKey } from "../../utils/sensitive-keys.js";
  * the logger uses mask-style replacement.
  */
 export const REDACTED_PLACEHOLDER = "[REDACTED]" as const;
-
-/**
- * Redact a value if the field name is sensitive.
- *
- * @param fieldName - The field name
- * @param value - The value to potentially redact
- * @returns The original value or '[REDACTED]'
- */
-export function redactIfSensitive(fieldName: string, value: unknown): unknown {
-  return isSensitiveKey(fieldName) ? REDACTED_PLACEHOLDER : value;
-}

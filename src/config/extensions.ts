@@ -28,7 +28,7 @@
 import type { ZodTypeAny } from "zod";
 import { ConfigurationError } from "../errors/categories/validation.js";
 import { isConfigInitialized } from "./config-cache.js";
-import { CONFIG_FILE_SECTIONS } from "./file/index.js";
+import { CONFIG_FILE_SECTIONS } from "./file/schema.js";
 
 // ============================================================================
 // Types
@@ -172,15 +172,4 @@ export function setRegisteredSectionData(name: string, data: unknown): void {
   if (section) {
     section.data = data;
   }
-}
-
-/**
- * Reset all registered config sections.
- *
- * Intended for testing — clears all registrations and data.
- *
- * @internal
- */
-export function resetConfigExtensions(): void {
-  registeredSections.clear();
 }

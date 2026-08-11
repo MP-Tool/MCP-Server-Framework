@@ -13,6 +13,7 @@
 
 import { z } from "zod";
 import { splitCommaSeparated, parseByteSize, parseDuration } from "./string-helpers.js";
+import { parseEnvBoolean } from "./env-helpers.js";
 
 // ============================================================================
 // Boolean Coercion
@@ -38,8 +39,30 @@ import { splitCommaSeparated, parseByteSize, parseDuration } from "./string-help
 export function booleanFromEnv(defaultValue: boolean) {
   return z
     .boolean()
-    .or(z.string().transform((val) => val.toLowerCase() === "true"))
+    .or(z.string().transform((val) => parseEnvBoolean(val)))
     .default(defaultValue);
+}
+
+/**
+ * Zod schema for optional (tri-state) boolean environment variables.
+ *
+ * Like {@link booleanFromEnv}, but returns `undefined` when unset instead of coercing
+ * to a default. Use for precedence chains (env → config file → fallback) where "not
+ * set" must be distinguishable from "explicitly false".
+ *
+ * @returns Zod schema that outputs `boolean | undefined`
+ *
+ * @example
+ * ```typescript
+ * // In env schema:
+ * MCP_AUTH_ENABLED: optionalBooleanFromEnv(),
+ * ```
+ */
+export function optionalBooleanFromEnv() {
+  return z
+    .boolean()
+    .or(z.string().transform((val) => parseEnvBoolean(val)))
+    .optional();
 }
 
 // ============================================================================
@@ -122,7 +145,19 @@ export function optionalCommaSeparatedList() {
 export function byteSizeSchema(defaultValue: string) {
   return z
     .string()
-    .transform((val) => parseByteSize(val))
+    .transform((val, ctx) => {
+      try {
+        return parseByteSize(val);
+      } catch (err) {
+        // Surface as a Zod issue (→ ZodError) instead of a bare Error, so an invalid value
+        // flows through the same ConfigurationError taxonomy as every other schema field.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err instanceof Error ? err.message : "invalid byte size",
+        });
+        return z.NEVER;
+      }
+    })
     .default(defaultValue);
 }
 
@@ -150,6 +185,15 @@ export function byteSizeSchema(defaultValue: string) {
 export function durationSchema(defaultValue: string) {
   return z
     .string()
-    .transform((val) => parseDuration(val))
+    .transform((val, ctx) => {
+      try {
+        return parseDuration(val);
+      } catch (err) {
+        // Surface as a Zod issue (→ ZodError) instead of a bare Error, so an invalid value
+        // flows through the same ConfigurationError taxonomy as every other schema field.
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: err instanceof Error ? err.message : "invalid duration" });
+        return z.NEVER;
+      }
+    })
     .default(defaultValue);
 }

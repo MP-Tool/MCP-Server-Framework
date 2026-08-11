@@ -36,6 +36,13 @@
 export { dnsRebindingProtection } from "./dns-rebinding.js";
 
 /**
+ * API Access Log
+ * Logs one line per HTTP request/response (method, path, status, duration) to
+ * the "api" file-log component. Operational access log, separate from the audit trail.
+ */
+export { apiAccessLog } from "./api-access-log.js";
+
+/**
  * Rate Limiting (not handled by SDK)
  * Prevents abuse and DoS attacks
  */
@@ -57,23 +64,18 @@ export { resolveTrustProxy, TRUST_PROXY_KEYWORDS } from "./trust-proxy.js";
 // ===== Authentication Middleware =====
 
 /**
- * Bearer Auth Middleware
- * Validates access tokens via OAuth provider or custom token verifier
+ * Unified Auth Middleware
+ * Validates access tokens from a Bearer or custom header, with required or optional
+ * enforcement, via an OAuth provider or token verifier. Sets `req.auth` on success.
  */
-export { createBearerAuth } from "./bearer-auth.js";
-export type { BearerAuthOptions } from "./bearer-auth.js";
-
-/**
- * Custom Header Auth Middleware
- * Extracts and validates tokens from custom headers (e.g. X-API-Key)
- */
-export { createCustomHeaderAuth } from "./custom-header-auth.js";
-export type { CustomHeaderAuthOptions } from "./custom-header-auth.js";
+export { createAuthMiddleware, extractBearerToken } from "./auth-middleware.js";
+export type { AuthMiddlewareOptions, AuthTokenSource, AuthEnforcement } from "./auth-middleware.js";
 
 // ===== Security Logging Utilities =====
 
 /**
- * Sanitizes a string for logging to prevent log injection attacks.
- * Replaces newlines and other control characters.
+ * `truncateForLog` trims and length-bounds untrusted input before it goes into a log
+ * message (CWE-117 control-character escaping is applied separately by the Logger pipeline).
+ * `logSecurityEvent` logs a security event and mirrors it to the audit trail.
  */
-export { sanitizeForLog, logSecurityEvent } from "./logging.js";
+export { truncateForLog, logSecurityEvent } from "./logging.js";

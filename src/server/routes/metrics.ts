@@ -20,7 +20,7 @@
  */
 
 import { Router } from "express";
-import { getPrometheusExporter } from "../../telemetry/index.js";
+import { getPrometheusExporter } from "../../telemetry/sdk.js";
 import { logger as baseLogger } from "../../logger/index.js";
 
 const COMPONENT = "MetricsRoute";

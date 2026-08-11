@@ -82,6 +82,7 @@ export class JsonFormatter implements LogFormatter {
         this.config.pid !== undefined || this.config.processName
           ? { pid: this.config.pid, name: this.config.processName }
           : undefined,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive optional access; TS does not narrow `context` through the `||` condition.
       trace: context?.traceId || context?.spanId ? { id: context?.traceId, "span.id": context?.spanId } : undefined,
       session: context?.sessionId ? { id: context.sessionId } : undefined,
       http: context?.http

@@ -7,12 +7,9 @@
  * @module server/server-options
  */
 
-import type { ServerLifecycleHooks, ShutdownConfig } from "./lifecycle.js";
 import type { HandlersConfig } from "../mcp/types/index.js";
 import type { SessionStore } from "./session/index.js";
-import type { ServerCapabilities } from "../mcp/capabilities/server-capabilities.js";
-import type { TransportOptions } from "./transport-options.js";
-import type { AuthOptions } from "./auth/types.js";
+import type { CreateServerOptions } from "./types.js";
 
 // ============================================================================
 // Transport Configuration (canonical location: transport-options.ts)
@@ -71,6 +68,18 @@ export interface ReadinessConfig {
    * - Return a `string` → 503 with the string as reason
    */
   readonly readinessCheck?: () => boolean | string | Promise<boolean | string>;
+
+  /**
+   * Maximum time in milliseconds to wait for `readinessCheck` to resolve.
+   *
+   * If the check does not complete within this window the endpoint returns 503
+   * and the pending check is effectively abandoned. This prevents a stalled
+   * external dependency (DB, API) from blocking `/ready` indefinitely and
+   * thereby delaying Graceful Shutdown (which waits for active HTTP connections).
+   *
+   * @default 5000
+   */
+  readonly checkTimeoutMs?: number;
 
   /**
    * Label for the service in health responses.
@@ -183,71 +192,20 @@ export interface SessionConfigOptions {
 // ============================================================================
 
 /**
- * Complete server configuration options.
+ * Complete server configuration options, as consumed by the builder.
  *
- * This interface provides a declarative way to configure an MCP server.
- * All options have sensible defaults.
- *
- * @example
- * ```typescript
- * const options: ServerOptions = {
- *   name: 'my-mcp-server',
- *   version: '1.0.0',
- *   transport: { mode: 'http', port: 8080 },
- *   capabilities: { tools: true, resources: true },
- *   lifecycle: {
- *     onStarted: () => console.log('Server started!'),
- *   },
- * };
- * ```
+ * Derived from {@link CreateServerOptions} — the single, canonical field list
+ * for server configuration — rather than maintained as a parallel interface:
+ * identity becomes required (defaults already applied), and the `telemetry`
+ * toggle is replaced by the resolved `telemetryEnabled`. New `createServer()`
+ * options are inherited here automatically.
  */
-export interface ServerOptions {
-  // ─────────────────────────────────────────────────────────────────────────
-  // Server Identity
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Server name displayed to MCP clients.
-   *
-   * @example 'my-mcp-server', 'api-mcp-server'
-   */
+export interface ServerOptions extends Omit<CreateServerOptions, "name" | "version" | "telemetry"> {
+  /** Server name displayed to MCP clients (default applied by `createServer()`). */
   name: string;
 
-  /**
-   * Server version (typically from package.json).
-   *
-   * @example '1.0.0'
-   */
+  /** Server version (default applied by `createServer()`). */
   version: string;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Transport Configuration
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Transport configuration.
-   *
-   * When omitted, transport mode is resolved from the config cascade:
-   * schema defaults → `.env` file → config file → environment variables.
-   *
-   * @default Resolved from `MCP_TRANSPORT` (default: `'stdio'`)
-   */
-  transport?: TransportOptions;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Capabilities
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Server capabilities to advertise.
-   *
-   * @default { tools: { listChanged: true }, logging: true }
-   */
-  capabilities?: ServerCapabilities | undefined;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Protocol Handlers
-  // ─────────────────────────────────────────────────────────────────────────
 
   /**
    * Custom protocol handler hooks.
@@ -256,116 +214,12 @@ export interface ServerOptions {
    * The framework handles protocol compliance - these are for app logic.
    *
    * Note: Cancellation is handled automatically by the framework.
-   *
-   * @example
-   * ```typescript
-   * handlers: {
-   *   onPing: () => metrics.increment('mcp.ping'),
-   * }
-   * ```
    */
   handlers?: HandlersConfig | undefined;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Lifecycle
-  // ─────────────────────────────────────────────────────────────────────────
-
   /**
-   * Lifecycle hooks for startup/shutdown.
-   */
-  lifecycle?: ServerLifecycleHooks | undefined;
-
-  /**
-   * Shutdown configuration.
-   */
-  shutdown?: Partial<ShutdownConfig> | undefined;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Health Endpoint (Optional)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Readiness endpoint configuration.
-   *
-   * Provides a generic readiness check hook for the `/ready` endpoint.
-   * Consumers supply their own check logic.
-   */
-  health?: ReadinessConfig | undefined;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Session Configuration (Optional)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Session management configuration.
-   *
-   * Fine-tune session lifecycle behavior (timeouts, cleanup intervals,
-   * capacity). Only relevant for HTTP-based transports — stdio always
-   * uses a single session with no background tasks.
-   *
-   * All values are optional and fall back to environment variables / config
-   * file defaults from the standard config cascade.
-   *
-   * @see SessionConfigOptions for available options and defaults
-   */
-  session?: SessionConfigOptions | undefined;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Authentication (Optional)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Authentication configuration.
-   *
-   * Enables OAuth 2.1 or custom token verification on the server.
-   * When configured, the `/mcp` endpoint requires Bearer authentication.
-   * Health and metrics endpoints remain unauthenticated for probes.
-   *
-   * Only relevant for HTTP-based transports — stdio mode does not
-   * support authentication (a warning is logged if configured).
-   *
-   * @example OAuth provider
-   * ```typescript
-   * createServer({
-   *   name: 'my-server',
-   *   version: '1.0.0',
-   *   transport: { mode: 'http' },
-   *   auth: {
-   *     provider: myOAuthProvider,
-   *     issuerUrl: new URL('https://auth.example.com'),
-   *     requiredScopes: ['mcp:read'],
-   *   },
-   * });
-   * ```
-   *
-   * @example Custom token verifier
-   * ```typescript
-   * createServer({
-   *   name: 'my-server',
-   *   version: '1.0.0',
-   *   transport: { mode: 'http' },
-   *   auth: {
-   *     provider: { verifyAccessToken: async (token) => ({ ... }) },
-   *   },
-   * });
-   * ```
-   *
-   * @see AuthOptions for all configuration options
-   */
-  auth?: AuthOptions | undefined;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Telemetry (Optional)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Enable OpenTelemetry tracing and metrics.
-   *
-   * When set via `createServer()`, this is resolved from:
-   * 1. Explicit `telemetry` option (highest priority)
-   * 2. `OTEL_ENABLED` env var or config file (fallback)
-   *
-   * @default undefined (resolved from config)
+   * Enable OpenTelemetry tracing and metrics — the resolved form of
+   * `CreateServerOptions.telemetry` (explicit option → `OTEL_ENABLED` fallback).
    */
   telemetryEnabled?: boolean | undefined;
 
@@ -375,39 +229,6 @@ export interface ServerOptions {
    * @default Server name
    */
   telemetryServiceName?: string | undefined;
-
-  /**
-   * Called before the OpenTelemetry SDK is initialized.
-   *
-   * Power users can use this callback to configure low-level OTEL APIs
-   * before the framework creates the NodeSDK instance. Common use cases:
-   *
-   * - Set a custom `DiagLogger` via `diag.setLogger()` for SDK-level
-   *   diagnostics (by default no DiagLogger is set — output is suppressed)
-   * - Register custom instrumentation
-   * - Configure global propagators or samplers
-   *
-   * The callback runs after framework config resolution but before
-   * `OTEL_LOG_LEVEL` is consumed from `process.env` and SDK construction.
-   * If you set a DiagLogger here, the framework will not override it.
-   *
-   * **Important**: Custom DiagLoggers must NOT write to stdout (reserved
-   * for MCP protocol data in stdio transport mode).
-   *
-   * @example
-   * ```typescript
-   * import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
-   *
-   * const server = createServer({
-   *   name: 'my-server',
-   *   version: '1.0.0',
-   *   onBeforeTelemetryInit: () => {
-   *     diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
-   *   },
-   * });
-   * ```
-   */
-  onBeforeTelemetryInit?: (() => void) | undefined;
 }
 
 // ============================================================================

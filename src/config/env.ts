@@ -11,12 +11,16 @@
 import { z } from "zod";
 import {
   booleanFromEnv,
+  optionalBooleanFromEnv,
   optionalCommaSeparatedList,
   commaSeparatedList,
   byteSizeSchema,
   durationSchema,
 } from "../utils/zod-helpers.js";
-import { BYTE_SIZE_REGEX, parseDuration } from "../utils/string-helpers.js";
+import { BYTE_SIZE_REGEX, parseDuration, stripTrailingSlashes } from "../utils/string-helpers.js";
+// Safe direction: `errors/` imports nothing from `config/`, so this cannot recreate the
+// circular-import TDZ crash that once broke startup.
+import { FrameworkErrorFactory } from "../errors/index.js";
 import { readFileSync, accessSync, constants as fsConstants } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -96,8 +100,25 @@ export const frameworkEnvSchema = z
     /** Port to listen on (default: 8000) */
     MCP_PORT: z.coerce.number().int().min(1).max(65535).default(8000),
 
-    /** Transport mode: 'stdio' for CLI, 'http' for HTTP, 'https' for HTTPS with TLS (default: http) */
+    /** Transport mode: 'stdio' for CLI, 'http' for HTTP, 'https' for HTTPS with TLS (default: stdio) */
     MCP_TRANSPORT: z.enum(["stdio", "http", "https"]).default("stdio"),
+
+    /**
+     * Public base URL of this server (scheme + host + optional port), e.g.
+     * `https://mcp.example.com`. Set this when the server runs behind a reverse
+     * proxy or on a public domain so the URL it advertises to clients is the
+     * externally reachable one — not the internal bind host/port.
+     *
+     * When set it drives, in one place:
+     * - the OAuth `serverUrl` / `issuerUrl` and redirect URLs (via `deriveServerBaseUrl()`),
+     * - the RFC 9728 Protected Resource Metadata URL (`{base}/.well-known/oauth-protected-resource`),
+     * - the DNS-rebinding allowed-hosts list (its host is trusted automatically).
+     *
+     * When unset, the base URL is derived from `MCP_TRANSPORT` + `MCP_BIND_HOST` + `MCP_PORT`.
+     *
+     * @example 'https://mcp.example.com'
+     */
+    MCP_BASE_URL: z.string().url().transform(stripTrailingSlashes).optional(),
 
     /**
      * Enable Legacy SSE Transport (deprecated HTTP+SSE from protocol 2024-11-05)
@@ -224,11 +245,15 @@ export const frameworkEnvSchema = z
      * Enable HTTP Strict Transport Security (HSTS) header.
      *
      * When true, Helmet sets `Strict-Transport-Security` with `max-age=15552000`
-     * (180 days) and `includeSubDomains`. Only enable when serving over HTTPS.
+     * (180 days) and `includeSubDomains`.
      *
-     * @default false (managed by reverse proxy in production)
+     * Tri-state: when unset, HSTS defaults ON if the framework itself terminates TLS
+     * (`transport.mode: "https"`) and OFF otherwise (plain HTTP, or HTTPS terminated by a
+     * reverse proxy that owns the header). Set explicitly to override either way.
+     *
+     * @default unset → on for framework-terminated HTTPS, off otherwise
      */
-    MCP_HELMET_HSTS: booleanFromEnv(false),
+    MCP_HELMET_HSTS: optionalBooleanFromEnv(),
 
     /**
      * Content Security Policy configuration.
@@ -259,6 +284,18 @@ export const frameworkEnvSchema = z
     // ==========================================================================
 
     /**
+     * Master switch for MCP-server user authentication (see `resolveAuthConfig()`).
+     *
+     * Tri-state: unset falls through to the config-file `[auth].enabled` flag, then to
+     * a consumer-chosen default. Only the literal string `"true"` (case-insensitive) is
+     * truthy — anything else (including `"1"`, `"yes"`) is `false`, consistent with
+     * every other boolean env var in this schema.
+     *
+     * @example 'true'
+     */
+    MCP_AUTH_ENABLED: optionalBooleanFromEnv(),
+
+    /**
      * Required OAuth scopes for the `/mcp` endpoint (comma-separated).
      *
      * When set, all requests to `/mcp` must carry tokens with these scopes.
@@ -268,15 +305,41 @@ export const frameworkEnvSchema = z
      */
     MCP_AUTH_REQUIRED_SCOPES: optionalCommaSeparatedList(),
 
+    // The RFC 9728 Protected Resource Metadata URL is not a standalone setting: it is
+    // derived from the server's base URL (`MCP_BASE_URL` → issuer origin) as
+    // `{base}/.well-known/oauth-protected-resource`.
+
+    // ==========================================================================
+    // Secret Scrubbing
+    // ==========================================================================
+
     /**
-     * Protected Resource Metadata URL (RFC 9728).
+     * Master switch for tool-result secret scrubbing (see `resolveScrubConfig()`).
      *
-     * When set, included in `WWW-Authenticate` headers for 401 responses,
-     * allowing clients to discover the authorization server.
+     * Tri-state: unset falls through to the consumer-provided base config, then to
+     * the scrubber's own default (on). Only the literal string `"true"` is truthy.
      *
-     * @example 'https://api.example.com/.well-known/oauth-protected-resource'
+     * @example 'true'
      */
-    MCP_AUTH_RESOURCE_METADATA_URL: z.string().url().optional(),
+    MCP_SCRUB_ENABLED: optionalBooleanFromEnv(),
+
+    /**
+     * Extra sensitive key-name fragments to redact, beyond the built-in blocklist
+     * (comma-separated, case-insensitive substring match). Merged with any
+     * `additionalKeys` the consumer already declares programmatically.
+     *
+     * @example 'fernet,x-internal-token'
+     */
+    MCP_SCRUB_ADDITIONAL_KEYS: optionalCommaSeparatedList(),
+
+    /**
+     * Exact key names that must never be redacted by key-based matching, even
+     * when they contain a sensitive fragment (comma-separated, case-insensitive).
+     * Merged with any `allowKeys` the consumer already declares programmatically.
+     *
+     * @example 'public_key,is_secret'
+     */
+    MCP_SCRUB_ALLOW_KEYS: optionalCommaSeparatedList(),
 
     // ==========================================================================
     // Session Management
@@ -309,6 +372,22 @@ export const frameworkEnvSchema = z
 
     /** Directory to store logs (optional) */
     LOG_DIR: z.string().min(1).optional(),
+
+    /**
+     * Path to a dedicated audit-log file (JSON Lines), written in parallel to the normal
+     * logs and independent of LOG_LEVEL. On by default — when unset, the trail lands in
+     * `<LOG_DIR or <cwd>/logs>/audit.log` (see `resolveAuditFilePath` in `logger/audit`).
+     */
+    LOG_AUDIT_FILE: z.string().min(1).optional(),
+
+    /**
+     * How much request/response detail the per-tool-call audit entry records
+     * (everything is secret-scrubbed first):
+     * - `off` — outcome + affected resources only (no args, no result body).
+     * - `summary` (default) — scrubbed request args + a result summary (isError / counts).
+     * - `full` — additionally the scrubbed, size-bounded result `structuredContent`.
+     */
+    LOG_AUDIT_TOOL_IO: z.enum(["off", "summary", "full"]).default("summary"),
 
     /**
      * Maximum size of a single log file before rotation.
@@ -552,5 +631,11 @@ export type FrameworkEnvConfig = z.infer<typeof frameworkEnvSchema>;
  * @internal Used only by config-cache.ts — consumers should use `getFrameworkConfig()`
  */
 export function parseFrameworkEnv(envSource: Record<string, string | undefined> = process.env): FrameworkEnvConfig {
-  return frameworkEnvSchema.parse(envSource);
+  const result = frameworkEnvSchema.safeParse(envSource);
+  if (result.success) return result.data;
+  // A raw ZodError here escapes as an unhandled rejection during bootstrap and prints a
+  // stack trace into node_modules/zod — useless to the operator who mistyped a variable.
+  // Every other validation boundary converts first; this one is the counterpart to the
+  // config-file path's `fileValidationFailed`.
+  throw FrameworkErrorFactory.configuration.envValidationFailed(result.error);
 }

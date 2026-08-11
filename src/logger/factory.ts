@@ -8,13 +8,13 @@
  */
 
 import type { LogLevel, TransportMode, LogFormatter, LogWriter } from "./core/types.js";
-import { hostname as osHostname } from "os";
+import { hostname as osHostname } from "node:os";
 import { TextFormatter } from "./formatters/text-formatter.js";
 import { JsonFormatter } from "./formatters/json-formatter.js";
 import { ConsoleWriter } from "./writers/console-writer.js";
 import { FileWriter } from "./writers/file-writer.js";
-import { SecretScrubber } from "./scrubbing/secret-scrubber.js";
-import { InjectionGuard } from "./scrubbing/injection-guard.js";
+import { SecretScrubber } from "../utils/scrubbing/secret-scrubber.js";
+import { InjectionGuard } from "./injection-guard.js";
 import { MAX_CHILD_LOGGER_CACHE_SIZE } from "./core/constants.js";
 
 // ============================================================================

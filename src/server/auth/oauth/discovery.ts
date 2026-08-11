@@ -1,8 +1,8 @@
 /**
- * OIDC Discovery Client
+ * OAuth Discovery Client
  *
  * Fetches and caches OpenID Connect Discovery documents (RFC 8414 / OpenID Connect Discovery 1.0).
- * Used by {@link createOidcProvider} to auto-discover upstream OAuth endpoints.
+ * Used by {@link createOAuthProvider} to auto-discover upstream OAuth endpoints.
  *
  * The discovery document is fetched from `{issuer}/.well-known/openid-configuration`
  * and cached with a configurable TTL (default: 1 hour). Subsequent calls to
@@ -15,17 +15,16 @@
  * console.log(doc.token_endpoint);         // https://auth.example.com/token
  * ```
  *
- * @module server/auth/oidc-discovery
+ * @module server/auth/oauth/discovery
  */
 
-import { logger as baseLogger } from "../../logger/index.js";
-import { stripTrailingSlashes } from "../../utils/string-helpers.js";
+import { logger as baseLogger } from "../../../logger/index.js";
+import { stripTrailingSlashes } from "../../../utils/string-helpers.js";
+import { assertJsonContentType, OAUTH_FETCH_TIMEOUT_MS } from "./http.js";
 
 // ============================================================================
 // Logger
 // ============================================================================
-
-const LOG_COMPONENT = "oidc-discovery";
 
 const LogMessages = {
   FETCHING: "Fetching OIDC discovery from %s",
@@ -38,7 +37,7 @@ const LogMessages = {
   SSRF_BLOCKED: "OIDC discovery blocked: %s — %s",
 } as const;
 
-const logger = baseLogger.child({ component: LOG_COMPONENT });
+const logger = baseLogger.child({ component: "oauth-discovery" });
 
 // ============================================================================
 // Constants
@@ -46,12 +45,6 @@ const logger = baseLogger.child({ component: LOG_COMPONENT });
 
 /** Default TTL for cached discovery documents (1 hour) */
 const DEFAULT_DISCOVERY_TTL_MS = 60 * 60 * 1000;
-
-/** Default timeout for OIDC discovery fetch requests (10 seconds) */
-const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
-
-/** Well-known path suffix for OIDC discovery */
-const WELL_KNOWN_PATH = "/.well-known/openid-configuration";
 
 /** Maximum number of cached OIDC discovery documents */
 const MAX_DISCOVERY_CACHE_SIZE = 50;
@@ -98,6 +91,9 @@ export interface OidcDiscoveryDocument {
 
   /** RECOMMENDED. URL of the UserInfo endpoint */
   readonly userinfo_endpoint?: string;
+
+  /** URL of the provider's JSON Web Key Set (used to validate ID token signatures) */
+  readonly jwks_uri?: string;
 
   /** URL of the token revocation endpoint (RFC 7009) */
   readonly revocation_endpoint?: string;
@@ -188,7 +184,7 @@ function validateDiscoveryUrl(url: string): void {
  */
 export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscoveryDocument> {
   const normalizedIssuer = stripTrailingSlashes(issuerUrl);
-  const discoveryUrl = `${normalizedIssuer}${WELL_KNOWN_PATH}`;
+  const discoveryUrl = `${normalizedIssuer}/.well-known/openid-configuration`;
 
   // SSRF protection: validate URL before fetching (CWE-918)
   try {
@@ -199,13 +195,13 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     throw err;
   }
 
-  logger.info(LogMessages.FETCHING, discoveryUrl);
+  logger.debug(LogMessages.FETCHING, discoveryUrl);
 
   let response: globalThis.Response;
   try {
     response = await fetch(discoveryUrl, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(OAUTH_FETCH_TIMEOUT_MS),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "network error";
@@ -220,6 +216,7 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     );
   }
 
+  assertJsonContentType(response, `OIDC discovery at ${discoveryUrl}`);
   const data = (await response.json()) as Record<string, unknown>;
 
   // Validate required fields
@@ -238,14 +235,19 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     ...(typeof data.userinfo_endpoint === "string" && {
       userinfo_endpoint: data.userinfo_endpoint,
     }),
+    ...(typeof data.jwks_uri === "string" && {
+      jwks_uri: data.jwks_uri,
+    }),
     ...(typeof data.revocation_endpoint === "string" && {
       revocation_endpoint: data.revocation_endpoint,
     }),
     ...(Array.isArray(data.scopes_supported) && {
-      scopes_supported: data.scopes_supported as string[],
+      scopes_supported: data.scopes_supported.filter((s): s is string => typeof s === "string"),
     }),
     ...(Array.isArray(data.token_endpoint_auth_methods_supported) && {
-      token_endpoint_auth_methods_supported: data.token_endpoint_auth_methods_supported as string[],
+      token_endpoint_auth_methods_supported: data.token_endpoint_auth_methods_supported.filter(
+        (s): s is string => typeof s === "string",
+      ),
     }),
     ...(typeof data.issuer === "string" && { issuer: data.issuer }),
   };
@@ -259,7 +261,31 @@ export async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscove
     );
   }
 
-  logger.info(
+  // SSRF (CWE-918): the endpoints returned inside the document are attacker-influenceable
+  // if the provider is compromised or MITM'd — and the framework later POSTs the OAuth
+  // client_secret to token_endpoint/revocation_endpoint and the user's bearer token to
+  // userinfo_endpoint. Re-run the same host allowlist that guarded the discovery URL on
+  // every endpoint so a malicious document cannot redirect those requests at an internal
+  // address (e.g. cloud metadata). The issuer match above does not constrain endpoint hosts.
+  const endpointFields: ReadonlyArray<[string, string | undefined]> = [
+    ["authorization_endpoint", document.authorization_endpoint],
+    ["token_endpoint", document.token_endpoint],
+    ["userinfo_endpoint", document.userinfo_endpoint],
+    ["revocation_endpoint", document.revocation_endpoint],
+    ["jwks_uri", document.jwks_uri],
+  ];
+  for (const [field, url] of endpointFields) {
+    if (url === undefined) continue;
+    try {
+      validateDiscoveryUrl(url);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "invalid URL";
+      logger.error(LogMessages.SSRF_BLOCKED, url, reason);
+      throw new Error(`OIDC discovery ${field} is unsafe: ${reason}`, { cause: err });
+    }
+  }
+
+  logger.debug(
     LogMessages.FETCHED,
     document.authorization_endpoint,
     document.token_endpoint,
@@ -313,4 +339,31 @@ export async function getOidcDiscovery(
  */
 export function clearOidcDiscoveryCache(): void {
   discoveryCache.clear();
+}
+
+/**
+ * Resolves OIDC endpoints for an issuer via the discovery document.
+ *
+ * Convenience wrapper over {@link getOidcDiscovery} that extracts the endpoint
+ * URLs into a flat object. Used internally within `oauth/` to avoid repeating
+ * the same field extraction in multiple places.
+ *
+ * Not exported from the package barrel — internal use only.
+ */
+export async function resolveOidcEndpoints(
+  issuer: string,
+  ttlMs?: number,
+): Promise<{
+  readonly authorizationUrl: string;
+  readonly tokenUrl: string;
+  readonly userinfoUrl: string | undefined;
+  readonly revocationUrl: string | undefined;
+}> {
+  const discovery = await getOidcDiscovery(issuer, ttlMs);
+  return {
+    authorizationUrl: discovery.authorization_endpoint,
+    tokenUrl: discovery.token_endpoint,
+    userinfoUrl: discovery.userinfo_endpoint,
+    revocationUrl: discovery.revocation_endpoint,
+  };
 }

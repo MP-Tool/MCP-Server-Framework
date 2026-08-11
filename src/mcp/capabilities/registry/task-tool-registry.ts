@@ -27,7 +27,11 @@ import type {
 } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
 import type { Logger } from "../../../logger/index.js";
+import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
+import { scrubCallToolResult } from "./result-scrub.js";
+import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
+import type { ScrubbingBindOptions } from "./base-registry.js";
 
 // ============================================================================
 // Constants
@@ -37,6 +41,9 @@ const SdkBindingMessages = {
   TASK_TOOLS_REGISTERED: "Registered %d task tools with SDK",
   TASK_TOOL_REGISTERED: "Registered task tool: %s (taskSupport=%s)",
   NO_TASK_TOOLS: "No task tools to register",
+  TASK_EXECUTING: "Task tool [%s] executing operation: %s",
+  TASK_COMPLETED: "Task tool [%s:%s] completed in %dms",
+  TASK_ERROR: "Error in task tool [%s:%s]:",
 } as const;
 
 // ============================================================================
@@ -44,11 +51,11 @@ const SdkBindingMessages = {
 // ============================================================================
 
 /**
- * Options for binding task tools to an MCP SDK server.
+ * Options for binding task tools to an MCP SDK server. Unlike regular tools,
+ * task tools have no per-tool scrub opt-out.
  * @internal
  */
-export interface TaskToolBindOptions {
-  readonly logger: Logger;
+export interface TaskToolBindOptions extends ScrubbingBindOptions {
   readonly stateless: boolean;
 }
 
@@ -67,7 +74,7 @@ interface SdkTaskExtra {
   readonly _meta?: { progressToken?: string | number | undefined } | undefined;
   readonly sendNotification: SendNotificationFn;
   readonly taskId?: string | undefined;
-  readonly taskStore?: unknown | undefined;
+  readonly taskStore?: unknown;
 }
 
 // ============================================================================
@@ -163,7 +170,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
    * @experimental
    */
   static bindToSdk(sdk: McpServer, taskTools: readonly TaskToolDefinition[], options: TaskToolBindOptions): void {
-    const { logger, stateless } = options;
+    const { logger, stateless, resultScrubber } = options;
 
     if (taskTools.length === 0) {
       logger.trace(SdkBindingMessages.NO_TASK_TOOLS);
@@ -180,45 +187,39 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
       // Overload 2 (with input): config with inputSchema, ToolTaskHandler<InputArgs>
       // We must cast to AnySchema to select overload 2
       const sdkHandler: SdkToolTaskHandler<AnySchema> = {
-        createTask: async (args: unknown, extra) => {
-          const base = TaskToolRegistry.buildBaseContext(extra, stateless);
-          const context: TaskCreateContext = {
-            ...base,
-            taskStore: extra.taskStore,
-          };
-
-          // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
-          return taskTool.taskHandler.createTask(
-            args as Parameters<typeof taskTool.taskHandler.createTask>[0],
-            context,
+        createTask: (args: unknown, extra) => {
+          const context: TaskCreateContext = TaskToolRegistry.buildTaskContext(sdk, extra, stateless);
+          return TaskToolRegistry.runTaskOp(taskTool, "createTask", "task_create", context, logger, () =>
+            // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
+            taskTool.taskHandler.createTask(args as Parameters<typeof taskTool.taskHandler.createTask>[0], context),
           );
         },
 
-        getTask: async (args: unknown, extra) => {
-          const base = TaskToolRegistry.buildBaseContext(extra, stateless);
+        getTask: (args: unknown, extra) => {
           const context: TaskOperationContext = {
-            ...base,
+            ...TaskToolRegistry.buildTaskContext(sdk, extra, stateless),
             taskId: extra.taskId,
-            taskStore: extra.taskStore,
           };
-
-          // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
-          return taskTool.taskHandler.getTask(args as Parameters<typeof taskTool.taskHandler.getTask>[0], context);
+          return TaskToolRegistry.runTaskOp(taskTool, "getTask", "task_get", context, logger, () =>
+            // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
+            taskTool.taskHandler.getTask(args as Parameters<typeof taskTool.taskHandler.getTask>[0], context),
+          );
         },
 
-        getTaskResult: async (args: unknown, extra) => {
-          const base = TaskToolRegistry.buildBaseContext(extra, stateless);
+        getTaskResult: (args: unknown, extra) => {
           const context: TaskOperationContext = {
-            ...base,
+            ...TaskToolRegistry.buildTaskContext(sdk, extra, stateless),
             taskId: extra.taskId,
-            taskStore: extra.taskStore,
           };
-
-          // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
-          return taskTool.taskHandler.getTaskResult(
-            args as Parameters<typeof taskTool.taskHandler.getTaskResult>[0],
-            context,
-          );
+          return TaskToolRegistry.runTaskOp(taskTool, "getTaskResult", "task_get_result", context, logger, async () => {
+            // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
+            const result = await taskTool.taskHandler.getTaskResult(
+              args as Parameters<typeof taskTool.taskHandler.getTaskResult>[0],
+              context,
+            );
+            // Central secret-redaction boundary — same contract as regular tools.
+            return resultScrubber ? scrubCallToolResult(result, resultScrubber, logger, taskTool.name) : result;
+          });
         },
       };
 
@@ -244,6 +245,72 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
+   * Builds the full task context (base + task store + client-capability
+   * bridges) — the shape of {@link TaskCreateContext}; operation contexts add
+   * `taskId` on top. Common to all three task handler methods.
+   */
+  private static buildTaskContext(
+    sdk: McpServer,
+    extra: SdkTaskExtra & Pick<TaskCreateContext, "taskStore">,
+    stateless: boolean,
+  ): TaskCreateContext {
+    const base = TaskToolRegistry.buildBaseContext(extra, stateless);
+    const clientCaps = !stateless ? sdk.server.getClientCapabilities() : undefined;
+    return {
+      ...base,
+      taskStore: extra.taskStore,
+      ...(clientCaps?.sampling && { createMessage: sdk.server.createMessage.bind(sdk.server) }),
+      ...(clientCaps?.roots && { listRoots: sdk.server.listRoots.bind(sdk.server) }),
+      ...(clientCaps?.elicitation && { elicitInput: sdk.server.elicitInput.bind(sdk.server) }),
+    };
+  }
+
+  /**
+   * Shared skeleton for the three task operations: span + operation logging +
+   * per-operation request metrics around the given handler call. The three
+   * SDK callbacks differ only in context shape and (for `getTaskResult`) the
+   * scrub step — everything else lives here exactly once.
+   */
+  private static runTaskOp<T>(
+    taskTool: TaskToolDefinition,
+    op: "createTask" | "getTask" | "getTaskResult",
+    spanOperation: string,
+    context: Pick<TaskCreateContext, "requestId" | "sessionId">,
+    logger: Logger,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const startTime = Date.now();
+    let success = true;
+    return withSpan(
+      `mcp.task.${taskTool.name}.${op}`,
+      async (span) => {
+        span.setAttributes({
+          [MCP_ATTRIBUTES.TOOL_NAME]: taskTool.name,
+          [MCP_ATTRIBUTES.OPERATION]: spanOperation,
+          [MCP_ATTRIBUTES.REQUEST_ID]: String(context.requestId),
+          ...(context.sessionId && { [MCP_ATTRIBUTES.SESSION_ID]: context.sessionId }),
+        });
+        try {
+          logger.debug(SdkBindingMessages.TASK_EXECUTING, taskTool.name, op);
+          return await run();
+        } catch (error) {
+          success = false;
+          span.setAttribute(MCP_ATTRIBUTES.SUCCESS, false);
+          logger.error(SdkBindingMessages.TASK_ERROR, taskTool.name, op, error);
+          throw error;
+        } finally {
+          const durationMs = Date.now() - startTime;
+          getServerMetrics().recordRequest(`${taskTool.name}:${op}`, durationMs, success);
+          if (success) {
+            logger.debug(SdkBindingMessages.TASK_COMPLETED, taskTool.name, op, durationMs);
+          }
+        }
+      },
+      { kind: SpanKind.SERVER },
+    );
+  }
+
+  /**
    * Builds the shared base context from SDK extra parameters.
    * Common to all three task handler methods.
    */
@@ -253,6 +320,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
   ): {
     reportProgress: TaskCreateContext["reportProgress"];
     sendNotification: TaskCreateContext["sendNotification"];
+    recordAuditDetail: TaskCreateContext["recordAuditDetail"];
     abortSignal: AbortSignal;
     requestId: string | number;
     sessionId?: string | undefined;
@@ -264,6 +332,9 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
     return {
       reportProgress,
       sendNotification: extra.sendNotification.bind(extra),
+      // Task tools have their own lifecycle and do not emit the per-call tool.call audit,
+      // so audit detail recorded here is intentionally a no-op.
+      recordAuditDetail: () => {},
       abortSignal: extra.signal,
       requestId: extra.requestId,
       sessionId: extra.sessionId,

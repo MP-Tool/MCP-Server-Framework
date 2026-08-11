@@ -64,16 +64,6 @@ export interface SpanOptions {
 }
 
 /**
- * Trace context for propagation to external services.
- */
-export interface TraceContext {
-  /** Trace ID */
-  readonly traceId: string;
-  /** Span ID */
-  readonly spanId: string;
-}
-
-/**
  * Function signature for span execution callback.
  */
 export type SpanCallback<T> = (span: Span) => T;

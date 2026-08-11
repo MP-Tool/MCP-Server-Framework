@@ -8,7 +8,8 @@
 import rateLimit, { type RateLimitRequestHandler } from "express-rate-limit";
 import type { Request, Response, NextFunction } from "express";
 import { TransportErrorMessage, createJsonRpcError, HttpStatus, JsonRpcErrorCode } from "../../errors/index.js";
-import { getFrameworkConfig, registerCacheReset } from "../../config/index.js";
+import { getFrameworkConfig } from "../../config/index.js";
+import { registerCacheReset } from "../../config/config-cache.js";
 import { logger as baseLogger } from "../../logger/index.js";
 import { formatDuration } from "../../utils/string-helpers.js";
 

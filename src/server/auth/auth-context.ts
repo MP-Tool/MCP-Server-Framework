@@ -35,10 +35,10 @@ export interface AuthContext {
   /** SDK auth info from transport (populated by OAuth middleware via `req.auth`) */
   readonly sdkAuthInfo?: AuthInfo;
 
-  /** Resolved user identity (future: mapped from sdkAuthInfo.clientId or custom resolver) */
+  /** Resolved user identity — defaults to `sdkAuthInfo.clientId`; override via `createAuthContext`. */
   readonly userId?: string;
 
-  /** Framework permission scopes (future: role-based or mapped from sdkAuthInfo.scopes) */
+  /** Framework permission scopes — defaults to `sdkAuthInfo.scopes`; override via `createAuthContext`. */
   readonly permissions?: readonly string[];
 
   /** When authentication was validated */

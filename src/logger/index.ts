@@ -3,8 +3,10 @@
  *
  * Centralized logging for the MCP server framework.
  * Only exports what consumers need. Internal components (writers, formatters,
- * scrubbing, context, constants) are accessed via direct imports within
- * the logger module.
+ * context) are accessed via direct imports within the logger module.
+ * `SecretScrubber`/`REDACTED_VALUE` are deliberately public: consumers scrub
+ * secrets out of their own payloads (e.g. MCP tool output) with the same
+ * engine and marker the framework uses for logs.
  *
  * ## Usage
  *
@@ -33,27 +35,9 @@
 // Core Types
 // =============================================================================
 
-export type {
-  LogLevel,
-  McpLogLevel,
-  TransportMode,
-  HttpContext,
-  EventContext,
-  LogContext,
-  LoggerInterface,
-  LogWriter,
-  LogFormatter,
-  LogEntryParams,
-  LoggerConfig,
-  LogNotificationHandler,
-} from "./core/index.js";
+export type { LogLevel, LoggerInterface, LoggerConfig } from "./core/index.js";
 
 export type { LoggerOptions } from "./logger.js";
-
-export { LoggerResources, type LoggerSystemConfig, type LoggerDependencies } from "./factory.js";
-
-export { SecretScrubber } from "./scrubbing/index.js";
-export { InjectionGuard } from "./scrubbing/index.js";
 
 // =============================================================================
 // Main Logger
@@ -61,10 +45,25 @@ export { InjectionGuard } from "./scrubbing/index.js";
 
 export { logger, Logger } from "./logger.js";
 
-export { configureLogger, getLoggerConfig, resetLoggerConfig, type GlobalLoggerConfig } from "./logger.js";
+export { configureLogger, getLoggerConfig } from "./logger.js";
 
 // =============================================================================
 // MCP Logger (notifications to connected clients)
 // =============================================================================
 
-export { mcpLogger, McpNotificationLogger, type McpLoggerConfig } from "./mcp-logger.js";
+export { mcpLogger } from "./mcp-logger.js";
+
+// =============================================================================
+// Secret Scrubbing (consumer-facing: scrub secrets out of arbitrary payloads,
+// e.g. tool output, before it leaves the server)
+// =============================================================================
+
+export { SecretScrubber, createSecretScrubber, scrubByMimeType, REDACTED_VALUE } from "../utils/scrubbing/index.js";
+export type { SecretScrubberOptions, SecretScrubberConfig } from "../utils/scrubbing/index.js";
+
+// =============================================================================
+// Audit Trail (level-independent JSONL sink — own data path, not the log pipeline)
+// =============================================================================
+
+export { logAuditEvent, initializeAuditLog, resolveAuditFilePath } from "./audit/index.js";
+export type { AuditEvent, AuditActor, AuditCategory, AuditOutcome, AuditLogOptions } from "./audit/index.js";

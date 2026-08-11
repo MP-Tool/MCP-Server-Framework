@@ -9,6 +9,7 @@
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 import type { TransportHandle, TransportInfo, SessionFactory } from "./types.js";
 import type { SessionManager } from "../session/index.js";
@@ -54,6 +55,18 @@ export async function startStdioTransport(
   if (!created) {
     throw new Error("Failed to create stdio session — session capacity reached");
   }
+
+  // Surface the session id the way every other transport does. The SDK builds each
+  // request's `extra.sessionId` from `transport.sessionId` (an optional field on the
+  // generic Transport interface); `StdioServerTransport` never sets it, so without
+  // this line `ToolContext.sessionId` is undefined for stdio only. Consumers that key
+  // per-session state on it — the dynamic resource registry, and therefore every
+  // payload a tool wants to offload instead of inlining — silently degrade there,
+  // even though `resources/read` works perfectly well over stdio.
+  //
+  // Assigned through `Transport`, which declares the field: the concrete class omits
+  // it from its own type even though it implements the interface.
+  (transport as Transport).sessionId = created.id;
 
   await session.sdk.connect(transport);
   logger.debug(LogMessages.CONNECTED);

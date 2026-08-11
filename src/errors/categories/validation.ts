@@ -10,7 +10,8 @@
 
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { ZodError } from "zod";
-import { AppError, ErrorCodes, VALIDATION_LIMITS, REDACTED_PLACEHOLDER, isSensitiveKey } from "../core/index.js";
+import { AppError, ErrorCodes, VALIDATION_LIMITS, REDACTED_PLACEHOLDER } from "../core/index.js";
+import { isSensitiveKey } from "../../utils/sensitive-keys.js";
 import type { ValidationErrorOptions, ValidationIssue, BaseErrorOptions } from "../core/index.js";
 
 // ============================================================================
@@ -330,6 +331,30 @@ export class ConfigurationError extends AppError {
       configKey: "MCP_CONFIG_FILE_PATH",
       cause: zodError,
       recoveryHint: "Fix the listed issues in your config file. Use `.strict()` sections to catch typos.",
+    });
+  }
+
+  /**
+   * Create a ConfigurationError for schema validation failures in the ENVIRONMENT.
+   *
+   * The counterpart to {@link fileValidationFailed} for `process.env`. Without it a
+   * single mistyped variable — a non-numeric port, an unknown log level — surfaces as
+   * a raw `ZodError` stack trace pointing into `node_modules/zod`, which tells an
+   * operator nothing about which variable is wrong.
+   *
+   * Cross-field constraints report both offending names in `path`, so those are joined
+   * rather than shown as a single key.
+   */
+  static envValidationFailed(zodError: ZodError): ConfigurationError {
+    const issues = zodError.issues
+      .map((i) => `  - ${i.path.length > 0 ? i.path.join(" / ") : "(config)"}: ${i.message}`)
+      .join("\n");
+    const keys = [...new Set(zodError.issues.flatMap((i) => i.path.map(String)))];
+
+    return new ConfigurationError(`Invalid environment configuration:\n${issues}`, {
+      ...(keys.length === 1 && keys[0] !== undefined && { configKey: keys[0] }),
+      cause: zodError,
+      recoveryHint: "Correct the listed environment variables (or the matching keys in your config file).",
     });
   }
 

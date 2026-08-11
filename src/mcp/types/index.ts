@@ -64,6 +64,7 @@ export type {
   ProgressData,
   ProgressReporter,
   ToolContext,
+  AuditToolIoLevel,
   TaskCreateContext,
   TaskOperationContext,
   SendNotificationFn,

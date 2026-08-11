@@ -27,6 +27,8 @@ import type { ServerOptions } from "../server-options.js";
 import { BuilderLogMessages, BUILDER_LOG_COMPONENT } from "./constants.js";
 import { McpServerInstance } from "../server-instance.js";
 import { McpSessionFactory } from "../session/session-factory.js";
+import { createResultScrubber } from "../../mcp/capabilities/registry/index.js";
+import { getFrameworkConfig } from "../../config/index.js";
 import { validateBuilderState } from "./validation.js";
 import type { ValidatedServerOptions } from "./validation.js";
 import { collectPrimitives } from "./primitive-collector.js";
@@ -156,23 +158,45 @@ export class McpServerBuilder implements ServerBuilder {
     const transport = options.transport ?? ({ mode: "stdio" } as const);
     const stateless = isHttpTransport(transport) ? transport.stateless : undefined;
 
+    // Central secret-redaction boundary — one scrubber per server build,
+    // shared by every session's tool/task-tool binding. Default ON.
+    const resultScrubber = createResultScrubber(options.scrubToolResults);
+
+    // How much request/response detail the per-call tool.call audit records
+    // (explicit option wins over the LOG_AUDIT_TOOL_IO env default).
+    const auditToolIo = options.auditToolIo ?? getFrameworkConfig().LOG_AUDIT_TOOL_IO;
+
+    // Operator tool-surface filter — purely subtractive. Tools the predicate rejects
+    // are never registered on any session (absent from tools/list, not callable).
+    // Runs before scope gating, which still applies to whatever remains.
+    const tools = options.filterTools ? primitives.tools.filter(options.filterTools) : primitives.tools;
+    if (options.filterTools && tools.length !== primitives.tools.length) {
+      const removed = primitives.tools.filter((t) => !tools.includes(t)).map((t) => t.name);
+      logger.info(BuilderLogMessages.TOOLS_FILTERED, tools.length, primitives.tools.length, removed.join(", "));
+    }
+
     const sessionFactory = new McpSessionFactory({
       name: options.name,
       version: options.version,
+      title: options.title,
+      icons: options.icons,
       capabilities: options.capabilities,
       handlers: options.handlers,
       stateless,
-      tools: primitives.tools,
+      tools,
       resources: primitives.resources,
       resourceTemplates: primitives.resourceTemplates,
       prompts: primitives.prompts,
       taskTools: primitives.taskTools,
       scopeFilterCapabilities: options.auth?.scopeFilterCapabilities,
+      anonymousScopes: options.anonymousScopes,
+      resultScrubber,
+      auditToolIo,
     });
 
     logger.debug(
       BuilderLogMessages.BUILD_SUMMARY,
-      primitives.tools.length,
+      tools.length,
       primitives.resources.length + primitives.resourceTemplates.length,
       primitives.prompts.length,
     );

@@ -52,6 +52,7 @@ export const BuilderLogMessages = {
   BUILD_STARTED: "Building server instance...",
   BUILD_COMPLETED: "Server instance built successfully",
   BUILD_SUMMARY: "Server ready: %d tools, %d resources, %d prompts",
+  TOOLS_FILTERED: "Tool surface filtered: %d of %d tools registered (removed: %s)",
   DUPLICATE_TOOL: "Duplicate tool name detected: %s — last registration wins",
   DUPLICATE_RESOURCE: "Duplicate resource URI detected: %s — last registration wins",
   DUPLICATE_TEMPLATE: "Duplicate resource template detected: %s — last registration wins",
