@@ -28,10 +28,9 @@ import type {
 import { createProgressReporter } from "../../handlers/index.js";
 import type { Logger } from "../../../logger/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
-import { scrubCallToolResult } from "./result-scrub.js";
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
-import type { ScrubbingBindOptions } from "./base-registry.js";
+import type { BindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 import type { SdkAuthInfo } from "./scope-enforcement.js";
 
@@ -53,11 +52,11 @@ const SdkBindingMessages = {
 // ============================================================================
 
 /**
- * Options for binding task tools to an MCP SDK server. Unlike regular tools,
- * task tools have no per-tool scrub opt-out.
+ * Options for binding task tools to an MCP SDK server. Results are scrubbed by the
+ * session's task store (see `createScrubbingTaskStore`), not here.
  * @internal
  */
-export interface TaskToolBindOptions extends ScrubbingBindOptions {
+export interface TaskToolBindOptions extends BindOptions {
   readonly stateless: boolean;
 }
 
@@ -174,7 +173,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
    * @experimental
    */
   static bindToSdk(sdk: McpServer, taskTools: readonly TaskToolDefinition[], options: TaskToolBindOptions): void {
-    const { logger, stateless, resultScrubber, anonymousScopes } = options;
+    const { logger, stateless, anonymousScopes } = options;
 
     if (taskTools.length === 0) {
       logger.trace(SdkBindingMessages.NO_TASK_TOOLS);
@@ -224,15 +223,13 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
             ...TaskToolRegistry.buildTaskContext(sdk, extra, stateless),
             taskId: extra.taskId,
           };
-          return TaskToolRegistry.runTaskOp(taskTool, "getTaskResult", "task_get_result", context, logger, async () => {
+          return TaskToolRegistry.runTaskOp(taskTool, "getTaskResult", "task_get_result", context, logger, () =>
             // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
-            const result = await taskTool.taskHandler.getTaskResult(
+            taskTool.taskHandler.getTaskResult(
               args as Parameters<typeof taskTool.taskHandler.getTaskResult>[0],
               context,
-            );
-            // Central secret-redaction boundary — same contract as regular tools.
-            return resultScrubber ? scrubCallToolResult(result, resultScrubber, logger, taskTool.name) : result;
-          });
+            ),
+          );
         },
       };
 
@@ -281,8 +278,8 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
   /**
    * Shared skeleton for the three task operations: span + operation logging +
    * per-operation request metrics around the given handler call. The three
-   * SDK callbacks differ only in context shape and (for `getTaskResult`) the
-   * scrub step — everything else lives here exactly once.
+   * SDK callbacks differ only in context shape — everything else lives here
+   * exactly once.
    */
   private static runTaskOp<T>(
     taskTool: TaskToolDefinition,

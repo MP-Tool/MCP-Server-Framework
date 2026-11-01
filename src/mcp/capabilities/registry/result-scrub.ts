@@ -24,6 +24,7 @@
  * @module mcp/capabilities/registry/result-scrub
  */
 
+import type { TaskStore } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Logger } from "../../../logger/index.js";
 import { ScrubberError } from "../../../logger/core/index.js";
@@ -148,4 +149,25 @@ export function scrubCallToolResult(
       content: [{ type: "text", text: "Tool result withheld: secret redaction failed (see server logs)." }],
     };
   }
+}
+
+/**
+ * Wrap a task store so results leave it scrubbed. The SDK answers `tasks/result` and its
+ * auto-polling from `TaskStore.getTaskResult` and never calls a task tool's own
+ * `getTaskResult`, which makes this the one exit every task result passes — also a result a
+ * consumer wrote directly to its own store. Task tools have no per-tool scrub opt-out.
+ */
+export function createScrubbingTaskStore(store: TaskStore, scrubber: SecretScrubber, logger: Logger): TaskStore {
+  return {
+    createTask: (...args) => store.createTask(...args),
+    getTask: (...args) => store.getTask(...args),
+    storeTaskResult: (...args) => store.storeTaskResult(...args),
+    getTaskResult: async (taskId, sessionId) => {
+      const result = await store.getTaskResult(taskId, sessionId);
+      // @sdk-constraint — the store types results as the generic `Result`; only task tools write here
+      return scrubCallToolResult(result as CallToolResult, scrubber, logger, `task ${taskId}`);
+    },
+    updateTaskStatus: (...args) => store.updateTaskStatus(...args),
+    listTasks: (...args) => store.listTasks(...args),
+  };
 }

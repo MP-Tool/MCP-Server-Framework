@@ -39,6 +39,7 @@ import {
   PromptRegistry,
   TaskToolRegistry,
 } from "../../mcp/capabilities/registry/index.js";
+import { createScrubbingTaskStore } from "../../mcp/capabilities/registry/result-scrub.js";
 import { hasAllRequiredScopes } from "../../mcp/capabilities/registry/scope-enforcement.js";
 import { logger as frameworkLogger } from "../../logger/index.js";
 import type { SecretScrubber } from "../../logger/index.js";
@@ -210,6 +211,12 @@ export class McpSession implements LogNotificationHandler {
   constructor(options: McpSessionOptions) {
     this.options = Object.freeze({ ...options });
 
+    // Every task result leaves through the store, so that is where it gets scrubbed.
+    const taskStore =
+      options.taskStore && options.resultScrubber
+        ? createScrubbingTaskStore(options.taskStore, options.resultScrubber, this.logger)
+        : options.taskStore;
+
     // Create the underlying SDK server with pre-built capabilities
     this.sdk = new McpServer(
       {
@@ -220,7 +227,7 @@ export class McpSession implements LogNotificationHandler {
       },
       {
         capabilities: options.capabilities,
-        ...(options.taskStore && { taskStore: options.taskStore }),
+        ...(taskStore && { taskStore }),
         ...(options.taskMessageQueue && {
           taskMessageQueue: options.taskMessageQueue,
         }),
@@ -325,7 +332,6 @@ export class McpSession implements LogNotificationHandler {
     TaskToolRegistry.bindToSdk(this.sdk, taskTools, {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
-      resultScrubber: this.options.resultScrubber,
       anonymousScopes: this.options.anonymousScopes,
     });
   }

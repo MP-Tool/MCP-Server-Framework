@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`anonymousScopes` also gates resources and prompts**: they checked only `extra.authInfo`, which is
   empty for anonymous callers, so `resources/read` and `prompts/get` skipped the check. An item hidden
   from the list stayed readable by its known URI or name.
+- **Task results are scrubbed**: the scrub sat in the tool's `getTaskResult`, which the SDK never
+  calls; `tasks/result` and auto-polling read the task store directly, so secrets reached the client
+  unredacted. The session now wraps the store and scrubs every result on its way out.
 
 ### Changed
 
