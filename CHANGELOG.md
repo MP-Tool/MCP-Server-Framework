@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masked values now keep their type (strings the marker, numbers `0`, containers stay). Booleans, null
   and numbers whose key names metadata (`count`, `max`, `ttl`, ...) stay as they are; other masked
   numbers are also purged from the text block. Logs and audit keep the visible marker.
+- **Text scrubbing catches more secret formats**, in tool results and logs alike. These passed
+  untouched or partly masked: quoted values with spaces, single-quoted keys (how `util.inspect` prints
+  error headers), JSON numbers, `scheme://:password@host`, passwords containing `@`, and credentials
+  without a password (`scheme://token@host`, so `git@` in a URL is masked too).
+- **URL credential scrubbing can no longer be used to stall the server**: the regex restarted at every
+  `://`, so about 500 kB of `://a:` blocked the event loop for over 30 seconds wherever the text was
+  scrubbed, logs included. A linear scan replaces it.
 
 ### Changed
 

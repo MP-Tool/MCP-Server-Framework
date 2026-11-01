@@ -78,7 +78,14 @@ function compileKeyPatterns(additionalKeys: readonly string[]): CompiledKeyPatte
     // Use custom boundary instead of \b — word boundaries treat _ as a word character,
     // so \bapi_key\b fails to match in "my_api_key=secret". Adding _ - . to the boundary
     // class ensures compound keys like my_api_key, app.secret, my-token are matched.
-    kvRegex: new RegExp(`(^|[\\s"'{(,;_\\-.])(${kvPattern})(\\s*[:=]\\s*)(["']?)([^\\s"']+)\\4`, "gi"),
+    // The separator accepts a closing single quote (`'x-api-key': ...`, as util.inspect prints
+    // objects). Double-quoted keys are JSON and belong to the JSON passes, which know booleans.
+    // A quoted value runs to its closing quote, spaces included; without one, an opening quote
+    // still counts as value, so an unterminated quote cannot hide a secret from the match.
+    kvRegex: new RegExp(
+      `(^|[\\s"'{(,;_\\-.])(${kvPattern})('?\\s*[:=]\\s*)("[^"\\n]+"|'[^'\\n]+'|["']?[^\\s"]+)`,
+      "gi",
+    ),
     urlParamRegex: new RegExp(`([?&](?:${urlPattern})=)([^&\\s]+)`, "gi"),
     kvKeysLower: [...KV_BASE_KEYS, ...additionalKeys].map((k) => k.toLowerCase()),
   };
@@ -108,8 +115,57 @@ function expandKey(text: string, start: number, length: number): string {
   return text.slice(from, to).toLowerCase();
 }
 
-/** Regex to match credentials in connection strings (scheme://user:pass@host, including IPv6 [::1]) */
-const CONN_STRING_REGEX = /:\/\/([^/:@\s[\]]+|\[[^\]]+\]):([^@\s]+)@/g;
+/**
+ * Mask URL credentials: `scheme://user:pass@host` (the user may be empty, and the password may
+ * contain `@`, so it runs to the last `@` of the token), IPv6 `scheme://[::1]:pass@host`, and
+ * `scheme://token@host`. A token ends at whitespace or a quote.
+ *
+ * A scan rather than a regex: a pattern that looks ahead for `@` restarts at every `://`, which
+ * takes minutes on hostile input such as `://a:` repeated, and this runs on every log line.
+ * Each token's end and last `@` are computed once, so the scan is linear.
+ */
+function scrubUrlCredentials(text: string): string {
+  let out = "";
+  let copied = 0;
+  let searchFrom = 0;
+  let tokenEnd = -1;
+  let lastAt = -1;
+
+  for (;;) {
+    const scheme = text.indexOf("://", searchFrom);
+    if (scheme === -1) return copied === 0 ? text : out + text.slice(copied);
+    const start = scheme + 3;
+
+    if (start >= tokenEnd) {
+      tokenEnd = start;
+      while (tokenEnd < text.length && !/[\s"']/.test(text[tokenEnd] as string)) tokenEnd++;
+      lastAt = text.lastIndexOf("@", tokenEnd - 1);
+    }
+    // No credentials anywhere in the rest of this token, nested URLs included.
+    if (lastAt < start) {
+      searchFrom = tokenEnd;
+      continue;
+    }
+
+    // Where the user part ends: `[...]` is an IPv6 host, otherwise the first `:`, `/` or `@`.
+    let cursor = start;
+    if (text[cursor] === "[") cursor = text.indexOf("]", cursor) + 1 || tokenEnd;
+    while (cursor < tokenEnd && !":/@".includes(text[cursor] as string)) cursor++;
+
+    if (text[cursor] === "@") {
+      out += `${text.slice(copied, start)}${REDACTED_VALUE}`;
+      copied = cursor;
+      searchFrom = cursor;
+    } else if (text[cursor] === ":") {
+      out += `${text.slice(copied, cursor + 1)}${REDACTED_VALUE}`;
+      copied = lastAt;
+      searchFrom = lastAt;
+    } else {
+      // A path before any credential: only a URL nested further on can still have one.
+      searchFrom = cursor;
+    }
+  }
+}
 
 /** Regex to match AWS access key IDs (AKIA followed by 16 uppercase alphanumeric characters) */
 const AWS_KEY_REGEX = /AKIA[0-9A-Z]{16}/g;
@@ -122,6 +178,12 @@ const AWS_KEY_REGEX = /AKIA[0-9A-Z]{16}/g;
  * delimiter is unambiguous (linear scan, no nested quantifiers).
  */
 const JSON_KV_REGEX = /"([^"\\\n]+)"(\s*:\s*)"((?:[^"\\\n]|\\.)*)"/g;
+
+/** A JSON number pair, `"key": 123`. Only numbers: booleans and null cannot hold a secret. */
+const JSON_NUMBER_REGEX = /"([^"\\\n]+)"(\s*:\s*)(-?\d[\d.eE+-]*)(?=\s*(?:[,}\]]|$))/gm;
+
+/** Same for JSON embedded inside a JSON string, i.e. `\"key\": 123`. */
+const ESCAPED_JSON_NUMBER_REGEX = /\\"([^"\\\n]+)\\"(\s*:\s*)(-?\d[\d.eE+-]*)(?=\s*(?:[,}\]]|$))/gm;
 
 /** Same for JSON embedded inside a JSON string, i.e. `\"key\": \"value\"`. */
 const ESCAPED_JSON_KV_REGEX = /\\"([^"\\\n]+)\\"(\s*:\s*)\\"((?:[^"\\]|\\[^"])*)\\"/g;
@@ -313,7 +375,7 @@ export class SecretScrubber {
     scrubbed = scrubbed.replace(AWS_KEY_REGEX, REDACTED_VALUE);
 
     // 5. Connection strings - "scheme://user:pass@host"
-    scrubbed = scrubbed.replace(CONN_STRING_REGEX, `://$1:${REDACTED_VALUE}@`);
+    scrubbed = scrubUrlCredentials(scrubbed);
 
     // 6. Sensitive URL query parameters - "?password=xxx&api_key=yyy"
     scrubbed = scrubbed.replace(this.patterns.urlParamRegex, `$1${REDACTED_VALUE}`);
@@ -324,23 +386,17 @@ export class SecretScrubber {
     if (this.patterns.kvKeysLower.some((k) => lowerScrubbed.includes(k))) {
       scrubbed = scrubbed.replace(
         this.patterns.kvRegex,
-        (
-          match: string,
-          prefix: string,
-          key: string,
-          sep: string,
-          quote: string,
-          value: string,
-          offset: number,
-          whole: string,
-        ) => {
+        (match: string, prefix: string, key: string, sep: string, value: string, offset: number, whole: string) => {
           // Don't redact if already redacted
           if (value.includes(REDACTED_VALUE)) return match;
           // The pattern matches the sensitive FRAGMENT (`secret` inside `is_secret`).
           // Widen it to the surrounding compound key so an allowlisted name is
           // honored here too — otherwise `is_secret = true` gets masked into a
           // string, which is both wrong and enough to break a config document.
-          if (this.allowKeys.has(expandKey(whole, offset + prefix.length, key.length))) return match;
+          const fullKey = expandKey(whole, offset + prefix.length, key.length);
+          if (this.allowKeys.has(fullKey)) return match;
+          if (isNumericMetadataKey(fullKey) && !Number.isNaN(Number(value))) return match;
+          const quote = /^(["']).*\1$/.test(value) ? (value[0] as string) : "";
           return `${prefix}${key}${sep}${quote}${REDACTED_VALUE}${quote}`;
         },
       );
@@ -356,6 +412,12 @@ export class SecretScrubber {
       scrubbed = scrubbed.replace(ESCAPED_JSON_KV_REGEX, (m, key: string, sep: string, value: string) =>
         this.redactJsonPair(m, key, sep, value, '\\"'),
       );
+      scrubbed = scrubbed.replace(JSON_NUMBER_REGEX, (m, key: string, sep: string) =>
+        this.redactJsonNumber(m, key, sep, '"'),
+      );
+      scrubbed = scrubbed.replace(ESCAPED_JSON_NUMBER_REGEX, (m, key: string, sep: string) =>
+        this.redactJsonNumber(m, key, sep, '\\"'),
+      );
     }
 
     return scrubbed;
@@ -369,6 +431,12 @@ export class SecretScrubber {
    */
   private redactJsonPair(match: string, key: string, sep: string, value: string, quote: '"' | '\\"'): string {
     if (value.includes(REDACTED_VALUE) || !this.isSensitiveKey(key)) return match;
+    return `${quote}${key}${quote}${sep}${quote}${REDACTED_VALUE}${quote}`;
+  }
+
+  /** Redact one matched JSON number pair by the same rule as {@link maskLeaves}. */
+  private redactJsonNumber(match: string, key: string, sep: string, quote: '"' | '\\"'): string {
+    if (!this.isSensitiveKey(key) || isNumericMetadataKey(key)) return match;
     return `${quote}${key}${quote}${sep}${quote}${REDACTED_VALUE}${quote}`;
   }
 
