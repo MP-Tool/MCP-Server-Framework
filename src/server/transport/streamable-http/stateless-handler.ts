@@ -8,7 +8,6 @@
  */
 
 import type { Request, Response } from "express";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import type { SessionFactory } from "../types.js";
@@ -58,8 +57,7 @@ export class StatelessHandler implements TransportRequestHandler {
       });
 
       try {
-        // @sdk-constraint — StreamableHTTPServerTransport structurally differs from Transport with exactOptionalPropertyTypes
-        await mcpSession.sdk.connect(transport as Transport);
+        await mcpSession.sdk.connect(transport);
         await transport.handleRequest(req, res, req.body);
       } finally {
         // Cleanup transport + session after the request completes (or fails).
