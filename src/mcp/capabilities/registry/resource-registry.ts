@@ -27,6 +27,7 @@ import type {
 } from "../../types/index.js";
 import type { SecretScrubber } from "../../../utils/scrubbing/index.js";
 import { scrubByMimeType } from "../../../utils/scrubbing/index.js";
+import { scrubThrownError } from "./result-scrub.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
@@ -366,7 +367,7 @@ export class ResourceRegistry implements ResourceProvider {
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.RESOURCE_READ_ERROR, resource.uri, msg);
-                throw error;
+                throw scrubThrownError(error, resultScrubber);
               }
             },
             { kind: SpanKind.SERVER },
@@ -450,7 +451,10 @@ export class ResourceRegistry implements ResourceProvider {
                       ? validationError.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
                       : String(validationError);
                   logger.warn(SdkBindingMessages.TEMPLATE_VALIDATION_FAILED, template.uriTemplate, msg);
-                  throw new McpError(ErrorCode.InvalidParams, `Invalid resource template parameters: ${msg}`);
+                  throw scrubThrownError(
+                    new McpError(ErrorCode.InvalidParams, `Invalid resource template parameters: ${msg}`),
+                    resultScrubber,
+                  );
                 }
               }
 
@@ -468,7 +472,7 @@ export class ResourceRegistry implements ResourceProvider {
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.TEMPLATE_READ_ERROR, template.uriTemplate, msg);
-                throw error;
+                throw scrubThrownError(error, resultScrubber);
               }
             },
             { kind: SpanKind.SERVER },

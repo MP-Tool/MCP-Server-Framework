@@ -332,6 +332,7 @@ export class McpSession implements LogNotificationHandler {
     TaskToolRegistry.bindToSdk(this.sdk, taskTools, {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
+      resultScrubber: this.options.resultScrubber,
       anonymousScopes: this.options.anonymousScopes,
     });
   }
@@ -358,6 +359,7 @@ export class McpSession implements LogNotificationHandler {
   registerPrompts(prompts: readonly PromptDefinition[]): void {
     PromptRegistry.bindToSdk(this.sdk, prompts, {
       logger: this.logger,
+      resultScrubber: this.options.resultScrubber,
       anonymousScopes: this.options.anonymousScopes,
     });
   }

@@ -21,7 +21,8 @@ import type { PromptDefinition, PromptMessage, PromptProvider, CompletionCallbac
 import type { Logger } from "../../../logger/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
-import type { BindOptions } from "./base-registry.js";
+import type { ScrubbingBindOptions } from "./base-registry.js";
+import { scrubThrownError } from "./result-scrub.js";
 import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 
 // ============================================================================
@@ -44,7 +45,7 @@ const SdkBindingMessages = {
  * Options for binding prompts to an MCP SDK server.
  * @internal
  */
-export type PromptBindOptions = BindOptions;
+export type PromptBindOptions = ScrubbingBindOptions;
 
 // ============================================================================
 // Prompt Registry Class
@@ -145,7 +146,7 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
    * @internal
    */
   static bindToSdk(sdk: McpServer, prompts: readonly PromptDefinition[], options: PromptBindOptions): void {
-    const { logger, anonymousScopes } = options;
+    const { logger, anonymousScopes, resultScrubber } = options;
 
     if (prompts.length === 0) {
       logger.trace(SdkBindingMessages.NO_PROMPTS);
@@ -212,7 +213,10 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.PROMPT_ERROR, prompt.name, msg);
-                throw new McpError(ErrorCode.InternalError, `Prompt '${prompt.name}' failed: ${msg}`);
+                throw scrubThrownError(
+                  new McpError(ErrorCode.InternalError, `Prompt '${prompt.name}' failed: ${msg}`),
+                  resultScrubber,
+                );
               }
             },
             { kind: SpanKind.SERVER },

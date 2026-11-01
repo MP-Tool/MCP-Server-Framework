@@ -22,7 +22,7 @@ import { createProgressReporter } from "../../handlers/index.js";
 import type { Logger } from "../../../logger/index.js";
 import { SecretScrubber } from "../../../logger/index.js";
 import { mcpLogger } from "../../../logger/index.js";
-import { scrubCallToolResult } from "./result-scrub.js";
+import { scrubCallToolResult, scrubThrownError } from "./result-scrub.js";
 import type { LogNotificationHandler } from "../../../logger/core/index.js";
 import { withExtendedContext } from "../../../logger/core/context.js";
 import { JsonRpcErrorCode, AppError } from "../../../errors/index.js";
@@ -441,7 +441,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           span.setAttribute(MCP_ATTRIBUTES.SUCCESS, false);
 
           if (error instanceof McpError) {
-            throw error;
+            throw scrubThrownError(error, resultScrubber);
           }
           // Thrown protocol errors bypass the result-scrub boundary — scrub the
           // wrapped message too, since upstream errors can embed API responses.

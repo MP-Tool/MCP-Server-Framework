@@ -55,8 +55,8 @@ export interface BindOptions {
 }
 
 /**
- * Bind options for registries whose bound output passes the central
- * secret-redaction boundary (tools, task tools, resources).
+ * Bind options for registries whose results or thrown errors pass the central
+ * secret-redaction boundary (tools, task tools, resources, prompts).
  * @internal
  */
 export interface ScrubbingBindOptions extends BindOptions {

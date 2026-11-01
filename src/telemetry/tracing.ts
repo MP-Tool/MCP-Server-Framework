@@ -8,8 +8,9 @@
  * @module server/telemetry/tracing
  */
 
-import type { Span, Tracer } from "@opentelemetry/api";
+import type { Span, SpanStatusCode, Tracer } from "@opentelemetry/api";
 import { getTelemetryConfig, type SpanOptions, type SpanCallback, type AsyncSpanCallback } from "./core/index.js";
+import { secretScrubber } from "../utils/scrubbing/index.js";
 
 // ============================================================================
 // Lazy-loaded @opentelemetry/api cache
@@ -123,6 +124,29 @@ async function getTracerAsync(): Promise<Tracer> {
 }
 
 /**
+ * Record a failure on a span. Spans are exported to an external collector, and error messages
+ * and stacks can embed upstream credentials, so both are scrubbed first.
+ *
+ * @internal
+ */
+export function recordSpanError(
+  span: Pick<Span, "recordException" | "setStatus">,
+  error: unknown,
+  code: SpanStatusCode,
+): void {
+  if (error instanceof Error) {
+    span.recordException({
+      name: error.name,
+      message: secretScrubber.scrub(error.message),
+      ...(error.stack !== undefined && { stack: secretScrubber.scrub(error.stack) }),
+    });
+    span.setStatus({ code, message: secretScrubber.scrub(error.message) });
+  } else {
+    span.setStatus({ code, message: secretScrubber.scrub(String(error)) });
+  }
+}
+
+/**
  * Execute a function within a new span.
  * Automatically handles errors and sets span status.
  *
@@ -159,19 +183,7 @@ export async function withSpan<T>(name: string, fn: AsyncSpanCallback<T>, option
         span.setStatus({ code: api.SpanStatusCode.OK });
         return result;
       } catch (error) {
-        // Record the error on the span
-        if (error instanceof Error) {
-          span.recordException(error);
-          span.setStatus({
-            code: api.SpanStatusCode.ERROR,
-            message: error.message,
-          });
-        } else {
-          span.setStatus({
-            code: api.SpanStatusCode.ERROR,
-            message: String(error),
-          });
-        }
+        recordSpanError(span, error, api.SpanStatusCode.ERROR);
         throw error;
       } finally {
         span.end();
@@ -216,18 +228,7 @@ export function withSpanSync<T>(name: string, fn: SpanCallback<T>, options: Span
     span.setStatus({ code: api.SpanStatusCode.OK });
     return result;
   } catch (error) {
-    if (error instanceof Error) {
-      span.recordException(error);
-      span.setStatus({
-        code: api.SpanStatusCode.ERROR,
-        message: error.message,
-      });
-    } else {
-      span.setStatus({
-        code: api.SpanStatusCode.ERROR,
-        message: String(error),
-      });
-    }
+    recordSpanError(span, error, api.SpanStatusCode.ERROR);
     throw error;
   } finally {
     span.end();

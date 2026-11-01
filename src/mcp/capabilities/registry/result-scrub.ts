@@ -152,6 +152,24 @@ export function scrubCallToolResult(
 }
 
 /**
+ * Scrub an error on its way out of a capability: thrown errors reach the client as protocol
+ * errors or tool-error text without passing the result boundary, and upstream errors can embed
+ * credentials. Scrubs in place so the error's class and code survive (re-wrapping an `McpError`
+ * would also double its "MCP error" message prefix).
+ *
+ * @returns The error to rethrow
+ */
+export function scrubThrownError(error: unknown, scrubber: SecretScrubber | undefined): unknown {
+  if (!scrubber) return error;
+  if (!(error instanceof Error)) return new Error(scrubber.scrub(String(error)));
+  error.message = scrubber.scrub(error.message);
+  if ("data" in error && error.data !== undefined) {
+    error.data = scrubber.scrubObject(error.data);
+  }
+  return error;
+}
+
+/**
  * Wrap a task store so results leave it scrubbed. The SDK answers `tasks/result` and its
  * auto-polling from `TaskStore.getTaskResult` and never calls a task tool's own
  * `getTaskResult`, which makes this the one exit every task result passes — also a result a
