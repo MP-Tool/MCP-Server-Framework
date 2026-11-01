@@ -32,6 +32,8 @@ import { scrubCallToolResult } from "./result-scrub.js";
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
+import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
+import type { SdkAuthInfo } from "./scope-enforcement.js";
 
 // ============================================================================
 // Constants
@@ -75,6 +77,8 @@ interface SdkTaskExtra {
   readonly sendNotification: SendNotificationFn;
   readonly taskId?: string | undefined;
   readonly taskStore?: unknown;
+  /** Verified auth of the request (SDK flows `req.auth` here); `undefined` when anonymous. */
+  readonly authInfo?: SdkAuthInfo | undefined;
 }
 
 // ============================================================================
@@ -170,7 +174,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
    * @experimental
    */
   static bindToSdk(sdk: McpServer, taskTools: readonly TaskToolDefinition[], options: TaskToolBindOptions): void {
-    const { logger, stateless, resultScrubber } = options;
+    const { logger, stateless, resultScrubber, anonymousScopes } = options;
 
     if (taskTools.length === 0) {
       logger.trace(SdkBindingMessages.NO_TASK_TOOLS);
@@ -187,7 +191,16 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
       // Overload 2 (with input): config with inputSchema, ToolTaskHandler<InputArgs>
       // We must cast to AnySchema to select overload 2
       const sdkHandler: SdkToolTaskHandler<AnySchema> = {
-        createTask: (args: unknown, extra) => {
+        createTask: async (args: unknown, extra) => {
+          // Scope enforcement (RBAC) before any background work exists. `createTask` is the
+          // only entry point the SDK uses to start a task, so this gates every caller.
+          enforceScopeOrThrow(
+            taskTool.requiredScopes,
+            scopeSubject(extra.authInfo, anonymousScopes),
+            "TaskTool",
+            taskTool.name,
+            logger,
+          );
           const context: TaskCreateContext = TaskToolRegistry.buildTaskContext(sdk, extra, stateless);
           return TaskToolRegistry.runTaskOp(taskTool, "createTask", "task_create", context, logger, () =>
             // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime

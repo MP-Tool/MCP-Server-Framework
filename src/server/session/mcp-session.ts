@@ -326,6 +326,7 @@ export class McpSession implements LogNotificationHandler {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
       resultScrubber: this.options.resultScrubber,
+      anonymousScopes: this.options.anonymousScopes,
     });
   }
 
@@ -476,6 +477,8 @@ export class McpSession implements LogNotificationHandler {
    */
   registerScopeFilteredListHandlers(options: {
     tools: readonly ToolDefinition[];
+    /** Task tools are listed by `tools/list` alongside regular tools, so they share its filter. */
+    taskTools: readonly TaskToolDefinition[];
     resources: readonly ResourceStaticDefinition[];
     templates: readonly ResourceTemplateDefinition[];
     prompts: readonly PromptDefinition[];
@@ -491,7 +494,7 @@ export class McpSession implements LogNotificationHandler {
       }
       return map;
     };
-    const toolScopes = scopeMapOf(options.tools, (t) => t.name);
+    const toolScopes = scopeMapOf([...options.tools, ...options.taskTools], (t) => t.name);
     const resourceScopes = scopeMapOf(options.resources, (r) => r.uri);
     const templateScopes = scopeMapOf(options.templates, (t) => t.name);
     const promptScopes = scopeMapOf(options.prompts, (p) => p.name);

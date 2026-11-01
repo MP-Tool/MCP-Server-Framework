@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (was `>=20.0.0`); Node.js 20, 23 and 25 are dropped.
 - **Dependency floors raised** so consumers cannot resolve vulnerable versions:
   `@modelcontextprotocol/sdk` `^1.32.2`, `smol-toml` `^1.9.1`.
+- **Task tools enforce `requiredScopes`**: the check existed only for regular tools, so any caller —
+  anonymous ones included — could start a scoped task tool, and `tools/list` showed it to everyone.
+  `createTask` now checks the scopes (with the `anonymousScopes` fallback) before a task exists, and
+  the scope-filtered list covers task tools.
 
 ### Changed
 

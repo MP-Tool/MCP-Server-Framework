@@ -217,6 +217,7 @@ export class McpSessionFactory {
     if (this.config.scopeFilterCapabilities || this.config.anonymousScopes != null) {
       session.registerScopeFilteredListHandlers({
         tools: this.config.tools,
+        taskTools: this.config.taskTools,
         resources: this.config.resources,
         templates: this.config.resourceTemplates,
         prompts: this.config.prompts,

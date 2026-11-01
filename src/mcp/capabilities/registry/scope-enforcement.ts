@@ -36,6 +36,21 @@ const AUTH_SCOPE_DENIED = "%s [%s] requires scopes [%s] but token has [%s]";
 // ============================================================================
 
 /**
+ * The auth info a scope check runs against: the request's own, or — for an anonymous
+ * request — the server's restricted anonymous scope set, so the same RBAC gates anonymous
+ * traffic without fabricating an identity. `undefined` (no auth and no anonymous scope set)
+ * leaves enforcement off, as on stdio or an unrestricted server.
+ *
+ * @internal
+ */
+export function scopeSubject(
+  authInfo: SdkAuthInfo | undefined,
+  anonymousScopes: readonly string[] | undefined,
+): SdkAuthInfo | undefined {
+  return authInfo ?? (anonymousScopes ? { scopes: anonymousScopes } : undefined);
+}
+
+/**
  * Checks that all `requiredScopes` are present in the token's scopes.
  * Throws {@link AuthorizationError} and logs a warning if scopes are insufficient.
  *

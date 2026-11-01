@@ -30,7 +30,7 @@ import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js"
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
-import { enforceScopeOrThrow } from "./scope-enforcement.js";
+import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 import { runWithToolContext } from "../../current-tool-context.js";
 import { logAuditEvent } from "../../../logger/audit/index.js";
 
@@ -68,12 +68,6 @@ export interface ToolBindOptions extends ScrubbingBindOptions {
   readonly stateless: boolean;
   /** Session-level notification handler for bridging framework logs → MCP notifications/message */
   readonly logNotificationHandler?: LogNotificationHandler | undefined;
-  /**
-   * Scopes granted to anonymous requests. When set, a request with no `authInfo`
-   * is scope-checked against these instead of bypassing enforcement. See
-   * `ServerOptions.anonymousScopes`.
-   */
-  readonly anonymousScopes?: readonly string[] | undefined;
   /**
    * How much request/response detail the per-call `tool.call` audit records
    * (always secret-scrubbed). Defaults to `"summary"` when omitted.
@@ -260,12 +254,6 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
     const { logger, stateless, logNotificationHandler, resultScrubber, anonymousScopes } = options;
     const auditToolIo: AuditToolIoLevel = options.auditToolIo ?? "summary";
 
-    // Anonymous requests carry no `authInfo`, which makes scope enforcement a no-op.
-    // When the server grants a restricted anonymous scope set, treat that set as the
-    // caller's scopes so the SAME RBAC gates anonymous traffic — without fabricating an
-    // identity (`context.auth` below stays derived from the real `authInfo` only).
-    const anonymousAuthInfo = anonymousScopes ? { scopes: anonymousScopes } : undefined;
-
     // Bridge framework logger → MCP notifications/message for this session.
     // When set, any logger.*() call during tool execution is also forwarded
     // to the connected MCP client as a notifications/message notification.
@@ -303,8 +291,9 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           const authInfo = extra.authInfo;
 
           // Tool-level scope enforcement (RBAC). Anonymous requests fall back to the
-          // restricted anonymous scope set (if configured) so they are gated too.
-          enforceScopeOrThrow(tool.requiredScopes, authInfo ?? anonymousAuthInfo, "Tool", tool.name, logger);
+          // restricted anonymous scope set (if configured) so they are gated too;
+          // `context.auth` below stays derived from the real `authInfo` only.
+          enforceScopeOrThrow(tool.requiredScopes, scopeSubject(authInfo, anonymousScopes), "Tool", tool.name, logger);
 
           // Build auth context for tool handler.
           // authInfo.extra is populated by the onAuthenticated hook in auth-middleware.ts.

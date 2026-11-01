@@ -46,6 +46,12 @@ export interface RegistryItem {
  */
 export interface BindOptions {
   readonly logger: Logger;
+  /**
+   * Scopes granted to anonymous requests. When set, a request with no `authInfo`
+   * is scope-checked against these instead of bypassing enforcement. See
+   * `ServerOptions.anonymousScopes`.
+   */
+  readonly anonymousScopes?: readonly string[] | undefined;
 }
 
 /**
