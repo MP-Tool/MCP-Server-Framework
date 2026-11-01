@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anonymous ones included — could start a scoped task tool, and `tools/list` showed it to everyone.
   `createTask` now checks the scopes (with the `anonymousScopes` fallback) before a task exists, and
   the scope-filtered list covers task tools.
+- **`anonymousScopes` also gates resources and prompts**: they checked only `extra.authInfo`, which is
+  empty for anonymous callers, so `resources/read` and `prompts/get` skipped the check. An item hidden
+  from the list stayed readable by its known URI or name.
 
 ### Changed
 

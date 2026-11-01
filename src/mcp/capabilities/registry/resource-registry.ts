@@ -30,7 +30,7 @@ import { scrubByMimeType } from "../../../utils/scrubbing/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
-import { enforceScopeOrThrow } from "./scope-enforcement.js";
+import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 
 const logger = baseLogger.child({ component: "resource-registry" });
@@ -321,7 +321,7 @@ export class ResourceRegistry implements ResourceProvider {
     templates: readonly ResourceTemplateDefinition[],
     options: ResourceBindOptions,
   ): void {
-    const { logger, resultScrubber } = options;
+    const { logger, resultScrubber, anonymousScopes } = options;
 
     if (resources.length === 0 && templates.length === 0) {
       logger.trace(SdkBindingMessages.NO_RESOURCES);
@@ -338,7 +338,13 @@ export class ResourceRegistry implements ResourceProvider {
         { description: resource.description, mimeType: resource.mimeType },
         async (_uri: URL, extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string }) => {
           // Scope enforcement (RBAC)
-          enforceScopeOrThrow(resource.requiredScopes, extra.authInfo, "Resource", resource.uri, logger);
+          enforceScopeOrThrow(
+            resource.requiredScopes,
+            scopeSubject(extra.authInfo, anonymousScopes),
+            "Resource",
+            resource.uri,
+            logger,
+          );
 
           return withSpan(
             `mcp.resource.read`,
@@ -410,7 +416,13 @@ export class ResourceRegistry implements ResourceProvider {
           extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string },
         ) => {
           // Scope enforcement (RBAC)
-          enforceScopeOrThrow(template.requiredScopes, extra.authInfo, "Resource", template.uriTemplate, logger);
+          enforceScopeOrThrow(
+            template.requiredScopes,
+            scopeSubject(extra.authInfo, anonymousScopes),
+            "Resource",
+            template.uriTemplate,
+            logger,
+          );
 
           return withSpan(
             `mcp.resource.read`,

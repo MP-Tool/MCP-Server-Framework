@@ -22,7 +22,7 @@ import type { Logger } from "../../../logger/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
 import { BaseRegistry } from "./base-registry.js";
 import type { BindOptions } from "./base-registry.js";
-import { enforceScopeOrThrow } from "./scope-enforcement.js";
+import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 
 // ============================================================================
 // Constants
@@ -145,7 +145,7 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
    * @internal
    */
   static bindToSdk(sdk: McpServer, prompts: readonly PromptDefinition[], options: PromptBindOptions): void {
-    const { logger } = options;
+    const { logger, anonymousScopes } = options;
 
     if (prompts.length === 0) {
       logger.trace(SdkBindingMessages.NO_PROMPTS);
@@ -179,7 +179,13 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
         config,
         async (args: unknown, extra: { authInfo?: { scopes?: readonly string[] } }) => {
           // Scope enforcement (RBAC)
-          enforceScopeOrThrow(prompt.requiredScopes, extra.authInfo, "Prompt", prompt.name, logger);
+          enforceScopeOrThrow(
+            prompt.requiredScopes,
+            scopeSubject(extra.authInfo, anonymousScopes),
+            "Prompt",
+            prompt.name,
+            logger,
+          );
 
           return withSpan(
             `mcp.prompt.${prompt.name}`,
