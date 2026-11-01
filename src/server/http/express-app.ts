@@ -40,6 +40,7 @@ import {
   dnsRebindingProtection,
   createAuthMiddleware,
   apiAccessLog,
+  rejectEncodedRequestBodies,
 } from "../middleware/index.js";
 
 // Auth
@@ -220,7 +221,7 @@ export interface ExpressAppOptions {
 // ============================================================================
 
 /**
- * Configures security headers (Helmet), CORS, and JSON body parser.
+ * Configures security headers (Helmet), CORS, encoded-body rejection, and JSON body parser.
  */
 function setupSecurityMiddleware(app: express.Application, options?: ExpressAppOptions): void {
   // ── Helmet (Security Headers) ──────────────────────────────────────────
@@ -339,6 +340,7 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
     );
   }
 
+  app.use(rejectEncodedRequestBodies);
   app.use(express.json({ limit: options?.bodyLimit ?? "1mb" }));
 }
 

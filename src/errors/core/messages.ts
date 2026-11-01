@@ -40,6 +40,7 @@ export const TransportErrorMessage = {
   MISSING_ACCEPT_HEADER: "Missing Accept header",
   INVALID_ACCEPT_HEADER: "Invalid Accept header",
   INVALID_CONTENT_TYPE: "Content-Type must be application/json",
+  UNSUPPORTED_CONTENT_ENCODING: "Content-Encoding not supported. Send the request body uncompressed",
   INVALID_JSON: "Invalid JSON",
   INVALID_JSONRPC: "Invalid JSON-RPC version",
   INVALID_JSONRPC_VERSION: "JSON-RPC version must be 2.0",

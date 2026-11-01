@@ -8,6 +8,7 @@
  *
  * The following middleware are applied in the default Express pipeline:
  *
+ * - **Content-Encoding Rejection** - Refuses compressed request bodies before any body parser
  * - **DNS Rebinding Protection** - Validates Host header (MCP MUST, not in SDK)
  * - **Rate Limiting** - Prevents abuse and DoS attacks (not in SDK)
  * - **Protocol Version** - Early rejection of unsupported protocol versions
@@ -28,6 +29,12 @@
  *
  * @module server/middleware
  */
+
+/**
+ * Content-Encoding Rejection
+ * Refuses compressed request bodies (415) so no body parser ever inflates untrusted input
+ */
+export { rejectEncodedRequestBodies } from "./content-encoding.js";
 
 /**
  * DNS Rebinding Protection (MCP MUST, not handled by SDK)
