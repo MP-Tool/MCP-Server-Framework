@@ -163,6 +163,8 @@ export function scrubThrownError(error: unknown, scrubber: SecretScrubber | unde
   if (!scrubber) return error;
   if (!(error instanceof Error)) return new Error(scrubber.scrub(String(error)));
   error.message = scrubber.scrub(error.message);
+  // The stack embeds the original message, and span export only knows the default rules.
+  if (error.stack !== undefined) error.stack = scrubber.scrub(error.stack);
   if ("data" in error && error.data !== undefined) {
     error.data = scrubber.scrubObject(error.data);
   }
