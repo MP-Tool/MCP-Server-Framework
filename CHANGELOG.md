@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Thrown errors are scrubbed**: `McpError`s from tools and all errors from task tools, resources and
   prompts skipped the result boundary, and spans exported raw messages and stacks to the OTLP
   collector. Upstream errors can embed credentials, so all of these are now scrubbed.
+- **Secrets nested under a sensitive key no longer reach the text block**: the value was masked in
+  `structuredContent`, but only plain strings were remembered for purging, so the leaves of an object
+  or array stayed in the text rendered from the same data. All string leaves are now purged, and
+  masking keeps containers intact so object and array fields still match their schema.
 
 ### Changed
 

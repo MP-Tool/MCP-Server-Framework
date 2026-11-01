@@ -419,6 +419,21 @@ export class SecretScrubber {
     }
   }
 
+  /**
+   * Mask everything below a sensitive key while keeping its containers, so an object or array
+   * field still has the shape a tool's output schema declares. A circular reference is masked
+   * like a leaf.
+   */
+  private maskLeaves(value: unknown, ancestors: WeakSet<object> = new WeakSet()): unknown {
+    if (typeof value !== "object" || value === null || ancestors.has(value)) return REDACTED_VALUE;
+    ancestors.add(value);
+    const masked = Array.isArray(value)
+      ? value.map((item) => this.maskLeaves(item, ancestors))
+      : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.maskLeaves(item, ancestors)]));
+    ancestors.delete(value);
+    return masked;
+  }
+
   /** Whether the (lowercased) key path from the scrub root matches a `sensitivePaths` rule. */
   private matchesSensitivePath(pathLower: string): boolean {
     return this.sensitivePaths.some((p) => pathLower === p || pathLower.endsWith(`.${p}`));
@@ -544,15 +559,15 @@ export class SecretScrubber {
       // 2. Explicit masking rules: sibling-conditioned or path-scoped.
       const childPath = path ? `${path}.${keyLower}` : keyLower;
       if (siblingMasked?.has(keyLower) === true || this.matchesSensitivePath(childPath)) {
-        this.collect(value, collector);
+        this.collectLeaves(value, collector);
         redacted[key] = REDACTED_VALUE;
         continue;
       }
 
       // 3. Key-name heuristics and recursion.
       if (this.isSensitiveKey(key)) {
-        this.collect(value, collector);
-        redacted[key] = REDACTED_VALUE;
+        this.collectLeaves(value, collector);
+        redacted[key] = this.maskLeaves(value);
       } else if (typeof value === "object") {
         redacted[key] = this.scrubObjectRecursive(value, state, childPath, collector);
       } else if (typeof value === "string") {
