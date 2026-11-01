@@ -130,7 +130,7 @@ export function scrubCallToolResult(
     const literals = new Set<string>();
     const structuredContent =
       result.structuredContent !== undefined
-        ? (scrubber.scrubObject(result.structuredContent, literals) as Record<string, unknown>)
+        ? (scrubber.scrubStructured(result.structuredContent, literals) as Record<string, unknown>)
         : undefined;
     return {
       ...result,

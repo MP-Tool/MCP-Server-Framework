@@ -17,6 +17,7 @@ import {
   SENSITIVE_KEYS as BASE_SENSITIVE_KEYS,
   isSensitiveKey as baseSensitiveKeyCheck,
   escapeRegex,
+  isNumericMetadataKey,
 } from "../sensitive-keys.js";
 import { scrubTomlContent } from "./scrub-toml.js";
 
@@ -212,6 +213,8 @@ interface ScrubTraversalState {
   readonly ancestors: WeakSet<object>;
   /** Already-scrubbed results per node, keyed by the path scope that produced them. */
   readonly memo: WeakMap<object, Map<string, unknown>>;
+  /** Mask without changing a value's type; see {@link SecretScrubber.scrubStructured}. */
+  readonly preserveTypes: boolean;
 }
 
 /**
@@ -385,18 +388,40 @@ export class SecretScrubber {
    * @returns A new object with sensitive values redacted
    */
   public scrubObject(obj: unknown, collector?: Set<string>): unknown {
-    return this.scrubObjectRecursive(obj, { ancestors: new WeakSet(), memo: new WeakMap() }, "", collector);
+    return this.scrubObjectRecursive(
+      obj,
+      { ancestors: new WeakSet(), memo: new WeakMap(), preserveTypes: false },
+      "",
+      collector,
+    );
   }
 
-  /** Report a masked/dropped leaf value to the collector (strings only, min length). */
+  /**
+   * Like {@link scrubObject}, but every masked value keeps its type: strings become the marker,
+   * numbers `0`, booleans under an explicit rule `false`, and containers stay. For data validated
+   * after scrubbing — the SDK checks `structuredContent` against the tool's output schema, and a
+   * type mismatch would turn a successful call into an error. Logs and audit records use
+   * {@link scrubObject}, where `0` would read like a real value.
+   */
+  public scrubStructured(obj: unknown, collector?: Set<string>): unknown {
+    return this.scrubObjectRecursive(
+      obj,
+      { ancestors: new WeakSet(), memo: new WeakMap(), preserveTypes: true },
+      "",
+      collector,
+    );
+  }
+
+  /** Report a masked/dropped leaf value to the collector (strings and numbers, min length). */
   private collect(value: unknown, collector: Set<string> | undefined): void {
-    if (collector && typeof value === "string" && value.length >= MIN_COLLECT_LENGTH) {
-      collector.add(value);
+    const literal = typeof value === "number" || typeof value === "bigint" ? String(value) : value;
+    if (collector && typeof literal === "string" && literal.length >= MIN_COLLECT_LENGTH) {
+      collector.add(literal);
     }
   }
 
   /**
-   * Collect every string leaf of a dropped subtree (circular-safe).
+   * Collect every leaf of a dropped or masked subtree (circular-safe).
    *
    * Walks with its OWN `seen` set rather than the caller's ancestor stack — a
    * dropped subtree is a side excursion, and marking its nodes on the main
@@ -408,11 +433,11 @@ export class SecretScrubber {
     seen: WeakSet<object> = new WeakSet(),
   ): void {
     if (!collector) return;
-    if (typeof value === "string") {
+    if (typeof value !== "object" || value === null) {
       this.collect(value, collector);
       return;
     }
-    if (typeof value !== "object" || value === null || seen.has(value)) return;
+    if (seen.has(value)) return;
     seen.add(value);
     for (const child of Array.isArray(value) ? value : Object.values(value)) {
       this.collectLeaves(child, collector, seen);
@@ -420,16 +445,40 @@ export class SecretScrubber {
   }
 
   /**
-   * Mask everything below a sensitive key while keeping its containers, so an object or array
-   * field still has the shape a tool's output schema declares. A circular reference is masked
-   * like a leaf.
+   * Mask what lies below a masked key, keeping containers and reporting what it masks to the
+   * collector. Under the name heuristics (`explicit` false) booleans cannot hold a secret and
+   * stay, and a number stays only when its key names metadata ({@link isNumericMetadataKey}).
+   * An explicit rule masks both. Null stays either way; a circular reference is masked like a
+   * leaf.
    */
-  private maskLeaves(value: unknown, ancestors: WeakSet<object> = new WeakSet()): unknown {
-    if (typeof value !== "object" || value === null || ancestors.has(value)) return REDACTED_VALUE;
+  private maskLeaves(
+    value: unknown,
+    key: string,
+    collector: Set<string> | undefined,
+    mode: { readonly preserveTypes: boolean; readonly explicit: boolean },
+    ancestors: WeakSet<object> = new WeakSet(),
+  ): unknown {
+    if (value === null) return value;
+    if (typeof value === "boolean") return mode.explicit ? false : value;
+    if (typeof value === "number") {
+      if (!mode.explicit && isNumericMetadataKey(key)) return value;
+      this.collect(value, collector);
+      return mode.preserveTypes ? 0 : REDACTED_VALUE;
+    }
+    if (typeof value !== "object") {
+      this.collect(value, collector);
+      return REDACTED_VALUE;
+    }
+    if (ancestors.has(value)) return REDACTED_VALUE;
     ancestors.add(value);
     const masked = Array.isArray(value)
-      ? value.map((item) => this.maskLeaves(item, ancestors))
-      : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.maskLeaves(item, ancestors)]));
+      ? value.map((item) => this.maskLeaves(item, key, collector, mode, ancestors))
+      : Object.fromEntries(
+          Object.entries(value).map(([childKey, item]) => [
+            childKey,
+            this.maskLeaves(item, childKey, collector, mode, ancestors),
+          ]),
+        );
     ancestors.delete(value);
     return masked;
   }
@@ -559,15 +608,21 @@ export class SecretScrubber {
       // 2. Explicit masking rules: sibling-conditioned or path-scoped.
       const childPath = path ? `${path}.${keyLower}` : keyLower;
       if (siblingMasked?.has(keyLower) === true || this.matchesSensitivePath(childPath)) {
-        this.collectLeaves(value, collector);
-        redacted[key] = REDACTED_VALUE;
+        if (state.preserveTypes) {
+          redacted[key] = this.maskLeaves(value, key, collector, { preserveTypes: true, explicit: true });
+        } else {
+          this.collectLeaves(value, collector);
+          redacted[key] = REDACTED_VALUE;
+        }
         continue;
       }
 
       // 3. Key-name heuristics and recursion.
       if (this.isSensitiveKey(key)) {
-        this.collectLeaves(value, collector);
-        redacted[key] = this.maskLeaves(value);
+        redacted[key] = this.maskLeaves(value, key, collector, {
+          preserveTypes: state.preserveTypes,
+          explicit: false,
+        });
       } else if (typeof value === "object") {
         redacted[key] = this.scrubObjectRecursive(value, state, childPath, collector);
       } else if (typeof value === "string") {

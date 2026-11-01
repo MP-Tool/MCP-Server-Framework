@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `structuredContent`, but only plain strings were remembered for purging, so the leaves of an object
   or array stayed in the text rendered from the same data. All string leaves are now purged, and
   masking keeps containers intact so object and array fields still match their schema.
+- **Masking no longer breaks output schemas**: every value under a sensitive key became a string, so
+  the SDK's `outputSchema` validation turned a successful call into an error. In `structuredContent`
+  masked values now keep their type (strings the marker, numbers `0`, containers stay). Booleans, null
+  and numbers whose key names metadata (`count`, `max`, `ttl`, ...) stay as they are; other masked
+  numbers are also purged from the text block. Logs and audit keep the visible marker.
 
 ### Changed
 

@@ -72,6 +72,26 @@ export const SENSITIVE_KEY_BLOCKLIST = [
   "passage",
 ] as const;
 
+/**
+ * Key segments that mark a number as metadata about a secret rather than the secret itself
+ * (`token_count`, `max_tokens`, `password_length`). Deliberately short: a number under any other
+ * sensitive key is masked, because over-redacting costs less than leaking.
+ */
+const NUMERIC_METADATA_SEGMENTS: ReadonlySet<string> = new Set([
+  "count",
+  "max",
+  "min",
+  "limit",
+  "total",
+  "length",
+  "size",
+  "ttl",
+  "expires",
+  "expiry",
+  "used",
+  "remaining",
+]);
+
 // ============================================================================
 // Separator & Blocklist Pattern Cache
 // ============================================================================
@@ -103,6 +123,24 @@ export function escapeRegex(str: string): string {
 // ============================================================================
 // Public API
 // ============================================================================
+
+/**
+ * Whether a key names numeric metadata, in `snake_case`, `kebab-case` or `camelCase`.
+ *
+ * @example
+ * ```typescript
+ * isNumericMetadataKey('token_count')  // true
+ * isNumericMetadataKey('maxTokens')    // true
+ * isNumericMetadataKey('password')     // false
+ * ```
+ */
+export function isNumericMetadataKey(key: string): boolean {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(SEGMENT_SEPARATORS)
+    .some((segment) => NUMERIC_METADATA_SEGMENTS.has(segment));
+}
 
 /**
  * Check if a field/key name is sensitive and should be redacted.
