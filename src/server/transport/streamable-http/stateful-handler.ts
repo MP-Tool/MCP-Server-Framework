@@ -11,7 +11,6 @@ import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { EventStore } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import { SESSION_CLOSE_REASONS } from "../../session/index.js";
@@ -246,7 +245,7 @@ export class StatefulHandler implements TransportRequestHandler {
           const session = this.sessionManager.create({
             id: sessionId,
             transportType: "http",
-            transport: transport as Transport, // @sdk-constraint — StreamableHTTPServerTransport.onclose is optional, Transport.onclose is not
+            transport,
             mcpSession,
             ...(auth !== undefined && { auth }),
           });
@@ -281,7 +280,7 @@ export class StatefulHandler implements TransportRequestHandler {
       /* v8 ignore stop */
 
       try {
-        await mcpSession.sdk.connect(transport as Transport); // @sdk-constraint — StreamableHTTPServerTransport.onclose is optional, Transport.onclose is not
+        await mcpSession.sdk.connect(transport);
         await transport.handleRequest(req, res, req.body);
       } catch (connectError) {
         // Cleanup transport and session on connect/handleRequest failure
