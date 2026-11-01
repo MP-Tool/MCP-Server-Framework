@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - fix: Node2Shell hardening, security fixes, dependency updates
+
+### Security
+
+- **Compressed request bodies are rejected (Node2Shell, CVE-2026-111497)**: the body parsers
+  inflated `gzip`/`deflate`/`br` bodies before auth, exposing Node's vulnerable Brotli decoder to
+  unauthenticated clients. `rejectEncodedRequestBodies` now answers any `Content-Encoding` other than
+  `identity` with `415`.
+- **Patched Node.js required**: `engines.node` is now `^22.23.4 || ^24.22.1 || >=26.12.1`
+  (was `>=20.0.0`); Node.js 20, 23 and 25 are dropped.
+- **Dependency floors raised** so consumers cannot resolve vulnerable versions:
+  `@modelcontextprotocol/sdk` `^1.32.2`, `smol-toml` `^1.9.1`.
+
+### Changed
+
+- Removed the `as Transport` casts; SDK 1.32 fixed the type mismatch that required them.
+
+### Dependencies
+
+- Security updates: `proxy-addr` 2.0.8 (critical), `body-parser` 2.4.0, `qs` 6.17.1, `fast-uri`
+  3.1.9, `hono` 4.13.14, `@hono/node-server` 2.1.5, `ip-address` 10.7.5, `@grpc/grpc-js` 1.14.7;
+  dev: `vite`, `vitest`, `markdown-it`, `source-map-js`, `brace-expansion`.
+- In-range refresh: `express` 5.3.0, `helmet` 8.3.0, `express-rate-limit` 8.7.2, `jose` 6.2.14,
+  `yaml` 2.9.1, `eslint` 10.14.0 and plugins, `typedoc` 0.28.20.
+- Still open: `zod` < 4.6.6 (needs the zod 4 migration), dev-only `minimatch` < 11.0.1.
+
 ## [1.2.0] - feat: fail-closed secret scrubbing, unified auth factories, anonymous scope gating, server branding
 
 ### Added
