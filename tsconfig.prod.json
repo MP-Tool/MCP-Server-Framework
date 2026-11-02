@@ -3,7 +3,7 @@
   "compilerOptions": {
     "sourceMap": false,
     "declarationMap": false,
-    "removeComments": true,
+    "removeComments": false,
     "inlineSources": false,
     "incremental": false
   }
