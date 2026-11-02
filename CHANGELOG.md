@@ -83,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   standalone stream, so such a client never saw them and `elicitConfirmation` waited out its 300 s timeout.
   They now use the tool call's own stream, and cancelling the call cancels them. JSON response mode and task
   tools have no stream to use and still need the GET stream.
+- **Resources and prompts answer with the right JSON-RPC code**: the SDK only uses an integer `error.code`,
+  and `AppError.code` is a string, so `mcpCode` never reached the client and everything came back as
+  `-32603`. A scope denial is now `-32600` and a missing resource `-32002`, as MCP specifies.
 
 ### Changed
 

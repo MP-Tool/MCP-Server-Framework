@@ -9,7 +9,7 @@
  */
 
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
-import { AppError, ErrorCodes } from "../core/index.js";
+import { AppError, ErrorCodes, JsonRpcErrorCode } from "../core/index.js";
 import type { BaseErrorOptions } from "../core/index.js";
 
 // ============================================================================
@@ -114,7 +114,9 @@ export class RegistryError extends AppError {
     super(message, {
       code: ErrorCodes.REGISTRY_ERROR,
       statusCode: 404, // Usually not found
-      mcpCode: ErrorCode.MethodNotFound,
+      // @sdk-constraint — the SDK's ErrorCode enum has no member for -32002, which MCP assigns to a
+      // missing resource
+      mcpCode: itemType === "resource" ? (JsonRpcErrorCode.RESOURCE_NOT_FOUND as ErrorCode) : ErrorCode.MethodNotFound,
       cause: options.cause,
       recoveryHint: options.recoveryHint,
       context: {

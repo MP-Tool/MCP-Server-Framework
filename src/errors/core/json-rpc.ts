@@ -44,6 +44,8 @@ export const JsonRpcErrorCode = {
   SESSION_NOT_FOUND: -32001,
   /** Request was cancelled */
   REQUEST_CANCELLED: -32002,
+  /** Resource not found (MCP specification) */
+  RESOURCE_NOT_FOUND: -32002,
 } as const;
 
 export type JsonRpcErrorCodeType = (typeof JsonRpcErrorCode)[keyof typeof JsonRpcErrorCode];

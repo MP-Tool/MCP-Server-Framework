@@ -29,7 +29,7 @@ import type { SecretScrubber } from "../../../utils/scrubbing/index.js";
 import { scrubByMimeType } from "../../../utils/scrubbing/index.js";
 import { scrubThrownError } from "./result-scrub.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
-import { BaseRegistry } from "./base-registry.js";
+import { BaseRegistry, withProtocolErrors } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 import { logger as baseLogger } from "../../../logger/index.js";
@@ -337,42 +337,47 @@ export class ResourceRegistry implements ResourceProvider {
         resource.name,
         resource.uri,
         { description: resource.description, mimeType: resource.mimeType },
-        async (_uri: URL, extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string }) => {
-          // Scope enforcement (RBAC)
-          enforceScopeOrThrow(
-            resource.requiredScopes,
-            scopeSubject(extra.authInfo, anonymousScopes),
-            "Resource",
-            resource.uri,
-            logger,
-          );
+        withProtocolErrors(
+          async (
+            _uri: URL,
+            extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string },
+          ) => {
+            // Scope enforcement (RBAC)
+            enforceScopeOrThrow(
+              resource.requiredScopes,
+              scopeSubject(extra.authInfo, anonymousScopes),
+              "Resource",
+              resource.uri,
+              logger,
+            );
 
-          return withSpan(
-            `mcp.resource.read`,
-            async (span) => {
-              span.setAttributes({
-                [MCP_ATTRIBUTES.RESOURCE_URI]: resource.uri,
-                [MCP_ATTRIBUTES.OPERATION]: "resource_read",
-              });
+            return withSpan(
+              `mcp.resource.read`,
+              async (span) => {
+                span.setAttributes({
+                  [MCP_ATTRIBUTES.RESOURCE_URI]: resource.uri,
+                  [MCP_ATTRIBUTES.OPERATION]: "resource_read",
+                });
 
-              logger.trace(SdkBindingMessages.RESOURCE_READING, resource.uri);
+                logger.trace(SdkBindingMessages.RESOURCE_READING, resource.uri);
 
-              try {
-                const ctx: ResourceContext = {
-                  ...(extra.sessionId !== undefined && { sessionId: extra.sessionId }),
-                  ...(extra.authInfo && { authInfo: extra.authInfo }),
-                };
-                const raw = await resource.read(ctx);
-                return ResourceRegistry.emitResourceContents(resource.uri, raw, resource.mimeType, resultScrubber);
-              } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
-                logger.error(SdkBindingMessages.RESOURCE_READ_ERROR, resource.uri, msg);
-                throw scrubThrownError(error, resultScrubber);
-              }
-            },
-            { kind: SpanKind.SERVER },
-          );
-        },
+                try {
+                  const ctx: ResourceContext = {
+                    ...(extra.sessionId !== undefined && { sessionId: extra.sessionId }),
+                    ...(extra.authInfo && { authInfo: extra.authInfo }),
+                  };
+                  const raw = await resource.read(ctx);
+                  return ResourceRegistry.emitResourceContents(resource.uri, raw, resource.mimeType, resultScrubber);
+                } catch (error) {
+                  const msg = error instanceof Error ? error.message : String(error);
+                  logger.error(SdkBindingMessages.RESOURCE_READ_ERROR, resource.uri, msg);
+                  throw scrubThrownError(error, resultScrubber);
+                }
+              },
+              { kind: SpanKind.SERVER },
+            );
+          },
+        ),
       );
       logger.trace(SdkBindingMessages.RESOURCE_REGISTERED, resource.name, resource.uri);
     }
@@ -411,73 +416,75 @@ export class ResourceRegistry implements ResourceProvider {
         template.name,
         sdkTemplate,
         { description: template.description, mimeType: template.mimeType },
-        async (
-          _uri: URL,
-          variables: Record<string, string | string[]>,
-          extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string },
-        ) => {
-          // Scope enforcement (RBAC)
-          enforceScopeOrThrow(
-            template.requiredScopes,
-            scopeSubject(extra.authInfo, anonymousScopes),
-            "Resource",
-            template.uriTemplate,
-            logger,
-          );
+        withProtocolErrors(
+          async (
+            _uri: URL,
+            variables: Record<string, string | string[]>,
+            extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string },
+          ) => {
+            // Scope enforcement (RBAC)
+            enforceScopeOrThrow(
+              template.requiredScopes,
+              scopeSubject(extra.authInfo, anonymousScopes),
+              "Resource",
+              template.uriTemplate,
+              logger,
+            );
 
-          return withSpan(
-            `mcp.resource.read`,
-            async (span) => {
-              span.setAttributes({
-                [MCP_ATTRIBUTES.RESOURCE_TEMPLATE]: template.uriTemplate,
-                [MCP_ATTRIBUTES.OPERATION]: "resource_read",
-              });
+            return withSpan(
+              `mcp.resource.read`,
+              async (span) => {
+                span.setAttributes({
+                  [MCP_ATTRIBUTES.RESOURCE_TEMPLATE]: template.uriTemplate,
+                  [MCP_ATTRIBUTES.OPERATION]: "resource_read",
+                });
 
-              logger.trace(SdkBindingMessages.TEMPLATE_READING, template.uriTemplate, variables);
+                logger.trace(SdkBindingMessages.TEMPLATE_READING, template.uriTemplate, variables);
 
-              // Convert string[] to string for simple templates
-              const params: Record<string, string> = {};
-              for (const [key, value] of Object.entries(variables)) {
-                params[key] = Array.isArray(value) ? (value[0] ?? "") : value;
-              }
-
-              // Validate params against Zod schema if provided (DD JSDoc contract)
-              if (template.input) {
-                try {
-                  await template.input.parseAsync(params);
-                } catch (validationError) {
-                  const msg =
-                    validationError instanceof ZodError
-                      ? validationError.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
-                      : String(validationError);
-                  logger.warn(SdkBindingMessages.TEMPLATE_VALIDATION_FAILED, template.uriTemplate, msg);
-                  throw scrubThrownError(
-                    new McpError(ErrorCode.InvalidParams, `Invalid resource template parameters: ${msg}`),
-                    resultScrubber,
-                  );
+                // Convert string[] to string for simple templates
+                const params: Record<string, string> = {};
+                for (const [key, value] of Object.entries(variables)) {
+                  params[key] = Array.isArray(value) ? (value[0] ?? "") : value;
                 }
-              }
 
-              try {
-                const ctx: ResourceContext = {
-                  ...(extra.sessionId !== undefined && { sessionId: extra.sessionId }),
-                  ...(extra.authInfo && { authInfo: extra.authInfo }),
-                };
-                const raw = await template.read(params, ctx);
+                // Validate params against Zod schema if provided (DD JSDoc contract)
+                if (template.input) {
+                  try {
+                    await template.input.parseAsync(params);
+                  } catch (validationError) {
+                    const msg =
+                      validationError instanceof ZodError
+                        ? validationError.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
+                        : String(validationError);
+                    logger.warn(SdkBindingMessages.TEMPLATE_VALIDATION_FAILED, template.uriTemplate, msg);
+                    throw scrubThrownError(
+                      new McpError(ErrorCode.InvalidParams, `Invalid resource template parameters: ${msg}`),
+                      resultScrubber,
+                    );
+                  }
+                }
 
-                // Construct URI from template for the response
-                const uri = template.uriTemplate.replace(/\{(\w+)\}/g, (_, key) => params[key] ?? `{${key}}`);
+                try {
+                  const ctx: ResourceContext = {
+                    ...(extra.sessionId !== undefined && { sessionId: extra.sessionId }),
+                    ...(extra.authInfo && { authInfo: extra.authInfo }),
+                  };
+                  const raw = await template.read(params, ctx);
 
-                return ResourceRegistry.emitResourceContents(uri, raw, template.mimeType, resultScrubber);
-              } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
-                logger.error(SdkBindingMessages.TEMPLATE_READ_ERROR, template.uriTemplate, msg);
-                throw scrubThrownError(error, resultScrubber);
-              }
-            },
-            { kind: SpanKind.SERVER },
-          );
-        },
+                  // Construct URI from template for the response
+                  const uri = template.uriTemplate.replace(/\{(\w+)\}/g, (_, key) => params[key] ?? `{${key}}`);
+
+                  return ResourceRegistry.emitResourceContents(uri, raw, template.mimeType, resultScrubber);
+                } catch (error) {
+                  const msg = error instanceof Error ? error.message : String(error);
+                  logger.error(SdkBindingMessages.TEMPLATE_READ_ERROR, template.uriTemplate, msg);
+                  throw scrubThrownError(error, resultScrubber);
+                }
+              },
+              { kind: SpanKind.SERVER },
+            );
+          },
+        ),
       );
       logger.trace(SdkBindingMessages.TEMPLATE_REGISTERED, template.name, template.uriTemplate);
     }

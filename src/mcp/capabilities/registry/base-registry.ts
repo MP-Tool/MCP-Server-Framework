@@ -9,7 +9,7 @@
 
 import { logger as baseLogger } from "../../../logger/index.js";
 import type { Logger, SecretScrubber } from "../../../logger/index.js";
-import { RegistryError } from "../../../errors/index.js";
+import { AppError, RegistryError } from "../../../errors/index.js";
 
 // ============================================================================
 // Logger
@@ -66,6 +66,31 @@ export interface ScrubbingBindOptions extends BindOptions {
    * scrubbing for this registry.
    */
   readonly resultScrubber?: SecretScrubber | undefined;
+}
+
+// ============================================================================
+// Protocol Errors
+// ============================================================================
+
+/**
+ * Lets an {@link AppError} leaving an SDK callback keep its JSON-RPC code. The SDK reads `error.code`
+ * and falls back to -32603 unless it is an integer, and `AppError.code` is a string. Not an `McpError`:
+ * its message carries an "MCP error" prefix, which the client would add a second time.
+ *
+ * Only for capabilities that answer with a protocol error. A tool's error becomes `isError` text.
+ * @internal
+ */
+export function withProtocolErrors<TArgs extends unknown[], TResult>(
+  callback: (...args: TArgs) => Promise<TResult>,
+): (...args: TArgs) => Promise<TResult> {
+  return async (...args) => {
+    try {
+      return await callback(...args);
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      throw Object.assign(new Error(error.message, { cause: error }), { code: error.mcpCode });
+    }
+  };
 }
 
 // ============================================================================

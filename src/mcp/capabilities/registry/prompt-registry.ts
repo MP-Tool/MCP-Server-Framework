@@ -20,9 +20,10 @@ import type { z } from "zod";
 import type { PromptDefinition, PromptMessage, PromptProvider, CompletionCallback } from "../../types/index.js";
 import type { Logger } from "../../../logger/index.js";
 import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js";
-import { BaseRegistry } from "./base-registry.js";
+import { BaseRegistry, withProtocolErrors } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
 import { scrubThrownError } from "./result-scrub.js";
+import { AppError } from "../../../errors/index.js";
 import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 
 // ============================================================================
@@ -178,7 +179,7 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
       sdk.registerPrompt(
         prompt.name,
         config,
-        async (args: unknown, extra: { authInfo?: { scopes?: readonly string[] } }) => {
+        withProtocolErrors(async (args: unknown, extra: { authInfo?: { scopes?: readonly string[] } }) => {
           // Scope enforcement (RBAC)
           enforceScopeOrThrow(
             prompt.requiredScopes,
@@ -213,6 +214,7 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.error(SdkBindingMessages.PROMPT_ERROR, prompt.name, msg);
+                if (error instanceof AppError) throw scrubThrownError(error, resultScrubber);
                 throw scrubThrownError(
                   new McpError(ErrorCode.InternalError, `Prompt '${prompt.name}' failed: ${msg}`),
                   resultScrubber,
@@ -221,7 +223,7 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
             },
             { kind: SpanKind.SERVER },
           );
-        },
+        }),
       );
       logger.trace(SdkBindingMessages.PROMPT_REGISTERED, prompt.name);
     }
