@@ -34,6 +34,7 @@ import {
   type ConfigFileResult,
 } from "./file/index.js";
 import { clearRegisteredSectionData } from "./extensions.js";
+import { markConfigInitialized } from "./init-state.js";
 import { addStartupWarning } from "./startup-warnings.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 import { setErrorNodeEnv } from "../errors/core/base.js";
@@ -95,22 +96,10 @@ let rawAuthConfig: AuthSectionData | undefined;
 /** Registered satellite cache reset functions */
 const satelliteResets: Array<() => void> = [];
 
-/**
- * Check whether the framework config has been initialized.
- *
- * Used by the extensions module to guard against late registration
- * of config sections after config loading is complete.
- *
- * @returns `true` if `getFrameworkConfig()` has been called at least once
- * @internal
- */
-export function isConfigInitialized(): boolean {
-  return cachedConfig !== undefined;
-}
-
 /** Stores the config and hands on what modules below the config need from it. */
 function cacheConfig(config: FrameworkEnvConfig): Readonly<FrameworkEnvConfig> {
   cachedConfig = Object.freeze(config);
+  markConfigInitialized();
   setErrorNodeEnv(config.NODE_ENV);
   return cachedConfig;
 }

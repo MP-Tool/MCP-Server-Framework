@@ -142,6 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Broke the runtime import cycle in `errors/core`: `http.ts` imported the error codes through the barrel, which
   loads `base.ts`, which imports `http.ts`.
+- Broke the runtime import cycle in `config`: the init state moved out of `config-cache.ts` into `init-state.ts`.
 
 ### Dependencies
 
