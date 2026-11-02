@@ -239,6 +239,7 @@ export class ConfigurationError extends AppError {
       statusCode: 500, // Configuration errors are server-side
       mcpCode: ErrorCode.InternalError,
       cause: options.cause,
+      recoveryHint: options.recoveryHint,
       context: {
         ...options.context,
         configKey: options.configKey,
@@ -329,8 +330,7 @@ export class ConfigurationError extends AppError {
 
     return new ConfigurationError(detail, {
       configKey: "MCP_CONFIG_FILE_PATH",
-      cause: zodError,
-      recoveryHint: "Fix the listed issues in your config file. Use `.strict()` sections to catch typos.",
+      recoveryHint: "Fix the listed issues in your config file.",
     });
   }
 
@@ -366,7 +366,6 @@ export class ConfigurationError extends AppError {
 
     return new ConfigurationError(`Invalid environment configuration:\n${issues}`, {
       ...(keys.length === 1 && keys[0] !== undefined && { configKey: keys[0] }),
-      cause: zodError,
       recoveryHint: "Correct the listed environment variables (or the matching keys in your config file).",
     });
   }

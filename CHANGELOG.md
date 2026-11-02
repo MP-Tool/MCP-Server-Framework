@@ -109,6 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sections or keys, invalid values or broken syntax is now a config error. A discovered file is discarded as a
   whole, the problems are logged as errors and the server starts without it. A file set via
   `MCP_CONFIG_FILE_PATH` stops the start with all problems listed; a missing one still only warns.
+- **Configuration errors are shorter and keep their hint** (MP-Tool/komodo-mcp-server#191): the constructor
+  dropped `recoveryHint`, so every factory's hint was lost, and env and file validation attached the whole
+  `ZodError` as `cause`, which Node prints in full on an uncaught error. The message already lists every issue.
 
 ### Changed
 
