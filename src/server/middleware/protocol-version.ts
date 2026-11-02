@@ -10,11 +10,7 @@ import { truncateForLog } from "./logging.js";
 import { logger as baseLogger } from "../../logger/index.js";
 import { HttpStatus, createJsonRpcError, JsonRpcErrorCode } from "../../errors/index.js";
 import { MCP_HEADERS } from "../transport/index.js";
-import {
-  SUPPORTED_PROTOCOL_VERSIONS,
-  DEFAULT_NEGOTIATED_PROTOCOL_VERSION,
-  isInitializeRequest,
-} from "@modelcontextprotocol/sdk/types.js";
+import { SUPPORTED_PROTOCOL_VERSIONS, isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 const logger = baseLogger.child({ component: "ProtocolVersion" });
 
@@ -33,8 +29,8 @@ const LogMessages = {
  * - **exempts the `initialize` request** entirely (no header expected; leaving it untouched
  *   lets the SDK negotiate in the body — the reason auto-negotiation must not be second-guessed
  *   at the HTTP layer),
- * - assumes the spec default (`DEFAULT_NEGOTIATED_PROTOCOL_VERSION`, currently `2025-03-26`)
- *   when a non-initialize request omits the header, and
+ * - lets a non-initialize request without the header pass, for which the SDK assumes the
+ *   spec default (`DEFAULT_NEGOTIATED_PROTOCOL_VERSION`, currently `2025-03-26`), and
  * - responds `400` when a present header is not in `SUPPORTED_PROTOCOL_VERSIONS`.
  *
  * `req.body` is already JSON-parsed upstream (the json body parser is mounted before this),
@@ -52,8 +48,8 @@ export function validateProtocolVersion(req: Request, res: Response, next: NextF
   const protocolVersion = typeof rawVersion === "string" ? rawVersion : undefined;
 
   if (!protocolVersion) {
-    // Spec: when no header is present, assume the default negotiated version (from the SDK).
-    req.headers[MCP_HEADERS.PROTOCOL_VERSION] = DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
+    // Spec: when no header is present, the default negotiated version applies. The SDK assumes
+    // it itself, it reads the raw headers and would not see a value set on `req.headers`.
     next();
     return;
   }

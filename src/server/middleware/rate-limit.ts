@@ -22,10 +22,6 @@ const LOG_COMPONENT = "rate-limit";
 const LogMessages = {
   CONFIGURED: "Rate limiter configured: max %d requests per %s window",
   EXCEEDED: "Rate limit exceeded from %s",
-  TRUST_PROXY_MISSING:
-    "X-Forwarded-For header detected but MCP_TRUST_PROXY is not configured — " +
-    "all clients behind the reverse proxy share a single rate-limit bucket. " +
-    "Configure MCP_TRUST_PROXY for correct per-client rate limiting.",
   PROXY_REJECTED: "Rejected proxied request from %s — MCP_TRUST_PROXY not configured",
 } as const;
 
@@ -96,7 +92,6 @@ export function createRateLimiter(options?: RateLimiterOptions): RateLimitReques
   // This is the safest default: a custom keyGenerator using X-Forwarded-For would
   // allow attackers to create unlimited buckets by spoofing the header.
   const trustProxyActive = options?.trustProxyConfigured ?? false;
-  let trustProxyWarningLogged = false;
 
   const limiter = rateLimit({
     windowMs,
@@ -105,11 +100,6 @@ export function createRateLimiter(options?: RateLimiterOptions): RateLimitReques
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     handler: (req, res) => {
-      // Log one-time warning when X-Forwarded-For detected without trust proxy
-      if (!trustProxyActive && !trustProxyWarningLogged && req.headers["x-forwarded-for"]) {
-        logger.warn(LogMessages.TRUST_PROXY_MISSING);
-        trustProxyWarningLogged = true;
-      }
       logger.warn(LogMessages.EXCEEDED, req.ip ?? "unknown");
       res
         .status(HttpStatus.TOO_MANY_REQUESTS)

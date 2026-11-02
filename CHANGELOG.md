@@ -143,6 +143,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Broke the runtime import cycle in `errors/core`: `http.ts` imported the error codes through the barrel, which
   loads `base.ts`, which imports `http.ts`.
 - Broke the runtime import cycle in `config`: the init state moved out of `config-cache.ts` into `init-state.ts`.
+- Removed code nothing reaches: `CompositeWriter`, `resetAllRegistries`, `LoggerInitError`, `WriterError`,
+  `FormatterError`, unused barrels in `logger/writers`, `logger/formatters` and `transport/sse`, the XFF warning in
+  the rate limiter (the proxy guard answers first), the `default` branch and `activeSessionCount` of the Streamable
+  HTTP transport (the router answers other methods), and a header write in `validateProtocolVersion` the SDK never read.
 
 ### Dependencies
 

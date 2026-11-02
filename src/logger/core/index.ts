@@ -96,7 +96,7 @@ export { setTraceContextExtractor, extractTraceContext } from "./trace-context.j
 // Errors
 // ============================================================================
 
-export { LoggerErrorCode, LoggerError, LoggerInitError, WriterError, FormatterError, ScrubberError } from "./errors.js";
+export { LoggerErrorCode, LoggerError, ScrubberError } from "./errors.js";
 
 export type { LoggerErrorCodeType } from "./errors.js";
 

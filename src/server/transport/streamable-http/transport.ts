@@ -78,7 +78,6 @@ export function shortId(sessionId: string): string {
 
 /** @internal Log messages for transport router */
 const LogMessages = {
-  METHOD_NOT_ALLOWED: "%s /mcp rejected: method not allowed",
   UNHANDLED_ERROR: "Unhandled error in request handler: %s",
 } as const;
 
@@ -180,14 +179,6 @@ export class StreamableHttpTransport {
         case "DELETE":
           await this.handler.handleDelete(req, res);
           break;
-        default:
-          logger.warn(LogMessages.METHOD_NOT_ALLOWED, req.method);
-          sendError(
-            res,
-            HttpStatus.METHOD_NOT_ALLOWED,
-            JsonRpcErrorCode.METHOD_NOT_FOUND,
-            `Method ${req.method} not allowed`,
-          );
       }
     } catch (error) {
       logger.error(LogMessages.UNHANDLED_ERROR, error);
@@ -198,13 +189,5 @@ export class StreamableHttpTransport {
         TransportErrorMessage.INTERNAL_ERROR,
       );
     }
-  }
-
-  /**
-   * Number of active stateful sessions.
-   * Returns 0 in stateless mode (no session tracking).
-   */
-  get activeSessionCount(): number {
-    return this.sessionManager.size;
   }
 }

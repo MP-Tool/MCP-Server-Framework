@@ -44,9 +44,3 @@ export { PromptRegistry, globalPromptRegistry, type PromptBindOptions } from "./
 // ─────────────────────────────────────────────────────────────────────────────
 
 export { TaskToolRegistry, globalTaskToolRegistry, type TaskToolBindOptions } from "./task-tool-registry.js";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Lifecycle Utilities
-// ─────────────────────────────────────────────────────────────────────────────
-
-export { resetAllRegistries } from "./reset.js";

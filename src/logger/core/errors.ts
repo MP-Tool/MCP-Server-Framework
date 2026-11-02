@@ -18,14 +18,8 @@
 export const LoggerErrorCode = {
   /** Generic logger error */
   LOGGER_ERROR: "LOGGER_ERROR",
-  /** Logger resource initialization failed */
-  LOGGER_INIT_ERROR: "LOGGER_INIT_ERROR",
   /** Context depth exceeded */
   CONTEXT_DEPTH_EXCEEDED: "CONTEXT_DEPTH_EXCEEDED",
-  /** Writer operation failed */
-  WRITER_ERROR: "WRITER_ERROR",
-  /** Formatter operation failed */
-  FORMATTER_ERROR: "FORMATTER_ERROR",
   /** Scrubbing operation failed */
   SCRUBBER_ERROR: "SCRUBBER_ERROR",
 } as const;
@@ -53,7 +47,7 @@ interface LoggerErrorOptions {
  * @example
  * ```typescript
  * throw new LoggerError('Failed to initialize logger', {
- *   code: LoggerErrorCode.LOGGER_INIT_ERROR,
+ *   code: LoggerErrorCode.LOGGER_ERROR,
  *   cause: originalError,
  *   context: { format: 'json' }
  * });
@@ -81,78 +75,6 @@ export class LoggerError extends Error {
    */
   static isLoggerError(error: unknown): error is LoggerError {
     return error instanceof LoggerError;
-  }
-}
-
-// ============================================================================
-// Specialized Logger Errors
-// ============================================================================
-
-/**
- * Error thrown when logger resources fail to initialize.
- */
-export class LoggerInitError extends LoggerError {
-  constructor(
-    message: string,
-    options: {
-      cause?: Error | undefined;
-      context?: Record<string, unknown> | undefined;
-    } = {},
-  ) {
-    super(message, {
-      code: LoggerErrorCode.LOGGER_INIT_ERROR,
-      cause: options.cause,
-      context: options.context,
-    });
-    this.name = "LoggerInitError";
-  }
-}
-
-/**
- * Error thrown when a log writer operation fails.
- */
-export class WriterError extends LoggerError {
-  readonly writerName: string;
-
-  constructor(
-    writerName: string,
-    message: string,
-    options: {
-      cause?: Error | undefined;
-      context?: Record<string, unknown> | undefined;
-    } = {},
-  ) {
-    super(message, {
-      code: LoggerErrorCode.WRITER_ERROR,
-      cause: options.cause,
-      context: { ...options.context, writerName },
-    });
-    this.name = "WriterError";
-    this.writerName = writerName;
-  }
-}
-
-/**
- * Error thrown when log formatting fails.
- */
-export class FormatterError extends LoggerError {
-  readonly formatterName: string;
-
-  constructor(
-    formatterName: string,
-    message: string,
-    options: {
-      cause?: Error | undefined;
-      context?: Record<string, unknown> | undefined;
-    } = {},
-  ) {
-    super(message, {
-      code: LoggerErrorCode.FORMATTER_ERROR,
-      cause: options.cause,
-      context: { ...options.context, formatterName },
-    });
-    this.name = "FormatterError";
-    this.formatterName = formatterName;
   }
 }
 
