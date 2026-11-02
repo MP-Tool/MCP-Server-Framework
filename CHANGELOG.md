@@ -97,6 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The retention sweep no longer deletes open log files**: a component that stayed quiet longer than
   `LOG_RETENTION_DAYS` lost its current file, and its stream kept writing to the deleted inode until the
   next rotation or restart. The sweep now only removes rotated files.
+- **Log rotation no longer drops lines**: rotation called `destroy()` on the old stream and discarded what it
+  still had buffered. In a test with 1000 fast lines only 20 reached the disk. The old stream now flushes
+  first, and `close()` waits for it.
 
 ### Changed
 

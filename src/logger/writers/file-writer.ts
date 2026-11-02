@@ -81,6 +81,8 @@ export class FileWriter extends BaseLogWriter {
   private bytesWritten: Map<string, number> = new Map();
   /** Guard against concurrent rotation */
   private rotating: Set<string> = new Set();
+  /** Rotated streams still flushing their buffered lines */
+  private readonly retiringStreams: Set<fs.WriteStream> = new Set();
   /** Retention cleanup interval */
   private retentionTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -315,21 +317,13 @@ export class FileWriter extends BaseLogWriter {
     this.rotating.add(component);
 
     try {
-      // 1. Close the current stream synchronously.
-      //    destroy() releases the file descriptor immediately (unlike end()
-      //    which queues async close). This prevents EACCES on Windows when
-      //    renaming the file in step 4.
+      // 1. Retire the current stream. Its buffered lines still go to the same file after the
+      //    rename below: the open descriptor follows the file, also on Windows, where libuv
+      //    opens files with FILE_SHARE_DELETE.
       const oldStream = this.streams.get(component);
       if (oldStream) {
         this.streams.delete(component);
-        // Detach the self-heal error handler before the intentional destroy: a still-buffered
-        // write aborted by destroy() surfaces asynchronously as ERR_STREAM_DESTROYED, and that
-        // late event would otherwise (a) log a spurious stderr "Stream error" and (b) delete the
-        // freshly-created replacement stream (step 5) from the map — its handler is keyed by
-        // component. Swallow errors on the discarded stream instead.
-        oldStream.removeAllListeners("error");
-        oldStream.on("error", () => {});
-        oldStream.destroy();
+        this.retireStream(component, oldStream);
       }
 
       const basePath = this.getFilePath(component);
@@ -357,6 +351,18 @@ export class FileWriter extends BaseLogWriter {
     } finally {
       this.rotating.delete(component);
     }
+  }
+
+  /** Ends a rotated stream so it flushes its buffered lines; {@link close} waits for them. */
+  private retireStream(component: string, stream: fs.WriteStream): void {
+    // The self-heal handler is keyed by component, so it would delete the replacement stream.
+    stream.removeAllListeners("error");
+    stream.on("error", (err: NodeJS.ErrnoException) => {
+      process.stderr.write(`[FileWriter] Flushing rotated log of ${component} failed: ${err.message}\n`);
+    });
+    this.retiringStreams.add(stream);
+    stream.once("close", () => this.retiringStreams.delete(stream));
+    stream.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -470,6 +476,10 @@ export class FileWriter extends BaseLogWriter {
           });
         }),
       );
+    }
+
+    for (const stream of this.retiringStreams) {
+      closePromises.push(new Promise<void>((resolve) => stream.once("close", () => resolve())));
     }
 
     await Promise.allSettled(closePromises);
