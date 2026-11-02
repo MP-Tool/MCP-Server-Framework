@@ -115,6 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Configuration errors are shorter and keep their hint** (MP-Tool/komodo-mcp-server#191): the constructor
   dropped `recoveryHint`, so every factory's hint was lost, and env and file validation attached the whole
   `ZodError` as `cause`, which Node prints in full on an uncaught error. The message already lists every issue.
+- **Shutdown writes `session.close`**: `closeAll()` skipped the record, so every session open at shutdown had a
+  `session.open` and no end in the audit trail. It now records them with reason `shutdown`.
 
 ### Changed
 

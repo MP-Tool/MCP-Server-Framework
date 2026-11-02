@@ -21,7 +21,7 @@ import { logAuditEvent } from "../../logger/audit/index.js";
 import { InMemorySessionStore } from "./in-memory-store.js";
 import type { SessionStore, SessionStats } from "./session-store.js";
 import { SessionHousekeeper } from "./session-housekeeper.js";
-import { SESSION_STATES } from "./session.js";
+import { SESSION_CLOSE_REASONS, SESSION_STATES } from "./session.js";
 
 // ============================================================================
 // Session Configuration
@@ -448,21 +448,7 @@ export class SessionManagerImpl implements SessionManager {
     getServerMetrics().recordSessionChange(session.transport.type, -1);
     mcpLogger.removeHandler(session.mcpSession);
     logger.info(LogMessages.SESSION_CLOSED, sessionId, reason, this.store.size);
-    {
-      const username =
-        typeof session.auth.extra?.["username"] === "string" ? session.auth.extra["username"] : undefined;
-      logAuditEvent({
-        category: "session",
-        action: "session.close",
-        outcome: "info",
-        actor: {
-          sessionId,
-          ...(username && { username }),
-          ...(session.auth.userId && { userId: session.auth.userId }),
-        },
-        detail: { reason },
-      });
-    }
+    this.auditSessionClose(session, reason);
 
     await this.teardownSession(session);
   }
@@ -474,11 +460,27 @@ export class SessionManagerImpl implements SessionManager {
     const teardownPromises = sessions.map(async (session) => {
       getServerMetrics().recordSessionChange(session.transport.type, -1);
       mcpLogger.removeHandler(session.mcpSession);
+      this.auditSessionClose(session, SESSION_CLOSE_REASONS.SHUTDOWN);
       await this.teardownSession(session);
     });
 
     await Promise.allSettled(teardownPromises);
     logger.info(LogMessages.CLOSE_ALL_COMPLETE, sessions.length);
+  }
+
+  private auditSessionClose(session: Session, reason: SessionCloseReason): void {
+    const username = typeof session.auth.extra?.["username"] === "string" ? session.auth.extra["username"] : undefined;
+    logAuditEvent({
+      category: "session",
+      action: "session.close",
+      outcome: "info",
+      actor: {
+        sessionId: session.id,
+        ...(username && { username }),
+        ...(session.auth.userId && { userId: session.auth.userId }),
+      },
+      detail: { reason },
+    });
   }
 
   /**
