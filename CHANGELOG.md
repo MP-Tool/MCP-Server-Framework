@@ -79,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `403`, because that check only knew hosts. The workaround, `MCP_ALLOWED_HOSTS`, also accepted the name as
   a `Host` header. Configured origins now pass by exact match (scheme, host and port) and do not widen the
   `Host` check. `*` still does not open the Origin check.
+- **Elicitation, sampling and roots requests reach clients without a GET stream**: they went out on the
+  standalone stream, so such a client never saw them and `elicitConfirmation` waited out its 300 s timeout.
+  They now use the tool call's own stream, and cancelling the call cancels them. JSON response mode and task
+  tools have no stream to use and still need the GET stream.
 
 ### Changed
 

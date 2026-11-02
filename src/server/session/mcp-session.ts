@@ -75,6 +75,8 @@ export interface SessionRuntimeOptions {
   readonly handlers?: HandlersConfig | undefined;
   /** Whether this session operates in stateless mode */
   readonly stateless?: boolean | undefined;
+  /** Whether the transport answers with plain JSON instead of an SSE stream */
+  readonly jsonResponse?: boolean | undefined;
   /**
    * Task store for experimental task support.
    *
@@ -315,6 +317,7 @@ export class McpSession implements LogNotificationHandler {
     ToolRegistry.bindToSdk(this.sdk, tools, {
       logger: this.logger,
       stateless: this.options.stateless ?? false,
+      jsonResponse: this.options.jsonResponse,
       logNotificationHandler: this,
       resultScrubber: this.options.resultScrubber,
       anonymousScopes: this.options.anonymousScopes,

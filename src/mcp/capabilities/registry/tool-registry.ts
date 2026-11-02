@@ -13,6 +13,7 @@
 
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { z } from "zod";
@@ -66,6 +67,11 @@ const SdkBindingMessages = {
  */
 export interface ToolBindOptions extends ScrubbingBindOptions {
   readonly stateless: boolean;
+  /**
+   * Whether the transport answers with plain JSON instead of an SSE stream. Decides how a tool's
+   * client requests (elicitation, sampling, roots) reach the client.
+   */
+  readonly jsonResponse?: boolean | undefined;
   /** Session-level notification handler for bridging framework logs → MCP notifications/message */
   readonly logNotificationHandler?: LogNotificationHandler | undefined;
   /**
@@ -308,13 +314,28 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           const isStateful = !stateless;
           const clientCaps = sdk.server.getClientCapabilities();
 
-          const createMessage =
-            isStateful && clientCaps?.sampling ? sdk.server.createMessage.bind(sdk.server) : undefined;
+          // Send on this call's own stream: without `relatedRequestId` the SDK uses the standalone
+          // GET stream, and a client that has none open never sees the request. In JSON response
+          // mode the call has no stream and the SDK would drop it, so the GET stream is all there
+          // is. The signal ties the request to the call, so cancelling one cancels the other.
+          const clientRequestOptions: RequestOptions = {
+            signal: abortSignal,
+            ...(!options.jsonResponse && { relatedRequestId: requestId }),
+          };
 
-          const listRoots = isStateful && clientCaps?.roots ? sdk.server.listRoots.bind(sdk.server) : undefined;
+          const createMessage: ToolContext["createMessage"] =
+            isStateful && clientCaps?.sampling
+              ? (params) => sdk.server.createMessage(params, clientRequestOptions)
+              : undefined;
 
-          const elicitInput =
-            isStateful && clientCaps?.elicitation ? sdk.server.elicitInput.bind(sdk.server) : undefined;
+          const listRoots: ToolContext["listRoots"] =
+            isStateful && clientCaps?.roots ? () => sdk.server.listRoots(undefined, clientRequestOptions) : undefined;
+
+          const elicitInput: ToolContext["elicitInput"] =
+            isStateful && clientCaps?.elicitation
+              ? (params, requestOptions) =>
+                  sdk.server.elicitInput(params, { ...clientRequestOptions, ...requestOptions })
+              : undefined;
 
           // Per-call audit accumulator: domain detail (e.g. affected resources) the handler
           // attaches via context.recordAuditDetail, merged into the final tool.call event.

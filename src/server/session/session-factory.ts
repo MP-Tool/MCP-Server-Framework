@@ -173,6 +173,7 @@ export class McpSessionFactory {
       capabilities: this.computedCapabilities,
       handlers: this.config.handlers,
       stateless: this.config.stateless,
+      jsonResponse: this.config.jsonResponse,
       taskStore: this.taskStore,
       taskMessageQueue: this.taskMessageQueue,
       resultScrubber: this.config.resultScrubber,

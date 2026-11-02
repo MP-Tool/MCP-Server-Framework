@@ -163,6 +163,10 @@ export class McpServerBuilder implements ServerBuilder {
       ? (transport.stateless ?? getFrameworkConfig().MCP_STATELESS)
       : undefined;
 
+    const jsonResponse = isHttpTransport(transport)
+      ? (transport.enableJsonResponse ?? getFrameworkConfig().MCP_JSON_RESPONSE)
+      : undefined;
+
     // Central secret-redaction boundary — one scrubber per server build,
     // shared by every session's tool/task-tool binding. Default ON.
     const resultScrubber = createResultScrubber(options.scrubToolResults);
@@ -188,6 +192,7 @@ export class McpServerBuilder implements ServerBuilder {
       capabilities: options.capabilities,
       handlers: options.handlers,
       stateless,
+      jsonResponse,
       tools,
       resources: primitives.resources,
       resourceTemplates: primitives.resourceTemplates,
