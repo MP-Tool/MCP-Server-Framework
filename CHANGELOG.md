@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   records to stderr and retries, and only the detail is lost. **Operators must remove old audit files
   themselves**; `LOG_MAX_FILES` no longer applies to the audit log.
 
+### Fixed
+
+- **Duplicate primitives stop the build**: `build()` only warned ("last registration wins", which was
+  wrong). The SDK then threw on every `initialize`, while `/ready` still reported ready; between task
+  tools, or a tool and a task tool, the earlier definition was silently replaced. `build()` now
+  throws and names every duplicate.
+
 ### Changed
 
 - Removed the `as Transport` casts; SDK 1.32 fixed the type mismatch that required them.
