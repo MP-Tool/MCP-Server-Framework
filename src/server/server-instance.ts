@@ -31,7 +31,7 @@ import { DEFAULT_SHUTDOWN_CONFIG } from "./lifecycle.js";
 import type { McpSessionFactory } from "./session/session-factory.js";
 import { getFrameworkConfig } from "../config/index.js";
 import { applyConfigOverrides, setConfigLogger } from "../config/config-cache.js";
-import { flushStartupWarnings } from "../config/startup-warnings.js";
+import { flushStartupErrors, flushStartupWarnings } from "../config/startup-warnings.js";
 import { isFullOAuthProvider } from "./auth/types.js";
 import { getDynamicResourceRegistry } from "../mcp/capabilities/resources/index.js";
 import { initializeAuditLog, resolveAuditFilePath } from "../logger/audit/index.js";
@@ -245,7 +245,8 @@ export class McpServerInstance implements ServerInstance {
       // Inject logger into config module (breaks config→logger dependency)
       setConfigLogger(frameworkLogger.child({ component: "config" }));
 
-      // Replay startup warnings through the now-configured logger
+      // Replay startup errors and warnings through the now-configured logger
+      flushStartupErrors((msg) => logger.error(msg));
       flushStartupWarnings((msg) => logger.warn(msg));
 
       logger.info(RuntimeLogMessages.SERVER_STARTING);

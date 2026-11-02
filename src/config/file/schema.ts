@@ -51,7 +51,7 @@ export const DISCOVERY_FILENAMES = ["config.toml", "config.yaml", "config.yml", 
  * Environment variable to explicitly specify a config file path.
  *
  * When set, auto-discovery is skipped and this path is used directly.
- * The file must exist — an explicit path that doesn't resolve is an error.
+ * A missing file is only a warning, an invalid file aborts the start.
  *
  * This is a meta-config variable and intentionally NOT part of `FrameworkEnvConfig`.
  */
@@ -81,6 +81,8 @@ export interface ConfigFileResult {
   readonly overrides: Partial<FrameworkEnvConfig>;
   /** Absolute path to the config file that was loaded */
   readonly sourcePath: string;
+  /** Found by auto-discovery, rather than set via `MCP_CONFIG_FILE_PATH` */
+  readonly discovered: boolean;
   /** Format of the loaded file */
   readonly format: ConfigFileFormat;
   /**
@@ -285,9 +287,9 @@ export const CONFIG_FILE_SECTIONS = Object.freeze({
  * Config file root schema.
  *
  * Nested, section-based structure that maps to `FrameworkEnvConfig`.
- * `.strict()` is intentionally NOT used — unknown keys are stripped
- * during parsing and surfaced as warnings by the loader, so typos
- * are visible but don't prevent the server from starting.
+ * `.strict()` is intentionally NOT used: the loader finds unknown sections
+ * and keys itself, also those of registered consumer sections, and reports
+ * all of them together.
  *
  * Derived from `CONFIG_FILE_SECTIONS` to avoid duplicate
  * section listings (DRY).

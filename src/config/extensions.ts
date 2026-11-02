@@ -6,7 +6,7 @@
  * consumer-provided Zod schemas.
  *
  * This enables consumer-specific config file sections (e.g., `[myapp]`)
- * without the framework warning about "unknown sections".
+ * without the framework rejecting the file for "unknown sections".
  *
  * @example
  * ```typescript
@@ -66,7 +66,7 @@ const RESERVED_SECTIONS = new Set(Object.keys(CONFIG_FILE_SECTIONS));
  * Must be called **before** config initialization (i.e., before the
  * first call to `getFrameworkConfig()`). Registered sections:
  *
- * 1. Are recognized in config files (no "unknown section" warning)
+ * 1. Are recognized in config files (no "unknown section" error)
  * 2. Are validated against the provided Zod schema
  * 3. Can be retrieved via `getAppConfig(name)`
  *
@@ -142,7 +142,7 @@ export function getAppConfig<T = unknown>(name: string): T | undefined {
  * Get all registered consumer section names.
  *
  * Used by the config file loader to recognize consumer sections
- * and suppress "unknown section" warnings.
+ * instead of reporting them as unknown sections.
  *
  * @internal
  */
@@ -171,5 +171,17 @@ export function setRegisteredSectionData(name: string, data: unknown): void {
   const section = registeredSections.get(name.toLowerCase());
   if (section) {
     section.data = data;
+  }
+}
+
+/**
+ * Drop the data of all registered sections. For a config file that gets discarded after its
+ * sections were stored.
+ *
+ * @internal
+ */
+export function clearRegisteredSectionData(): void {
+  for (const section of registeredSections.values()) {
+    section.data = undefined;
   }
 }

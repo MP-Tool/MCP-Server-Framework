@@ -1,9 +1,9 @@
 /**
  * Startup Warning Buffer
  *
- * Collects warnings that occur during config loading, before the
- * framework logger is initialized. After logger initialization,
- * the buffer is flushed to the real logger.
+ * Collects warnings and errors that occur during config loading, before
+ * the framework logger is initialized. After logger initialization,
+ * the buffers are flushed to the real logger.
  *
  * This solves the chicken-and-egg problem where config loading
  * (which runs before the logger) may produce warnings (e.g.,
@@ -23,6 +23,9 @@
 
 /** Buffered warning messages */
 const warnings: string[] = [];
+
+/** Buffered error messages */
+const errors: string[] = [];
 
 /**
  * Buffer a startup warning for later logger replay.
@@ -51,4 +54,27 @@ export function flushStartupWarnings(logFn: (message: string) => void): void {
     logFn(message);
   }
   warnings.length = 0;
+}
+
+/**
+ * Buffer a startup error the server continues after, for later logger replay. Also written
+ * to `console.error` right away, for the same reason as {@link addStartupWarning}.
+ *
+ * @param message - Error message to buffer and emit
+ */
+export function addStartupError(message: string): void {
+  console.error(message);
+  errors.push(message);
+}
+
+/**
+ * Flush all buffered errors through the provided logger function, then clear the buffer.
+ *
+ * @param logFn - Logger function to replay errors through (e.g., `logger.error`)
+ */
+export function flushStartupErrors(logFn: (message: string) => void): void {
+  for (const message of errors) {
+    logFn(message);
+  }
+  errors.length = 0;
 }

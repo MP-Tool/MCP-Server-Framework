@@ -335,6 +335,19 @@ export class ConfigurationError extends AppError {
   }
 
   /**
+   * Create a ConfigurationError for a file set via `MCP_CONFIG_FILE_PATH` that cannot be used.
+   *
+   * @param findings - Everything wrong with the file, one entry per problem
+   */
+  static invalidFile(filePath: string, findings: readonly string[]): ConfigurationError {
+    const list = findings.map((finding) => `  - ${finding}`).join("\n");
+    return new ConfigurationError(`Invalid config file '${filePath}' (set via MCP_CONFIG_FILE_PATH):\n${list}`, {
+      configKey: "MCP_CONFIG_FILE_PATH",
+      recoveryHint: "Fix the listed problems, or unset MCP_CONFIG_FILE_PATH to start without this file.",
+    });
+  }
+
+  /**
    * Create a ConfigurationError for schema validation failures in the ENVIRONMENT.
    *
    * The counterpart to {@link fileValidationFailed} for `process.env`. Without it a
@@ -362,10 +375,13 @@ export class ConfigurationError extends AppError {
    * Create a ConfigurationError for an unsupported config file extension.
    */
   static unsupportedFormat(extension: string): ConfigurationError {
-    return new ConfigurationError(`Unsupported config file format: ${extension}. Supported: .toml, .yaml, .yml`, {
-      configKey: "MCP_CONFIG_FILE_PATH",
-      recoveryHint: `Supported formats: .toml, .yaml, .yml`,
-    });
+    return new ConfigurationError(
+      `Unsupported config file format: ${extension}. Supported: .toml, .yaml, .yml, .json`,
+      {
+        configKey: "MCP_CONFIG_FILE_PATH",
+        recoveryHint: `Supported formats: .toml, .yaml, .yml, .json`,
+      },
+    );
   }
 
   /**

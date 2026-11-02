@@ -104,10 +104,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.env` and the config file never reach. With `NODE_ENV=production` in `.env`, errors kept logging stacks and
   context, and `[telemetry].log_level` had no effect. The documented default `none` was also wrong, the code
   always used `warn`: `warn` is now the documented default, so failing exports still reach the log.
+- **A foreign `config.yaml` in the working directory no longer stops the server** (MP-Tool/komodo-mcp-server#191):
+  auto-discovery picks up any such file, and an invalid value in it aborted the start. A file with unknown
+  sections or keys, invalid values or broken syntax is now a config error. A discovered file is discarded as a
+  whole, the problems are logged as errors and the server starts without it. A file set via
+  `MCP_CONFIG_FILE_PATH` stops the start with all problems listed; a missing one still only warns.
 
 ### Changed
 
 - Removed the `as Transport` casts; SDK 1.32 fixed the type mismatch that required them.
+- **Unknown config-file sections and keys are errors, not warnings** (MP-Tool/komodo-mcp-server#191): a file
+  with a typo used to apply everything else. It is now discarded or stops the start, see Fixed. Consumer
+  sections with `.passthrough()` or `.catchall()` keep accepting extra keys.
 
 ### Dependencies
 

@@ -4,9 +4,13 @@
  * Orchestrates the config file loading pipeline:
  * 1. Discover config file (explicit path or auto-discovery)
  * 2. Parse raw content (TOML, YAML, or JSON)
- * 3. Validate against schema (lenient — unknown keys are stripped)
- * 4. Warn about unknown keys (typo detection without crashing)
- * 5. Map nested structure to flat `FrameworkEnvConfig` overrides
+ * 3. Validate: unknown sections and keys, invalid values
+ * 4. Map nested structure to flat `FrameworkEnvConfig` overrides
+ *
+ * A file that fails any of this is a config error and is never used in part: a file found
+ * by auto-discovery may not be ours (MP-Tool/komodo-mcp-server#191), so it is discarded with a
+ * logged error and the server starts without it. A file named by `MCP_CONFIG_FILE_PATH` is
+ * what the operator asked for, so it aborts the start.
  *
  * Returns `undefined` when no config file is found — this is the
  * normal case for servers that rely solely on environment variables.
@@ -18,9 +22,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { parse as tomlParse } from "smol-toml";
 import { parse as yamlParse } from "yaml";
-import { z } from "zod";
+import type { ZodError, z } from "zod";
 import { ConfigurationError } from "../../errors/categories/validation.js";
-import { addStartupWarning } from "../startup-warnings.js";
+import { addStartupError, addStartupWarning } from "../startup-warnings.js";
 import { getRegisteredSectionNames, getRegisteredSectionSchema, setRegisteredSectionData } from "../extensions.js";
 import {
   configFileSchema,
@@ -30,7 +34,7 @@ import {
   DISCOVERY_FILENAMES,
   EXTENSION_FORMAT_MAP,
 } from "./schema.js";
-import type { ConfigFileFormat, ConfigFileResult } from "./schema.js";
+import type { ConfigFileData, ConfigFileFormat, ConfigFileResult } from "./schema.js";
 
 // ============================================================================
 // Loader (Public API)
@@ -43,40 +47,134 @@ import type { ConfigFileFormat, ConfigFileResult } from "./schema.js";
  * The result contains `Partial<FrameworkEnvConfig>` overrides that
  * can be applied via `applyConfigOverrides()`.
  *
- * Unknown keys are stripped during validation and logged as warnings
- * so typos are visible without preventing the server from starting.
+ * Consumer sections are only stored once the whole file passed, so a discarded file leaves
+ * nothing behind.
  *
- * @returns Config file result with overrides and metadata, or `undefined` if no file found
- * @throws {ConfigurationError} On discovery, parse, or validation errors
+ * @returns Config file result with overrides and metadata, or `undefined` if no file was found
+ *   or a discovered file was discarded
+ * @throws {ConfigurationError} If a file set via `MCP_CONFIG_FILE_PATH` is invalid
  */
 export function loadConfigFile(): ConfigFileResult | undefined {
-  // Step 1: Discover
-  const filePath = discoverConfigFile();
-  if (!filePath) {
+  const found = discoverConfigFile();
+  if (!found) {
     return undefined;
   }
 
-  // Step 2: Parse
-  const { data, format } = parseConfigFile(filePath);
-
-  // Step 3: Warn about unknown keys (before schema strips them)
-  warnUnknownKeys(data, filePath);
-
-  // Step 4: Validate framework sections (unknown keys are silently stripped by Zod defaults)
-  const parseResult = configFileSchema.safeParse(data);
-  if (!parseResult.success) {
-    throw ConfigurationError.fileValidationFailed(filePath, parseResult.error);
+  const validation = validateConfigFile(found.path);
+  if ("findings" in validation) {
+    if (!found.discovered) {
+      throw ConfigurationError.invalidFile(found.path, validation.findings);
+    }
+    reportIgnoredConfigFile(found.path, validation.findings);
+    return undefined;
   }
 
-  // Step 5: Validate and store registered consumer sections
-  processConsumerSections(data, filePath);
-
-  // Step 6: Map to overrides
-  const overrides = mapConfigToOverrides(parseResult.data);
+  const { format, data, overrides, consumerSections } = validation;
+  for (const [name, sectionData] of consumerSections) {
+    setRegisteredSectionData(name, sectionData);
+  }
 
   // Retain the nested [auth] section — its `providers` table cannot be flattened
   // into env-style overrides, so resolveAuthConfig() reads it from here.
-  return { overrides, sourcePath: filePath, format, rawAuth: parseResult.data.auth };
+  return { overrides, sourcePath: found.path, discovered: found.discovered, format, rawAuth: data.auth };
+}
+
+/**
+ * Report a discovered config file that is not used at all.
+ *
+ * @param filePath - Path of the discarded file
+ * @param findings - Everything wrong with it, one entry per problem
+ * @internal
+ */
+export function reportIgnoredConfigFile(filePath: string, findings: readonly string[]): void {
+  addStartupError(
+    `[config] Ignoring auto-discovered config file ${filePath}, starting with environment variables and ` +
+      `defaults only. It is invalid, or not meant for this server. To use a config file on purpose, set ` +
+      `${CONFIG_FILE_ENV_VAR}; an invalid file then stops the start.`,
+  );
+  for (const finding of findings) {
+    addStartupError(`[config] ${filePath}: ${finding}`);
+  }
+}
+
+// ============================================================================
+// Validation
+// ============================================================================
+
+/** A config file that passed all checks. Nothing from it has been applied yet. */
+interface ValidatedConfigFile {
+  readonly format: ConfigFileFormat;
+  readonly data: ConfigFileData;
+  readonly overrides: ConfigFileResult["overrides"];
+  readonly consumerSections: ReadonlyMap<string, unknown>;
+}
+
+/**
+ * Run all checks on a config file and collect every problem, so that one pass over the
+ * file fixes it.
+ */
+function validateConfigFile(filePath: string): ValidatedConfigFile | { readonly findings: readonly string[] } {
+  let parsed: ReturnType<typeof parseConfigFile>;
+  try {
+    parsed = parseConfigFile(filePath);
+  } catch (error) {
+    return { findings: [describeParseFailure(error)] };
+  }
+
+  const findings = findUnknownKeys(parsed.data);
+
+  const frameworkResult = configFileSchema.safeParse(parsed.data);
+  if (!frameworkResult.success) {
+    findings.push(...describeIssues(frameworkResult.error));
+  }
+
+  const consumerSections = new Map<string, unknown>();
+  for (const name of getRegisteredSectionNames()) {
+    const sectionData = parsed.data[name];
+    const schema = getRegisteredSectionSchema(name);
+    if (sectionData === undefined || !schema) continue;
+
+    const sectionResult = schema.safeParse(sectionData);
+    if (sectionResult.success) {
+      consumerSections.set(name, sectionResult.data);
+    } else {
+      findings.push(...describeIssues(sectionResult.error, name));
+    }
+  }
+
+  if (!frameworkResult.success || findings.length > 0) {
+    return { findings };
+  }
+
+  try {
+    return {
+      format: parsed.format,
+      data: frameworkResult.data,
+      overrides: mapConfigToOverrides(frameworkResult.data),
+      consumerSections,
+    };
+  } catch (error) {
+    return { findings: [error instanceof Error ? error.message : String(error)] };
+  }
+}
+
+/**
+ * Describe why a file could not be read or parsed. Parsers quote the surrounding lines of the
+ * file below their first line, and `JSON.parse` quotes the start of the input. Those can hold
+ * secrets, and this text ends up in logs.
+ */
+function describeParseFailure(error: unknown): string {
+  const cause = error instanceof ConfigurationError && error.cause instanceof Error ? error.cause : error;
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return message.includes("is not valid JSON") ? "Not valid JSON" : (message.split("\n", 1)[0] ?? message);
+}
+
+/** One line per Zod issue. */
+function describeIssues(error: ZodError, section?: string): string[] {
+  return error.issues.map((issue) => {
+    const path = [...(section === undefined ? [] : [section]), ...issue.path].join(".");
+    return `${path}: ${issue.message}`;
+  });
 }
 
 // ============================================================================
@@ -90,17 +188,14 @@ export function loadConfigFile(): ConfigFileResult | undefined {
  * 1. `MCP_CONFIG_FILE_PATH` env var — explicit path (must exist, must be supported format)
  * 2. Auto-discovery in `process.cwd()` — first match from {@link DISCOVERY_FILENAMES}
  *
- * @returns Absolute path to the config file, or `undefined` if none found
- * @throws {ConfigurationError} If explicit path doesn't exist or has unsupported extension
+ * @returns Absolute path to the config file and how it was found, or `undefined` if none found
+ * @throws {ConfigurationError} If the explicit path has an unsupported extension
  */
-function discoverConfigFile(): string | undefined {
+function discoverConfigFile(): { readonly path: string; readonly discovered: boolean } | undefined {
   const explicitPath = process.env[CONFIG_FILE_ENV_VAR];
+  const path = explicitPath ? resolveExplicitPath(explicitPath) : autoDiscover();
 
-  if (explicitPath) {
-    return resolveExplicitPath(explicitPath);
-  }
-
-  return autoDiscover();
+  return path === undefined ? undefined : { path, discovered: !explicitPath };
 }
 
 /**
@@ -277,110 +372,51 @@ function parseJsonSafe(content: string): Record<string, unknown> {
  *
  * This ensures sync with `configFileSchema` — no manual duplication needed.
  */
-const KNOWN_SECTIONS: ReadonlySet<string> = Object.freeze(new Set(Object.keys(CONFIG_FILE_SECTIONS)));
+const KNOWN_SECTIONS: ReadonlyMap<string, z.ZodTypeAny> = new Map(Object.entries(CONFIG_FILE_SECTIONS));
 
 /**
- * Known keys per section derived from the section Zod schemas.
- *
- * Introspects each section's `ZodObject.shape` to extract valid key names.
- * Falls back to an empty set for non-object schemas (defensive).
+ * The keys a section schema declares, or `undefined` when it does not limit its keys: not an
+ * object schema, or one that takes extra keys (`.passthrough()`, `.catchall()`).
  */
-const KNOWN_KEYS: Readonly<Record<string, ReadonlySet<string>>> = Object.freeze(
-  Object.fromEntries(
-    Object.entries(CONFIG_FILE_SECTIONS).map(([name, schema]) => {
-      const shape = extractShapeKeys(schema);
-      return [name, shape];
-    }),
-  ),
-);
-
-/**
- * Extract key names from a Zod schema, handling `.partial()` wrappers.
- */
-function extractShapeKeys(schema: z.ZodTypeAny): Set<string> {
-  if ("shape" in schema && typeof schema.shape === "object" && schema.shape !== null) {
-    // @type-narrowing — runtime check validates shape is a non-null object; Zod exposes shape as untyped
-    return new Set(Object.keys(schema.shape));
+function declaredKeys(schema: z.ZodTypeAny): ReadonlySet<string> | undefined {
+  if (!("shape" in schema) || typeof schema.shape !== "object" || schema.shape === null) {
+    return undefined;
   }
-  return new Set();
+  // @type-narrowing — runtime check validates shape is a non-null object; Zod exposes shape and def as untyped
+  const def = schema._def as { unknownKeys?: string; catchall?: z.ZodTypeAny };
+  const takesExtraKeys =
+    def.unknownKeys === "passthrough" || (def.catchall && def.catchall._def.typeName !== "ZodNever");
+  return takesExtraKeys ? undefined : new Set(Object.keys(schema.shape));
 }
 
 /**
- * Detect and warn about unknown keys in the raw config file data.
+ * Find sections and keys that neither the framework nor a registered consumer section knows.
+ * The object schemas would silently strip these, which hides typos and foreign files.
  *
- * Compares the raw parsed data against known schema keys and registered
- * consumer sections, logging warnings for any unrecognized keys.
- * This catches typos without preventing the server from starting.
- *
- * @param data - Raw parsed config file data
- * @param filePath - Path to the config file (for log context)
+ * @param root - Raw parsed config file data
+ * @returns One finding per unknown section or key
  */
-function warnUnknownKeys(data: unknown, filePath: string): void {
-  if (!data || typeof data !== "object") return;
-
-  // @type-narrowing — runtime guard above ensures data is a non-null object
-  const root = data as Record<string, unknown>;
+function findUnknownKeys(root: Record<string, unknown>): string[] {
   const consumerSections = getRegisteredSectionNames();
+  const findings: string[] = [];
 
-  for (const key of Object.keys(root)) {
-    if (KNOWN_SECTIONS.has(key)) {
-      const section = root[key];
-      if (!section || typeof section !== "object") continue;
-
-      const knownKeys = KNOWN_KEYS[key];
-      if (!knownKeys || knownKeys.size === 0) continue;
-
-      // @type-narrowing — section type-checked to be a non-null object above
-      for (const sectionKey of Object.keys(section)) {
-        if (!knownKeys.has(sectionKey)) {
-          addStartupWarning(`[config] Unknown key '${sectionKey}' in [${key}] section of ${filePath} — ignored`);
-        }
-      }
+  for (const [sectionName, section] of Object.entries(root)) {
+    const schema =
+      KNOWN_SECTIONS.get(sectionName) ??
+      (consumerSections.has(sectionName) ? getRegisteredSectionSchema(sectionName) : undefined);
+    if (!schema) {
+      findings.push(`Unknown section '${sectionName}'`);
       continue;
     }
 
-    if (consumerSections.has(key)) {
-      continue;
+    // A section that is no object at all fails its schema, which reports it.
+    const known = declaredKeys(schema);
+    if (!known || !section || typeof section !== "object") continue;
+
+    for (const key of Object.keys(section)) {
+      if (!known.has(key)) findings.push(`Unknown key '${key}' in section '${sectionName}'`);
     }
-
-    addStartupWarning(`[config] Unknown section '${key}' in ${filePath} — ignored`);
   }
-}
 
-// ============================================================================
-// Consumer Section Processing
-// ============================================================================
-
-/**
- * Process registered consumer sections from the raw config file data.
- *
- * For each registered section found in the config file:
- * 1. Validate against the registered Zod schema
- * 2. Store the validated data for retrieval via `getAppConfig()`
- *
- * @param data - Raw parsed config file data
- * @param filePath - Path to the config file (for error context)
- * @throws {ConfigurationError} If a consumer section fails validation
- */
-function processConsumerSections(data: unknown, filePath: string): void {
-  if (!data || typeof data !== "object") return;
-
-  // @type-narrowing — runtime guard above ensures data is a non-null object
-  const root = data as Record<string, unknown>;
-  const consumerSections = getRegisteredSectionNames();
-
-  for (const sectionName of consumerSections) {
-    const sectionData = root[sectionName];
-    if (sectionData === undefined) continue;
-
-    const schema = getRegisteredSectionSchema(sectionName);
-    if (!schema) continue;
-
-    const parseResult = schema.safeParse(sectionData);
-    if (!parseResult.success) {
-      throw ConfigurationError.fileValidationFailed(filePath, parseResult.error);
-    }
-
-    setRegisteredSectionData(sectionName, parseResult.data);
-  }
+  return findings;
 }

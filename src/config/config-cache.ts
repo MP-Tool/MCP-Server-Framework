@@ -26,7 +26,14 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseDotenv } from "dotenv";
 import { parseFrameworkEnv, validateConfigConstraints, type FrameworkEnvConfig } from "./env.js";
-import { loadConfigFile, mapConfigToEnvKeys, type AuthSectionData } from "./file/index.js";
+import {
+  loadConfigFile,
+  mapConfigToEnvKeys,
+  reportIgnoredConfigFile,
+  type AuthSectionData,
+  type ConfigFileResult,
+} from "./file/index.js";
+import { clearRegisteredSectionData } from "./extensions.js";
 import { addStartupWarning } from "./startup-warnings.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 import { setErrorNodeEnv } from "../errors/core/base.js";
@@ -232,32 +239,68 @@ function initializeConfig(): FrameworkEnvConfig {
     logger.debug(LogMessages.CONFIG_FILE_DETECTED, fileResult.sourcePath, fileResult.format);
   }
 
-  // Step 3: Build merged env source in 12-Factor priority order:
-  //   .env (lowest) → config file → process.env (highest)
-  const fileEnvKeys = fileResult ? mapConfigToEnvKeys(fileResult.overrides) : {};
-  // An empty value means unset (compose writes `${VAR}` as "" when VAR is unset), so it must not
-  // shadow the file or fail a `.min(1)` setting.
-  const envSource = { ...omitEmptyValues(dotenvValues), ...fileEnvKeys, ...omitEmptyValues(process.env) };
-
-  // Step 4: Parse merged source through Zod schema (single pass)
-  const config = parseFrameworkEnv(envSource);
-
-  // Step 5: Validate cross-field constraints
-  if (fileResult) {
-    validateMergedConfig(config);
-  }
+  // Step 3: Merge and parse all sources
+  const { config, file } = parseSources(dotenvValues, fileResult);
 
   // Retain the parsed [auth] section (nested providers can't live in flat config).
-  rawAuthConfig = fileResult?.rawAuth;
+  rawAuthConfig = file?.rawAuth;
 
   // Log the initialization result
-  if (fileResult) {
-    logger.info(LogMessages.INITIALIZED_FILE, fileResult.sourcePath, fileResult.format);
+  if (file) {
+    logger.info(LogMessages.INITIALIZED_FILE, file.sourcePath, file.format);
   } else {
     logger.info(LogMessages.INITIALIZED, "environment");
   }
 
   return config;
+}
+
+/**
+ * Parse the merged sources. A discovered file passed its own checks here, but can still be
+ * invalid together with the environment, and must not stop the start then either.
+ */
+function parseSources(
+  dotenvValues: Record<string, string>,
+  fileResult: ConfigFileResult | undefined,
+): { config: FrameworkEnvConfig; file: ConfigFileResult | undefined } {
+  try {
+    return { config: parseMergedSources(dotenvValues, fileResult), file: fileResult };
+  } catch (error) {
+    if (!fileResult?.discovered) throw error;
+
+    // Without the file first: an invalid environment has to fail as itself, not as the file.
+    const config = parseMergedSources(dotenvValues, undefined);
+    clearRegisteredSectionData();
+    reportIgnoredConfigFile(fileResult.sourcePath, describeMergeFailure(error));
+    return { config, file: undefined };
+  }
+}
+
+function parseMergedSources(
+  dotenvValues: Record<string, string>,
+  fileResult: ConfigFileResult | undefined,
+): FrameworkEnvConfig {
+  // Merged env source in 12-Factor priority order: .env (lowest) → config file → process.env (highest)
+  const fileEnvKeys = fileResult ? mapConfigToEnvKeys(fileResult.overrides) : {};
+  // An empty value means unset (compose writes `${VAR}` as "" when VAR is unset), so it must not
+  // shadow the file or fail a `.min(1)` setting.
+  const envSource = { ...omitEmptyValues(dotenvValues), ...fileEnvKeys, ...omitEmptyValues(process.env) };
+
+  // Parse merged source through Zod schema (single pass)
+  const config = parseFrameworkEnv(envSource);
+
+  // Validate cross-field constraints
+  if (fileResult) {
+    validateMergedConfig(config);
+  }
+
+  return config;
+}
+
+/** The problems from a merge error: the lines below its heading, or its one line. */
+function describeMergeFailure(error: unknown): string[] {
+  const lines = (error instanceof Error ? error.message : String(error)).split("\n");
+  return (lines.length > 1 ? lines.slice(1) : lines).map((line) => line.replace(/^\s*-\s*/, ""));
 }
 
 // ============================================================================

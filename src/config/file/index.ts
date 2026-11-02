@@ -5,7 +5,7 @@
  */
 
 // Loader (main entry point)
-export { loadConfigFile } from "./loader.js";
+export { loadConfigFile, reportIgnoredConfigFile } from "./loader.js";
 
 // Schema, types & constants
 export {
