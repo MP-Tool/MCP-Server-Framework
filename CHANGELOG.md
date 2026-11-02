@@ -86,6 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Resources and prompts answer with the right JSON-RPC code**: the SDK only uses an integer `error.code`,
   and `AppError.code` is a string, so `mcpCode` never reached the client and everything came back as
   `-32603`. A scope denial is now `-32600` and a missing resource `-32002`, as MCP specifies.
+- **Prompts without arguments work**: the SDK passes only `extra` when a prompt has no args schema, the
+  binding always expected `args` first, and so every `prompts/get` on such a prompt failed with `-32603`.
 
 ### Changed
 

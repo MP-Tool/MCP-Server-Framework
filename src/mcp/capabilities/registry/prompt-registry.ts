@@ -48,6 +48,11 @@ const SdkBindingMessages = {
  */
 export type PromptBindOptions = ScrubbingBindOptions;
 
+/** The part of the SDK's request extra a prompt binding reads. */
+interface PromptExtra {
+  readonly authInfo?: { readonly scopes?: readonly string[] };
+}
+
 // ============================================================================
 // Prompt Registry Class
 // ============================================================================
@@ -179,7 +184,10 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
       sdk.registerPrompt(
         prompt.name,
         config,
-        withProtocolErrors(async (args: unknown, extra: { authInfo?: { scopes?: readonly string[] } }) => {
+        withProtocolErrors(async (...callArgs: [unknown, PromptExtra] | [PromptExtra]) => {
+          // @sdk-constraint — the SDK calls `cb(args, extra)` with an args schema and `cb(extra)` without
+          const [args, extra] = callArgs.length === 2 ? callArgs : [{}, callArgs[0]];
+
           // Scope enforcement (RBAC)
           enforceScopeOrThrow(
             prompt.requiredScopes,
