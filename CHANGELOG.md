@@ -120,6 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **One session can no longer push out another's dynamic resources**: the store is shared and evicted the oldest
   entry of any session at its cap, so a session producing many results lost others' still-valid URIs. The cap
   now frees expired entries first, then takes the oldest entry of the session holding the most.
+- **The event store is bounded by bytes**: it only counted streams and events, so large tool results could fill the
+  heap well below both caps (1000 x 1000). New option `maxBytes`, default 64 MiB. Past it, the stream holding the
+  most loses its oldest events, and a client that resumes from one of those gets no replay.
 
 ### Changed
 

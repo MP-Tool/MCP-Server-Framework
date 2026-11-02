@@ -26,6 +26,7 @@ const EVICTION_INTERVAL_MS = 60_000;
 const DEFAULT_MAX_EVENTS_PER_STREAM = 1000;
 const DEFAULT_MAX_STREAMS = 1000;
 const DEFAULT_TTL_MS = 300_000;
+const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
 /** Options for {@link createInMemoryEventStore}. */
 export interface InMemoryEventStoreOptions {
@@ -37,6 +38,13 @@ export interface InMemoryEventStoreOptions {
    * @default 1000
    */
   readonly maxStreams?: number | undefined;
+  /**
+   * Maximum size of all retained events together, as serialized JSON. Past this, the stream
+   * holding the most loses its oldest events, so a client streaming large results does not
+   * cost another client its replay. The event just stored always stays.
+   * @default 67108864 (64 MiB)
+   */
+  readonly maxBytes?: number | undefined;
   /**
    * Idle time-to-live in ms — a stream that hasn't received a new event for longer than
    * this is proactively evicted by a periodic sweep, so abandoned streams don't linger
@@ -63,18 +71,26 @@ export interface InMemoryEventStoreResult extends EventStore {
   dispose(): void;
 }
 
+interface StoredEvent {
+  readonly message: JSONRPCMessage;
+  /** Serialized size, counted against `maxBytes`. */
+  readonly bytes: number;
+}
+
 interface StreamRecord {
   /** Insertion-ordered per-stream event log — insertion order is replay order. */
-  readonly events: BoundedMap<EventId, JSONRPCMessage>;
+  readonly events: BoundedMap<EventId, StoredEvent>;
   /** Updated on every `storeEvent`; drives the idle-TTL sweep. */
   lastEventAt: number;
+  /** Sum of the retained events' sizes. */
+  bytes: number;
 }
 
 /**
  * Creates an in-memory {@link EventStore} for Streamable HTTP stream resumability.
  *
- * Bounded by `maxStreams` x `maxEventsPerStream` (a hard ceiling — the internal
- * `eventId -> streamId` index never exceeds this product) plus idle-stream TTL sweeping.
+ * Bounded by `maxBytes`, by `maxStreams` x `maxEventsPerStream` (a hard ceiling — the internal
+ * `eventId -> streamId` index never exceeds this product) and by idle-stream TTL sweeping.
  * Suitable for single-instance deployments; for horizontal scaling, implement
  * {@link EventStore} against a shared backend (Redis, PostgreSQL, etc.).
  *
@@ -85,20 +101,53 @@ export function createInMemoryEventStore(options?: InMemoryEventStoreOptions): I
   const maxEventsPerStream = options?.maxEventsPerStream ?? DEFAULT_MAX_EVENTS_PER_STREAM;
   const maxStreams = options?.maxStreams ?? DEFAULT_MAX_STREAMS;
   const ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS;
+  const maxBytes = options?.maxBytes ?? DEFAULT_MAX_BYTES;
 
   // Flat eventId -> streamId index, kept in sync with `streams` by every eviction path —
   // both the capacity-triggered ones (via onEvict below) and the TTL sweep (which must
   // scrub it manually; see the comment on the sweep for why).
   const eventIndex = new Map<EventId, StreamId>();
 
+  let totalBytes = 0;
+
   /** Removes every event of an evicted stream from `eventIndex`. Shared by both eviction paths. */
   function scrubStream(_streamId: StreamId, record: StreamRecord): void {
     for (const [eventId] of record.events.entries()) {
       eventIndex.delete(eventId);
     }
+    totalBytes -= record.bytes;
   }
 
   const streams = new BoundedMap<StreamId, StreamRecord>(maxStreams, scrubStream);
+
+  /** Accounts for an event that left a stream's log. */
+  function forgetEvent(record: StreamRecord, eventId: EventId, event: StoredEvent): void {
+    eventIndex.delete(eventId);
+    record.bytes -= event.bytes;
+    totalBytes -= event.bytes;
+  }
+
+  /** Takes the oldest events of whichever stream holds the most, until the limit holds. */
+  function enforceByteLimit(current: StreamRecord): void {
+    while (totalBytes > maxBytes) {
+      let largestId: StreamId | undefined;
+      let largest: StreamRecord = current;
+      for (const [streamId, record] of streams.entries()) {
+        if (largestId === undefined || record.bytes > largest.bytes) {
+          largestId = streamId;
+          largest = record;
+        }
+      }
+
+      const oldest = largest.events.entries().next().value;
+      // The event just stored stays, even if it exceeds the limit on its own.
+      if (largestId === undefined || !oldest || (largest === current && largest.events.size === 1)) return;
+
+      largest.events.delete(oldest[0]);
+      forgetEvent(largest, oldest[0], oldest[1]);
+      if (largest.events.size === 0) streams.delete(largestId);
+    }
+  }
 
   let evictionTimer: NodeJS.Timeout | undefined;
   if (ttlMs > 0) {
@@ -123,15 +172,19 @@ export function createInMemoryEventStore(options?: InMemoryEventStoreOptions): I
 
       const existing = streams.get(streamId);
       const record: StreamRecord = existing ?? {
-        events: new BoundedMap<EventId, JSONRPCMessage>(maxEventsPerStream, (evictedEventId) =>
-          eventIndex.delete(evictedEventId),
+        events: new BoundedMap<EventId, StoredEvent>(maxEventsPerStream, (evictedEventId, evicted) =>
+          forgetEvent(record, evictedEventId, evicted),
         ),
         lastEventAt: now,
+        bytes: 0,
       };
       record.lastEventAt = now;
+      const bytes = Buffer.byteLength(JSON.stringify(message));
       // Defensive copy — stored by value, so a later mutation of the caller's message
       // object can never alter what a future replay delivers.
-      record.events.set(eventId, structuredClone(message));
+      record.events.set(eventId, { message: structuredClone(message), bytes });
+      record.bytes += bytes;
+      totalBytes += bytes;
 
       // Touch to MRU position — Map.set() on an existing key does not reposition it, so a
       // delete + re-set is required (same technique identity-store.ts's touch() uses) for
@@ -140,6 +193,7 @@ export function createInMemoryEventStore(options?: InMemoryEventStoreOptions): I
       streams.set(streamId, record);
 
       eventIndex.set(eventId, streamId);
+      enforceByteLimit(record);
       return eventId;
     },
 
@@ -176,7 +230,7 @@ export function createInMemoryEventStore(options?: InMemoryEventStoreOptions): I
       if (!record) return "";
 
       let foundLastEvent = false;
-      for (const [eventId, message] of record.events.entries()) {
+      for (const [eventId, { message }] of record.events.entries()) {
         if (eventId === lastEventId) {
           foundLastEvent = true;
           continue;
