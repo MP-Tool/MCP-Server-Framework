@@ -78,6 +78,21 @@ export interface ToolAnnotations {
   readonly openWorldHint?: boolean;
 }
 
+/** A successful result of a tool with an `output` schema. */
+export type StructuredToolResult<T> = CallToolResult & { structuredContent: T };
+
+/** A failed tool call, which the SDK does not check against an `output` schema. */
+export type ToolErrorResult = CallToolResult & { isError: true };
+
+/**
+ * What a tool's handler returns. With an `output` schema that is `structuredContent` in the schema's
+ * input shape (the SDK parses it), or an error; without one, `TOutput` stays at its default, whose
+ * type is `any`, and any result goes.
+ */
+export type ToolResultFor<TOutput extends z.ZodTypeAny> = 0 extends 1 & z.input<TOutput>
+  ? CallToolResult
+  : StructuredToolResult<z.input<TOutput>> | ToolErrorResult;
+
 /**
  * Tool definition - the canonical type for MCP tools.
  *
@@ -115,7 +130,8 @@ export interface ToolDefinition<
    * When set, the framework forwards the schema to the MCP SDK as
    * `outputSchema`. Clients can then read the schema from `tools/list`
    * and the SDK validates that the handler returns `structuredContent`
-   * matching this shape on every call.
+   * matching this shape on every call. The handler's return type requires
+   * it as well: use `structured()`, or `error()` for a failed call.
    *
    * @see https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content
    */
@@ -166,9 +182,10 @@ export interface ToolDefinition<
    *
    * @param args - Validated input (typed from Zod schema)
    * @param context - Execution context with progress reporter, abort signal
-   * @returns MCP CallToolResult (use response helpers: text(), json(), error())
+   * @returns MCP CallToolResult (use response helpers: text(), json(), error()).
+   *   With an `output` schema: structured() or error().
    */
-  handler: (args: z.infer<TInput>, context: ToolContext) => Promise<CallToolResult>;
+  handler: (args: z.infer<TInput>, context: ToolContext) => Promise<ToolResultFor<TOutput>>;
 }
 
 /**

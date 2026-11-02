@@ -119,6 +119,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unknown config-file sections and keys are errors, not warnings** (MP-Tool/komodo-mcp-server#191): a file
   with a typo used to apply everything else. It is now discarded or stops the start, see Fixed. Consumer
   sections with `.passthrough()` or `.catchall()` keep accepting extra keys.
+- **A tool with an `output` schema must return `structuredContent`, now also at compile time**
+  (MP-Tool/komodo-mcp-server#192): the handler type allowed `text()`, which then failed every call with
+  `Output validation error`. Such a handler now returns `structured()` or `error()`, in the schema's shape.
+  Consumers with a text-only branch no longer compile: that branch never worked. New types:
+  `StructuredToolResult`, `ToolErrorResult`, `ToolResultFor`.
 
 ### Dependencies
 

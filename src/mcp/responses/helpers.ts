@@ -8,6 +8,7 @@
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { StructuredToolResult, ToolErrorResult } from "../types/index.js";
 
 import type {
   TextResponseOptions,
@@ -187,7 +188,7 @@ export function json(data: unknown, options?: JsonResponseOptions): CallToolResu
  * });
  * ```
  */
-export function structured(data: unknown, options?: StructuredResponseOptions): CallToolResult {
+export function structured<T>(data: T, options?: StructuredResponseOptions): StructuredToolResult<T> | ToolErrorResult {
   let displayText: string;
   if (options?.text !== undefined) {
     displayText = options.text;
@@ -201,10 +202,11 @@ export function structured(data: unknown, options?: StructuredResponseOptions): 
     }
   }
 
+  // @type-narrowing — buildResponse keeps `data` as `structuredContent`, its return type just does not say so
   return buildResponse([withAnnotations({ type: "text" as const, text: displayText }, options?.annotations)], {
     ...options,
     structuredContent: data as Record<string, unknown>,
-  });
+  }) as StructuredToolResult<T>;
 }
 
 // ============================================================================
@@ -232,11 +234,12 @@ export function structured(data: unknown, options?: StructuredResponseOptions): 
  * });
  * ```
  */
-export function error(message: string, options?: ErrorResponseOptions): CallToolResult {
+export function error(message: string, options?: ErrorResponseOptions): ToolErrorResult {
+  // @type-narrowing — buildResponse keeps `isError`, its return type just does not say so
   return buildResponse([withAnnotations({ type: "text" as const, text: message }, options?.annotations)], {
     ...options,
     isError: true,
-  });
+  }) as ToolErrorResult;
 }
 
 // ============================================================================

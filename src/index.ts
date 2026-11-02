@@ -184,6 +184,9 @@ export type {
   ToolAnnotations,
   ToolDefinition,
   ToolProvider,
+  ToolResultFor,
+  StructuredToolResult,
+  ToolErrorResult,
   // Resources
   BaseResourceDefinition,
   ResourceStaticDefinition,
