@@ -69,11 +69,37 @@ function baseUrlHostname(baseUrl: string | undefined): string | undefined {
   }
 }
 
-/** Cached derived value (lazy initialization) */
+/**
+ * Normalized form of the configured CORS origins. These widen the Origin check only: a browser
+ * origin an operator allowed is compared as a whole, scheme and port included, and never becomes an
+ * acceptable `Host` header. The wildcard is no origin and does not open the check.
+ */
+function createCorsOrigins(config: FrameworkEnvConfig): Set<string> {
+  const origins = new Set<string>();
+  for (const entry of config.MCP_CORS_ORIGIN ?? []) {
+    try {
+      origins.add(new URL(entry).origin);
+    } catch {
+      // "*" or malformed — not an origin.
+    }
+  }
+  return origins;
+}
+
+/** Cached derived values (lazy initialization) */
 let cachedAllowedHosts: string[] | undefined;
+let cachedCorsOrigins: Set<string> | undefined;
 
 // Self-register for central cache reset
 registerCacheReset(resetDnsRebindingCache);
+
+/**
+ * Gets or creates the cached CORS origins.
+ */
+function getCorsOrigins(): Set<string> {
+  cachedCorsOrigins ??= createCorsOrigins(getFrameworkConfig());
+  return cachedCorsOrigins;
+}
 
 /**
  * Gets or creates cached allowed hosts list.
@@ -93,6 +119,7 @@ function getAllowedHosts(): string[] {
  */
 export function resetDnsRebindingCache(): void {
   cachedAllowedHosts = undefined;
+  cachedCorsOrigins = undefined;
 }
 
 /**
@@ -131,13 +158,16 @@ export function dnsRebindingProtection(req: Request, res: Response, next: NextFu
   // clients omit it, and the Host check above still applies to every request.
   const origin = req.headers.origin;
   if (origin !== undefined && origin !== "null") {
-    let originHost: string | undefined;
+    let parsedOrigin: URL | undefined;
     try {
-      originHost = new URL(origin).host;
+      parsedOrigin = new URL(origin);
     } catch {
-      originHost = undefined; // malformed Origin → reject below
+      parsedOrigin = undefined; // malformed Origin → reject below
     }
-    if (originHost === undefined || !isHostAllowed(originHost)) {
+    if (
+      parsedOrigin === undefined ||
+      !(isHostAllowed(parsedOrigin.host) || getCorsOrigins().has(parsedOrigin.origin))
+    ) {
       logSecurityEvent(`DNS Rebinding attempt blocked: Origin=${truncateForLog(origin)}`);
       res
         .status(HttpStatus.FORBIDDEN)

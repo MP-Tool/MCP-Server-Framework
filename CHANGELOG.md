@@ -75,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sessions follow `MCP_STATELESS` from the environment and config file**: the builder read only the
   programmatic option, so these settings gave a stateless handler serving stateful sessions:
   `ToolContext.stateless` was false, and `resources/subscribe` succeeded but never delivered an update.
+- **`MCP_CORS_ORIGIN` origins pass the Origin check**: the preflight succeeded, then the real request got
+  `403`, because that check only knew hosts. The workaround, `MCP_ALLOWED_HOSTS`, also accepted the name as
+  a `Host` header. Configured origins now pass by exact match (scheme, host and port) and do not widen the
+  `Host` check. `*` still does not open the Origin check.
 
 ### Changed
 
