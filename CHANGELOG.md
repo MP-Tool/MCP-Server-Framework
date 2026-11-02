@@ -123,6 +123,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The event store is bounded by bytes**: it only counted streams and events, so large tool results could fill the
   heap well below both caps (1000 x 1000). New option `maxBytes`, default 64 MiB. Past it, the stream holding the
   most loses its oldest events, and a client that resumes from one of those gets no replay.
+- **`headersTimeout` takes effect**: at 40 s it sat above the 30 s `requestTimeout`, which also runs while headers
+  arrive, so it never fired. A test with a slow client confirms this. It is now 20 s, so slow headers are cut sooner.
 
 ### Changed
 

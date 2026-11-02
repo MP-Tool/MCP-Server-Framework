@@ -65,12 +65,12 @@ const MAX_TLS_FILE_SIZE = 1024 * 1024;
 
 // ── HTTP Timeout Defaults ─────────────────────────────────────────────────
 // Industry-standard values to prevent resource exhaustion (Slowloris, idle connections).
-// headersTimeout must be > requestTimeout per Node.js docs.
+// requestTimeout also runs while headers arrive, so a headersTimeout above it never fires.
 
 /** Max time for the entire request (30s) */
 const HTTP_REQUEST_TIMEOUT = 30_000;
-/** Max time for headers to arrive (40s, must exceed requestTimeout) */
-const HTTP_HEADERS_TIMEOUT = 40_000;
+/** Max time for headers to arrive (20s, must stay below requestTimeout to take effect) */
+const HTTP_HEADERS_TIMEOUT = 20_000;
 /** Idle keep-alive timeout (65s, exceeds common LB thresholds like ALB 60s) */
 const HTTP_KEEP_ALIVE_TIMEOUT = 65_000;
 
