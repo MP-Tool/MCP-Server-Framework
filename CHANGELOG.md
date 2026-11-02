@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Task results are scrubbed**: the scrub sat in the tool's `getTaskResult`, which the SDK never
   calls; `tasks/result` and auto-polling read the task store directly, so secrets reached the client
   unredacted. The session now wraps the store and scrubs every result on its way out.
+- **Task status messages are scrubbed, and results are stored scrubbed**: `tasks/get`, `tasks/list` and status
+  notifications returned `statusMessage` unredacted, and a persistent task store received raw results. The
+  store wrapper now scrubs both on write, and on read for what a consumer wrote to its own store directly.
 - **Thrown errors are scrubbed**: `McpError`s from tools and all errors from task tools, resources and
   prompts skipped the result boundary, and spans exported raw messages and stacks to the OTLP
   collector. Upstream errors can embed credentials, so all of these are now scrubbed.

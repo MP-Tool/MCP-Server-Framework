@@ -25,7 +25,7 @@
  */
 
 import type { TaskStore } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, Result, Task } from "@modelcontextprotocol/sdk/types.js";
 import type { Logger } from "../../../logger/index.js";
 import { ScrubberError } from "../../../logger/core/index.js";
 import { SecretScrubber, createSecretScrubber, REDACTED_VALUE } from "../../../utils/scrubbing/index.js";
@@ -172,22 +172,33 @@ export function scrubThrownError(error: unknown, scrubber: SecretScrubber | unde
 }
 
 /**
- * Wrap a task store so results leave it scrubbed. The SDK answers `tasks/result` and its
- * auto-polling from `TaskStore.getTaskResult` and never calls a task tool's own
- * `getTaskResult`, which makes this the one exit every task result passes — also a result a
- * consumer wrote directly to its own store. Task tools have no per-tool scrub opt-out.
+ * Wrap a task store so that nothing reaches its backing store or the client unscrubbed: task
+ * results and `statusMessage`, which `tasks/get`, `tasks/list` and status notifications return.
+ * The SDK answers these from the store and never calls a task tool's own `getTask` or
+ * `getTaskResult`. Writes are scrubbed because the store may be persistent, reads because a
+ * consumer can also write to its own store directly. Task tools have no per-tool scrub opt-out.
  */
 export function createScrubbingTaskStore(store: TaskStore, scrubber: SecretScrubber, logger: Logger): TaskStore {
+  const scrubResult = (result: Result, taskId: string): CallToolResult =>
+    // @sdk-constraint — the store types results as the generic `Result`; only task tools write here
+    scrubCallToolResult(result as CallToolResult, scrubber, logger, `task ${taskId}`);
+  const scrubTask = (task: Task): Task =>
+    task.statusMessage === undefined ? task : { ...task, statusMessage: scrubber.scrub(task.statusMessage) };
+
   return {
     createTask: (...args) => store.createTask(...args),
-    getTask: (...args) => store.getTask(...args),
-    storeTaskResult: (...args) => store.storeTaskResult(...args),
-    getTaskResult: async (taskId, sessionId) => {
-      const result = await store.getTaskResult(taskId, sessionId);
-      // @sdk-constraint — the store types results as the generic `Result`; only task tools write here
-      return scrubCallToolResult(result as CallToolResult, scrubber, logger, `task ${taskId}`);
+    getTask: async (...args) => {
+      const task = await store.getTask(...args);
+      return task && scrubTask(task);
     },
-    updateTaskStatus: (...args) => store.updateTaskStatus(...args),
-    listTasks: (...args) => store.listTasks(...args),
+    storeTaskResult: (taskId, status, result, sessionId) =>
+      store.storeTaskResult(taskId, status, scrubResult(result, taskId), sessionId),
+    getTaskResult: async (taskId, sessionId) => scrubResult(await store.getTaskResult(taskId, sessionId), taskId),
+    updateTaskStatus: (taskId, status, statusMessage, sessionId) =>
+      store.updateTaskStatus(taskId, status, statusMessage && scrubber.scrub(statusMessage), sessionId),
+    listTasks: async (...args) => {
+      const page = await store.listTasks(...args);
+      return { ...page, tasks: page.tasks.map(scrubTask) };
+    },
   };
 }
