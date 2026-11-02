@@ -151,6 +151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged, compared from the built declarations.
 - Split the SDK bindings of the tool and resource registries into one method per step, without changing what they do.
   `bindToSdk` only registers now; the handler bodies were 128 and 149 lines with a complexity up to 24.
+- Corrected comments that had drifted: `MCP_SESSION_*` variables that do not exist, heartbeats no SDK transport
+  supports, when `onBeforeTelemetryInit` runs, and the `enableJsonResponse` default (`false`, not `true`).
 
 ### Dependencies
 

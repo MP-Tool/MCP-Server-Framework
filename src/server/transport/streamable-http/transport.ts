@@ -120,7 +120,7 @@ export interface StreamableHttpTransportOptions {
    * MCP spec: "If the server is only sending one response with no
    * notifications, it SHOULD prefer application/json."
    *
-   * @default true
+   * @default false
    */
   readonly enableJsonResponse?: boolean | undefined;
 }

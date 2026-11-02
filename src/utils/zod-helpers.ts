@@ -53,9 +53,14 @@ function strictEnvBoolean() {
  * ```
  */
 export function booleanFromEnv(defaultValue: boolean) {
-  return strictEnvBoolean()
-    .default(defaultValue)
-    .transform((val) => val ?? defaultValue);
+  return (
+    strictEnvBoolean()
+      .default(defaultValue)
+      // `.default()` only sees the raw input: "" is not undefined there, and only becomes undefined in the
+      // preprocess step behind it. The types do not show that, so this looks redundant and is not.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above.
+      .transform((val) => val ?? defaultValue)
+  );
 }
 
 /**

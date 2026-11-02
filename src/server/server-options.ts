@@ -137,7 +137,7 @@ export interface SessionConfigOptions {
    * housekeeper. Lower values create "lightweight" sessions that free
    * resources faster.
    *
-   * @default 1_800_000 (30 minutes, from MCP_SESSION_TIMEOUT_MS)
+   * @default 1_800_000 (30 minutes)
    */
   readonly timeoutMs?: number;
 
@@ -147,24 +147,25 @@ export interface SessionConfigOptions {
    * The housekeeper checks for expired/stale sessions at this interval.
    * Set to `0` to disable cleanup (e.g., stdio mode).
    *
-   * @default 60_000 (60 seconds, from MCP_SESSION_CLEANUP_INTERVAL_MS)
+   * @default 60_000 (60 seconds)
    */
   readonly cleanupIntervalMs?: number;
 
   /**
    * Keep-alive heartbeat interval in milliseconds.
    *
-   * The housekeeper sends keep-alive pings at this interval to detect
-   * dead connections. Set to `0` to disable heartbeats.
+   * The housekeeper calls `sendHeartbeat` at this interval on transports that have
+   * it, to detect dead connections. No SDK transport does, so this only applies to
+   * custom ones. Set to `0` to disable heartbeats.
    *
-   * @default 30_000 (30 seconds, from MCP_SESSION_KEEP_ALIVE_INTERVAL_MS)
+   * @default 30_000 (30 seconds)
    */
   readonly keepAliveIntervalMs?: number;
 
   /**
    * Maximum missed heartbeats before a session is considered stale.
    *
-   * @default 3 (from MCP_SESSION_MAX_MISSED_HEARTBEATS)
+   * @default 3
    */
   readonly maxMissedHeartbeats?: number;
 

@@ -25,8 +25,8 @@ export type TransportType = "http" | "https" | "sse" | "stdio";
 /**
  * Transport that optionally supports heartbeat (keep-alive).
  *
- * Some transports (like StreamableHTTPServerTransport) support sendHeartbeat
- * but it's not in the public SDK types.
+ * Only for custom transports: `sendHeartbeat` is not part of the SDK's `Transport`,
+ * and none of its own transports has it, so the housekeeper skips those.
  */
 export interface HeartbeatCapableTransport extends Transport {
   /**

@@ -133,7 +133,7 @@ export interface ExpressAppOptions {
   /** Event store for stream resumability (stateful only) */
   readonly eventStore?: EventStore | undefined;
 
-  /** Prefer JSON responses over SSE for simple request-response. Default: true */
+  /** Prefer JSON responses over SSE for simple request-response. Default: false */
   readonly enableJsonResponse?: boolean | undefined;
 
   /** Readiness endpoint configuration */

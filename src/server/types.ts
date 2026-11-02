@@ -253,8 +253,8 @@ export interface CreateServerOptions {
    * - Register custom instrumentation
    * - Configure global propagators or samplers
    *
-   * The callback runs after framework config resolution but before
-   * `OTEL_LOG_LEVEL` is consumed from `process.env` and SDK construction.
+   * The callback runs after framework config resolution and the default
+   * `DiagLogger` setup, but before SDK construction.
    *
    * **Important**: Custom DiagLoggers must NOT write to stdout (reserved
    * for MCP protocol data in stdio transport mode).
