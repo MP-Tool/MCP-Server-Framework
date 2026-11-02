@@ -177,23 +177,3 @@ export function createIdentityStore<T>(options?: IdentityStoreOptions<T>): Ident
     },
   };
 }
-
-/** Minimal shape of the auth carriers the framework surfaces (`AuthContext`, `ToolContext.auth`). */
-export interface AuthIdentitySource {
-  readonly userId?: string | undefined;
-  readonly authInfo?: { readonly clientId?: string | undefined } | undefined;
-  readonly sdkAuthInfo?: { readonly clientId?: string | undefined } | undefined;
-}
-
-/**
- * Derives a stable identity key from an auth carrier, for use with {@link IdentityStore}.
- *
- * Prefers an explicit `userId` (set on `AuthContext`), then the verified token's `clientId`
- * (`ToolContext.auth.authInfo` or `AuthContext.sdkAuthInfo`).
- *
- * @param auth - An `AuthContext`, a `ToolContext.auth`, or `undefined`
- * @returns A stable key, or `undefined` for anonymous / unauthenticated requests
- */
-export function authIdentityKey(auth: AuthIdentitySource | undefined): string | undefined {
-  return auth?.userId ?? auth?.authInfo?.clientId ?? auth?.sdkAuthInfo?.clientId ?? undefined;
-}

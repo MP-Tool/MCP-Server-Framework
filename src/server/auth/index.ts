@@ -56,8 +56,10 @@ export type {
 // Session-auth binding (typed extra + identity-scoped store; stateful & stateless)
 export { defineAuthExtra } from "./auth-extra.js";
 export type { AuthExtraBinding, HasAuthExtra } from "./auth-extra.js";
-export { createIdentityStore, authIdentityKey } from "./identity-store.js";
-export type { IdentityStore, IdentityStoreOptions, AuthIdentitySource } from "./identity-store.js";
+export { createIdentityStore } from "./identity-store.js";
+export type { IdentityStore, IdentityStoreOptions } from "./identity-store.js";
+export { authIdentityKey } from "../../utils/auth-identity.js";
+export type { AuthIdentitySource } from "../../utils/auth-identity.js";
 
 // Declarative OAuth config resolution (generic [auth] section → provider configs)
 export { resolveAuthConfig, toOAuthProviderConfigs } from "./auth-config.js";

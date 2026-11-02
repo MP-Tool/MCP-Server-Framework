@@ -26,6 +26,8 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, renameSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logger as baseLogger } from "../logger.js";
+import { authIdentityKey, authUsername } from "../../utils/auth-identity.js";
+import type { AuthIdentitySource } from "../../utils/auth-identity.js";
 
 const logger = baseLogger.child({ component: "audit" });
 
@@ -49,6 +51,26 @@ export interface AuditActor {
   readonly sessionId?: string | undefined;
   /** Client IP, when available. */
   readonly ip?: string | undefined;
+}
+
+/**
+ * The actor of an audit record, derived the same way for every record so one principal keeps
+ * one id across the trail.
+ *
+ * @param sessionId - MCP session the action belongs to, when known
+ * @param auth - Auth of the request or session, when not anonymous
+ */
+export function auditActor(
+  sessionId: string | undefined,
+  auth: (AuthIdentitySource & { readonly extra?: Record<string, unknown> | undefined }) | undefined,
+): AuditActor {
+  const userId = authIdentityKey(auth);
+  const username = authUsername(auth?.extra);
+  return {
+    ...(sessionId && { sessionId }),
+    ...(userId && { userId }),
+    ...(username && { username }),
+  };
 }
 
 /** A single audit trail entry. Serialized to one JSON line with a `ts` timestamp. */

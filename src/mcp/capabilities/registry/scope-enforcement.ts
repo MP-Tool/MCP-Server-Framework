@@ -10,7 +10,7 @@
  */
 
 import { AuthorizationError } from "../../../errors/index.js";
-import { logAuditEvent } from "../../../logger/audit/index.js";
+import { auditActor, logAuditEvent } from "../../../logger/audit/index.js";
 import type { Logger } from "../../../logger/index.js";
 
 // ============================================================================
@@ -46,14 +46,6 @@ const AUTH_SCOPE_DENIED = "%s [%s] requires scopes [%s] but token has [%s]";
 // ============================================================================
 // Enforcement
 // ============================================================================
-
-/**
- * Reads the conventional `username` label from an auth `extra` payload, if present.
- * @internal
- */
-export function authUsername(extra: Record<string, unknown> | undefined): string | undefined {
-  return typeof extra?.["username"] === "string" ? extra["username"] : undefined;
-}
 
 /**
  * The auth info a scope check runs against: the request's own, or — for an anonymous
@@ -106,18 +98,13 @@ export function enforceScopeOrThrow(
 
   if (missing.length > 0) {
     logger.warn(AUTH_SCOPE_DENIED, capabilityType, capabilityName, requiredScopes.join(","), tokenScopes.join(","));
-    const username = authUsername(authInfo.extra);
     logAuditEvent({
       category: "permission",
       action: "permission.denied",
       outcome: "denied",
       target: capabilityName,
       ...(request.requestId !== undefined && { requestId: String(request.requestId) }),
-      actor: {
-        ...(request.sessionId && { sessionId: request.sessionId }),
-        ...(authInfo.clientId && { userId: authInfo.clientId }),
-        ...(username && { username }),
-      },
+      actor: auditActor(request.sessionId, { authInfo, extra: authInfo.extra }),
       detail: { capability: capabilityType, requiredScopes, missingScopes: missing },
     });
     throw AuthorizationError.insufficientScope(requiredScopes, tokenScopes);

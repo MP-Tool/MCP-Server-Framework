@@ -182,6 +182,8 @@ here when you upgrade from 1.2.
   `ConfigurationError.findings`, so nothing parses an error message back into lines. `fileValidationFailed` and
   `ValidationError.formatIssues` are gone; nothing called them.
 - Startup warnings and errors share one buffer and are replayed in the order they occurred.
+- Audit records build their actor in one place, `auditActor()`, and one principal resolves to one id through
+  `authIdentityKey()`, instead of four hand-written literals.
 
 ### Dependencies
 

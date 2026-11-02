@@ -17,7 +17,8 @@ import type { TransportType } from "../transport/transport-context.js";
 import type { Session, ReadonlySession, SessionCloseReason, CreateSessionOptions } from "./session.js";
 import type { AuthContext } from "../auth/auth-context.js";
 import { getServerMetrics } from "../../telemetry/metrics.js";
-import { logAuditEvent } from "../../logger/audit/index.js";
+import { auditActor, logAuditEvent } from "../../logger/audit/index.js";
+import { authIdentityKey, authUsername } from "../../utils/auth-identity.js";
 import { InMemorySessionStore } from "./in-memory-store.js";
 import type { SessionStore, SessionStats } from "./session-store.js";
 import { SessionHousekeeper } from "./session-housekeeper.js";
@@ -363,19 +364,13 @@ export class SessionManagerImpl implements SessionManager {
     if (session) {
       mcpLogger.addHandler(session.mcpSession);
       getServerMetrics().recordSessionChange(session.transport.type, 1);
-      const username =
-        typeof session.auth.extra?.["username"] === "string" ? session.auth.extra["username"] : undefined;
-      const userLabel = username ?? session.auth.userId ?? "anonymous";
+      const userLabel = authUsername(session.auth.extra) ?? authIdentityKey(session.auth) ?? "anonymous";
       logger.info(LogMessages.SESSION_CREATED, session.id, session.transport.type, userLabel, this.store.size);
       logAuditEvent({
         category: "session",
         action: "session.open",
         outcome: "info",
-        actor: {
-          sessionId: session.id,
-          ...(username && { username }),
-          ...(session.auth.userId && { userId: session.auth.userId }),
-        },
+        actor: auditActor(session.id, session.auth),
         detail: { transport: session.transport.type },
       });
       void this.invokeLifecycleHook("onClientConnected", session.id, () =>
@@ -469,16 +464,11 @@ export class SessionManagerImpl implements SessionManager {
   }
 
   private auditSessionClose(session: Session, reason: SessionCloseReason): void {
-    const username = typeof session.auth.extra?.["username"] === "string" ? session.auth.extra["username"] : undefined;
     logAuditEvent({
       category: "session",
       action: "session.close",
       outcome: "info",
-      actor: {
-        sessionId: session.id,
-        ...(username && { username }),
-        ...(session.auth.userId && { userId: session.auth.userId }),
-      },
+      actor: auditActor(session.id, session.auth),
       detail: { reason },
     });
   }

@@ -30,9 +30,10 @@ import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js"
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
-import { authUsername, enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
+import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
+import { authUsername } from "../../../utils/auth-identity.js";
 import { runWithToolContext } from "../../current-tool-context.js";
-import { logAuditEvent } from "../../../logger/audit/index.js";
+import { auditActor, logAuditEvent } from "../../../logger/audit/index.js";
 
 // ============================================================================
 // Constants
@@ -522,18 +523,13 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
     result: CallToolResult | undefined,
     { auditToolIo, resultScrubber }: ToolCallBinding,
   ): void {
-    const username = authUsername(context.auth?.extra);
     logAuditEvent({
       category: "tool",
       action: "tool.call",
       outcome: success ? "success" : "failure",
       requestId: String(context.requestId),
       target: tool.name,
-      actor: {
-        ...(context.sessionId && { sessionId: context.sessionId }),
-        ...(context.auth?.authInfo.clientId && { userId: context.auth.authInfo.clientId }),
-        ...(username && { username }),
-      },
+      actor: auditActor(context.sessionId, context.auth),
       detail: buildAuditDetail(durationMs, args, result, auditDetail, auditToolIo, resultScrubber),
     });
   }
