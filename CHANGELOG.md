@@ -149,6 +149,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   HTTP transport (the router answers other methods), and a header write in `validateProtocolVersion` the SDK never read.
 - Internal barrels no longer re-export what nobody imports through them (139 names). The names of all public subpaths
   are unchanged, compared from the built declarations.
+- Split the SDK bindings of the tool and resource registries into one method per step, without changing what they do.
+  `bindToSdk` only registers now; the handler bodies were 128 and 149 lines with a complexity up to 24.
 
 ### Dependencies
 

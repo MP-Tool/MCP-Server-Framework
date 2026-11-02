@@ -13,14 +13,13 @@
 
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { RequestHandlerExtra, RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { CallToolResult, ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import type { z } from "zod";
 
 import type { ToolDefinition, ToolContext, ToolProvider, AuditToolIoLevel } from "../../types/index.js";
 import { createProgressReporter } from "../../handlers/index.js";
-import type { Logger } from "../../../logger/index.js";
 import { SecretScrubber } from "../../../logger/index.js";
 import { mcpLogger } from "../../../logger/index.js";
 import { scrubCallToolResult, scrubThrownError } from "./result-scrub.js";
@@ -74,6 +73,26 @@ export interface ToolBindOptions extends ScrubbingBindOptions {
    * (always secret-scrubbed). Defaults to `"summary"` when omitted.
    */
   readonly auditToolIo?: AuditToolIoLevel | undefined;
+}
+
+/** The SDK's `extra` argument of a tool callback. */
+type SdkToolExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
+/** What every call of a bound tool shares. */
+interface ToolCallBinding extends ToolBindOptions {
+  readonly sdk: McpServer;
+  readonly auditToolIo: AuditToolIoLevel;
+  /** Bridges framework logs to MCP notifications; unset when the session has no handler. */
+  readonly sendMcpLog: ReturnType<typeof mcpLogger.createContextLogger> | undefined;
+}
+
+/** One call of a tool. */
+interface ToolCall {
+  readonly tool: ToolDefinition;
+  readonly args: Record<string, unknown>;
+  readonly context: ToolContext;
+  /** Domain detail the handler recorded, merged into the `tool.call` audit record. */
+  readonly auditDetail: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -252,7 +271,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
    * @internal
    */
   static bindToSdk(sdk: McpServer, tools: readonly ToolDefinition[], options: ToolBindOptions): void {
-    const { logger, stateless, logNotificationHandler, resultScrubber, anonymousScopes } = options;
+    const { logger, logNotificationHandler, resultScrubber } = options;
     const auditToolIo: AuditToolIoLevel = options.auditToolIo ?? "summary";
 
     // Bridge framework logger → MCP notifications/message for this session.
@@ -272,6 +291,8 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
 
     logger.trace(SdkBindingMessages.TOOLS_REGISTERED, tools.length);
 
+    const binding: ToolCallBinding = { ...options, sdk, auditToolIo, sendMcpLog };
+
     for (const tool of tools) {
       sdk.registerTool(
         tool.name,
@@ -282,105 +303,7 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           ...(tool.annotations && { annotations: tool.annotations }),
           ...(tool._meta && { _meta: tool._meta }),
         },
-        async (args, extra) => {
-          const { signal: abortSignal, requestId, sessionId } = extra;
-          const progressToken = extra._meta?.progressToken;
-          const reportProgress = createProgressReporter(extra.sendNotification.bind(extra), progressToken);
-
-          // ── Auth Context from SDK ────────────────────────────────────────
-          // SDK flows req.auth → extra.authInfo when bearer auth middleware is active
-          const authInfo = extra.authInfo;
-
-          // Tool-level scope enforcement (RBAC). Anonymous requests fall back to the
-          // restricted anonymous scope set (if configured) so they are gated too;
-          // `context.auth` below stays derived from the real `authInfo` only.
-          enforceScopeOrThrow(
-            tool.requiredScopes,
-            scopeSubject(authInfo, anonymousScopes),
-            "Tool",
-            tool.name,
-            logger,
-            extra,
-          );
-
-          // Build auth context for tool handler.
-          // authInfo.extra is populated by the onAuthenticated hook in auth-middleware.ts.
-          const auth = authInfo
-            ? {
-                authInfo,
-                extra: authInfo.extra,
-              }
-            : undefined;
-
-          // Cross-request features: only available in stateful mode + client capability
-          const isStateful = !stateless;
-          const clientCaps = sdk.server.getClientCapabilities();
-
-          // Send on this call's own stream: without `relatedRequestId` the SDK uses the standalone
-          // GET stream, and a client that has none open never sees the request. In JSON response
-          // mode the call has no stream and the SDK would drop it, so the GET stream is all there
-          // is. The signal ties the request to the call, so cancelling one cancels the other.
-          const clientRequestOptions: RequestOptions = {
-            signal: abortSignal,
-            ...(!options.jsonResponse && { relatedRequestId: requestId }),
-          };
-
-          const createMessage: ToolContext["createMessage"] =
-            isStateful && clientCaps?.sampling
-              ? (params) => sdk.server.createMessage(params, clientRequestOptions)
-              : undefined;
-
-          const listRoots: ToolContext["listRoots"] =
-            isStateful && clientCaps?.roots ? () => sdk.server.listRoots(undefined, clientRequestOptions) : undefined;
-
-          const elicitInput: ToolContext["elicitInput"] =
-            isStateful && clientCaps?.elicitation
-              ? (params, requestOptions) =>
-                  sdk.server.elicitInput(params, { ...clientRequestOptions, ...requestOptions })
-              : undefined;
-
-          // Per-call audit accumulator: domain detail (e.g. affected resources) the handler
-          // attaches via context.recordAuditDetail, merged into the final tool.call event.
-          const auditDetail: Record<string, unknown> = {};
-          const recordAuditDetail = (detail: Record<string, unknown>): void => {
-            mergeAuditDetail(auditDetail, detail);
-          };
-
-          const toolContext: ToolContext = {
-            reportProgress,
-            abortSignal,
-            requestId,
-            sessionId,
-            stateless,
-            sendNotification: extra.sendNotification.bind(extra),
-            recordAuditDetail,
-            ...(auth && { auth }),
-            ...(createMessage && { createMessage }),
-            ...(listRoots && { listRoots }),
-            ...(elicitInput && { elicitInput }),
-          };
-
-          // Wrap tool execution so that:
-          // 1. logger.*() calls are forwarded as MCP notifications/message (Logger Step 11)
-          // 2. getCurrentToolContext() returns toolContext from anywhere in the call stack
-          // Identity label for the log prefix (username convention on auth.extra; else clientId).
-          const userLabel = authUsername(authInfo?.extra) ?? authInfo?.clientId;
-
-          const execute = () =>
-            ToolRegistry.executeToolCall(tool, args, toolContext, logger, resultScrubber, auditToolIo, auditDetail);
-          const executeInToolContext = () => runWithToolContext(toolContext, execute);
-          return sendMcpLog
-            ? withExtendedContext(
-                {
-                  sendMcpLog,
-                  requestId: String(requestId),
-                  ...(sessionId && { sessionId }),
-                  ...(userLabel && { user: userLabel }),
-                },
-                executeInToolContext,
-              )
-            : executeInToolContext();
-        },
+        (args, extra) => ToolRegistry.handleToolCall(tool, args, extra, binding),
       );
 
       logger.trace(SdkBindingMessages.TOOL_REGISTERED, tool.name);
@@ -391,18 +314,118 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
   // Private SDK Binding Helpers
   // ──────────────────────────────────────────────────────────────────────────
 
+  /** One `tools/call`: scope check, then the handler inside its tool and log context. */
+  private static async handleToolCall(
+    tool: ToolDefinition,
+    args: Record<string, unknown>,
+    extra: SdkToolExtra,
+    binding: ToolCallBinding,
+  ): Promise<CallToolResult> {
+    // SDK flows req.auth → extra.authInfo when bearer auth middleware is active
+    const authInfo = extra.authInfo;
+
+    // Tool-level scope enforcement (RBAC). Anonymous requests fall back to the
+    // restricted anonymous scope set (if configured) so they are gated too;
+    // `context.auth` stays derived from the real `authInfo` only.
+    enforceScopeOrThrow(
+      tool.requiredScopes,
+      scopeSubject(authInfo, binding.anonymousScopes),
+      "Tool",
+      tool.name,
+      binding.logger,
+      extra,
+    );
+
+    // Per-call audit accumulator: domain detail (e.g. affected resources) the handler
+    // attaches via context.recordAuditDetail, merged into the final tool.call event.
+    const auditDetail: Record<string, unknown> = {};
+    const context = ToolRegistry.buildToolContext(extra, binding, auditDetail);
+
+    // Wrap tool execution so that:
+    // 1. logger.*() calls are forwarded as MCP notifications/message (Logger Step 11)
+    // 2. getCurrentToolContext() returns the context from anywhere in the call stack
+    const executeInToolContext = () =>
+      runWithToolContext(context, () => ToolRegistry.executeToolCall({ tool, args, context, auditDetail }, binding));
+
+    const { sendMcpLog } = binding;
+    if (!sendMcpLog) return executeInToolContext();
+
+    // Identity label for the log prefix (username convention on auth.extra; else clientId).
+    const userLabel = authUsername(authInfo?.extra) ?? authInfo?.clientId;
+    return withExtendedContext(
+      {
+        sendMcpLog,
+        requestId: String(extra.requestId),
+        ...(extra.sessionId && { sessionId: extra.sessionId }),
+        ...(userLabel && { user: userLabel }),
+      },
+      executeInToolContext,
+    );
+  }
+
+  /** Builds the context a tool handler receives. */
+  private static buildToolContext(
+    extra: SdkToolExtra,
+    binding: ToolCallBinding,
+    auditDetail: Record<string, unknown>,
+  ): ToolContext {
+    const { signal: abortSignal, requestId, sessionId, authInfo } = extra;
+    const progressToken = extra._meta?.progressToken;
+
+    return {
+      reportProgress: createProgressReporter(extra.sendNotification.bind(extra), progressToken),
+      abortSignal,
+      requestId,
+      sessionId,
+      stateless: binding.stateless,
+      sendNotification: extra.sendNotification.bind(extra),
+      recordAuditDetail: (detail) => {
+        mergeAuditDetail(auditDetail, detail);
+      },
+      // authInfo.extra is populated by the onAuthenticated hook in auth-middleware.ts.
+      ...(authInfo && { auth: { authInfo, extra: authInfo.extra } }),
+      ...ToolRegistry.buildClientRequests(extra, binding),
+    };
+  }
+
+  /** The client requests a handler can make: only in stateful mode and with the client's capability. */
+  private static buildClientRequests(
+    extra: SdkToolExtra,
+    { sdk, stateless, jsonResponse }: ToolCallBinding,
+  ): Pick<ToolContext, "createMessage" | "listRoots" | "elicitInput"> {
+    if (stateless) return {};
+    const clientCaps = sdk.server.getClientCapabilities();
+
+    // Send on this call's own stream: without `relatedRequestId` the SDK uses the standalone
+    // GET stream, and a client that has none open never sees the request. In JSON response
+    // mode the call has no stream and the SDK would drop it, so the GET stream is all there
+    // is. The signal ties the request to the call, so cancelling one cancels the other.
+    const clientRequestOptions: RequestOptions = {
+      signal: extra.signal,
+      ...(!jsonResponse && { relatedRequestId: extra.requestId }),
+    };
+
+    return {
+      ...(clientCaps?.sampling && {
+        createMessage: (params: Parameters<NonNullable<ToolContext["createMessage"]>>[0]) =>
+          sdk.server.createMessage(params, clientRequestOptions),
+      }),
+      ...(clientCaps?.roots && { listRoots: () => sdk.server.listRoots(undefined, clientRequestOptions) }),
+      ...(clientCaps?.elicitation && {
+        elicitInput: (
+          params: Parameters<NonNullable<ToolContext["elicitInput"]>>[0],
+          requestOptions?: RequestOptions,
+        ) => sdk.server.elicitInput(params, { ...clientRequestOptions, ...requestOptions }),
+      }),
+    };
+  }
+
   /**
    * Executes a tool handler with cancellation, progress, tracing, and error handling.
    */
-  private static executeToolCall(
-    tool: ToolDefinition,
-    args: Record<string, unknown>,
-    context: ToolContext,
-    logger: Logger,
-    resultScrubber: SecretScrubber | undefined,
-    auditToolIo: AuditToolIoLevel,
-    auditDetail: Record<string, unknown>,
-  ): Promise<CallToolResult> {
+  private static executeToolCall(call: ToolCall, binding: ToolCallBinding): Promise<CallToolResult> {
+    const { tool, args, context } = call;
+    const { logger, resultScrubber } = binding;
     const startTime = Date.now();
     let success = true;
     let handlerResult: CallToolResult | undefined;
@@ -447,54 +470,72 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
             : result;
         } catch (error) {
           success = false;
-
-          // Handle cancellation
-          if (context.abortSignal.aborted || (error instanceof Error && error.name === "AbortError")) {
-            logger.info(SdkBindingMessages.TOOL_CANCELLED, tool.name);
-            span.setAttribute(MCP_ATTRIBUTES.SUCCESS, false);
-            // @sdk-constraint — SDK ErrorCode has no cancellation code; use framework's REQUEST_CANCELLED (-32002)
-            throw new McpError(JsonRpcErrorCode.REQUEST_CANCELLED, SdkBindingMessages.REQUEST_CANCELLED);
-          }
-
-          if (error instanceof AppError && error.statusCode < 500) {
-            logger.warn(SdkBindingMessages.TOOL_ERROR, tool.name, error.message);
-          } else {
-            logger.error(SdkBindingMessages.TOOL_ERROR, tool.name, error);
-          }
           span.setAttribute(MCP_ATTRIBUTES.SUCCESS, false);
-
-          if (error instanceof McpError) {
-            throw scrubThrownError(error, resultScrubber);
-          }
-          // Thrown protocol errors bypass the result-scrub boundary — scrub the
-          // wrapped message too, since upstream errors can embed API responses.
-          const wrapped = `Error executing ${tool.name}: ${error instanceof Error ? error.message : String(error)}`;
-          throw new McpError(ErrorCode.InternalError, resultScrubber ? resultScrubber.scrub(wrapped) : wrapped);
+          throw ToolRegistry.toCallError(error, call, binding);
         } finally {
           const durationMs = Date.now() - startTime;
           getServerMetrics().recordRequest(tool.name, durationMs, success);
           if (success) {
             logger.debug(SdkBindingMessages.TOOL_COMPLETED, tool.name, durationMs);
           }
-          // Audit trail: every tool invocation as one correlatable request→response record
-          // (actor ↔ session ↔ request ↔ tool ↔ what was requested/affected/returned).
-          logAuditEvent({
-            category: "tool",
-            action: "tool.call",
-            outcome: success ? "success" : "failure",
-            requestId: String(context.requestId),
-            target: tool.name,
-            actor: {
-              ...(context.sessionId && { sessionId: context.sessionId }),
-              ...(context.auth?.authInfo.clientId && { userId: context.auth.authInfo.clientId }),
-              ...(authUsername(context.auth?.extra) && { username: authUsername(context.auth?.extra) }),
-            },
-            detail: buildAuditDetail(durationMs, args, handlerResult, auditDetail, auditToolIo, resultScrubber),
-          });
+          ToolRegistry.auditToolCall(call, success, durationMs, handlerResult, binding);
         }
       },
       { kind: SpanKind.SERVER },
     );
+  }
+
+  /** Logs a failed tool call and returns the error the SDK should answer with. */
+  private static toCallError(error: unknown, { tool, context }: ToolCall, binding: ToolCallBinding): unknown {
+    const { logger, resultScrubber } = binding;
+
+    // Handle cancellation
+    if (context.abortSignal.aborted || (error instanceof Error && error.name === "AbortError")) {
+      logger.info(SdkBindingMessages.TOOL_CANCELLED, tool.name);
+      // @sdk-constraint — SDK ErrorCode has no cancellation code; use framework's REQUEST_CANCELLED (-32002)
+      return new McpError(JsonRpcErrorCode.REQUEST_CANCELLED, SdkBindingMessages.REQUEST_CANCELLED);
+    }
+
+    if (error instanceof AppError && error.statusCode < 500) {
+      logger.warn(SdkBindingMessages.TOOL_ERROR, tool.name, error.message);
+    } else {
+      logger.error(SdkBindingMessages.TOOL_ERROR, tool.name, error);
+    }
+
+    if (error instanceof McpError) {
+      return scrubThrownError(error, resultScrubber);
+    }
+    // Thrown protocol errors bypass the result-scrub boundary — scrub the
+    // wrapped message too, since upstream errors can embed API responses.
+    const wrapped = `Error executing ${tool.name}: ${error instanceof Error ? error.message : String(error)}`;
+    return new McpError(ErrorCode.InternalError, resultScrubber ? resultScrubber.scrub(wrapped) : wrapped);
+  }
+
+  /**
+   * Audit trail: every tool invocation as one correlatable request→response record
+   * (actor ↔ session ↔ request ↔ tool ↔ what was requested/affected/returned).
+   */
+  private static auditToolCall(
+    { tool, args, context, auditDetail }: ToolCall,
+    success: boolean,
+    durationMs: number,
+    result: CallToolResult | undefined,
+    { auditToolIo, resultScrubber }: ToolCallBinding,
+  ): void {
+    const username = authUsername(context.auth?.extra);
+    logAuditEvent({
+      category: "tool",
+      action: "tool.call",
+      outcome: success ? "success" : "failure",
+      requestId: String(context.requestId),
+      target: tool.name,
+      actor: {
+        ...(context.sessionId && { sessionId: context.sessionId }),
+        ...(context.auth?.authInfo.clientId && { userId: context.auth.authInfo.clientId }),
+        ...(username && { username }),
+      },
+      detail: buildAuditDetail(durationMs, args, result, auditDetail, auditToolIo, resultScrubber),
+    });
   }
 }
 
