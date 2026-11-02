@@ -101,7 +101,7 @@ export interface ConfigFileResult {
 // ============================================================================
 
 const transportSection = z
-  .object({
+  .strictObject({
     /** Transport mode: 'stdio', 'http', or 'https' */
     mode: z.enum(["stdio", "http", "https"]),
     /** Port to listen on */
@@ -118,7 +118,7 @@ const transportSection = z
     json_response: z.boolean(),
     /** TLS configuration (required when mode is 'https') */
     tls: z
-      .object({
+      .strictObject({
         /** Path to TLS certificate file (PEM) */
         cert_path: z.string().min(1),
         /** Path to TLS private key file (PEM) */
@@ -132,7 +132,7 @@ const transportSection = z
   .partial();
 
 const securitySection = z
-  .object({
+  .strictObject({
     /** Allowed hosts for DNS rebinding protection */
     allowed_hosts: z.array(z.string().min(1)),
     /** Maximum requests per rate limit window */
@@ -161,7 +161,7 @@ const securitySection = z
   .partial();
 
 const sessionSection = z
-  .object({
+  .strictObject({
     /** Maximum total concurrent sessions across all transports */
     max_sessions: z.number().int().min(1),
     /** Maximum concurrent Streamable HTTP sessions */
@@ -172,7 +172,7 @@ const sessionSection = z
   .partial();
 
 const loggingSection = z
-  .object({
+  .strictObject({
     /** Log level */
     level: z.enum(["trace", "debug", "info", "warn", "error"]),
     /** Log format */
@@ -197,7 +197,7 @@ const loggingSection = z
   .partial();
 
 const telemetrySection = z
-  .object({
+  .strictObject({
     /** Enable OpenTelemetry */
     enabled: z.boolean(),
     /** Service name for OTEL */
@@ -228,7 +228,7 @@ const telemetrySection = z
  * `id`/`secret` aliases (mirroring some IdP configs) and `client_id`/`client_secret`.
  */
 const authProviderSection = z
-  .object({
+  .strictObject({
     /** Whether this provider is active. Defaults to true when omitted. */
     enabled: z.boolean(),
     /** Provider kind. Inferred from the table key when omitted (`google`/`github` presets, else `oidc`). */
@@ -249,7 +249,7 @@ const authProviderSection = z
   .partial();
 
 const authSection = z
-  .object({
+  .strictObject({
     /** Master switch for MCP-server user authentication. */
     enabled: z.boolean(),
     /** Upstream OAuth providers, keyed by routing name (`[auth.providers.<name>]`). */
@@ -290,10 +290,8 @@ export const CONFIG_FILE_SECTIONS = Object.freeze({
  * Config file root schema.
  *
  * Nested, section-based structure that maps to `FrameworkEnvConfig`.
- * `.strict()` is intentionally NOT used: the loader finds unknown sections
- * and keys itself, also those of registered consumer sections, and reports
- * all of them together.
- *
+ * Stripping unknown keys here is what lets registered consumer sections pass; the loader
+ * reports sections nobody knows. The sections themselves are strict at every depth. *
  * Derived from `CONFIG_FILE_SECTIONS` to avoid duplicate
  * section listings (DRY).
  *

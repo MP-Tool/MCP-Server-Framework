@@ -25,7 +25,7 @@
  * @module config/extensions
  */
 
-import type { ZodTypeAny } from "zod";
+import type { ZodObject, ZodRawShape, ZodTypeAny } from "zod";
 import { ConfigurationError } from "../errors/categories/validation.js";
 import { isConfigInitialized } from "./init-state.js";
 import { CONFIG_FILE_SECTIONS } from "./file/schema.js";
@@ -56,6 +56,19 @@ const registeredSections = new Map<string, RegisteredSection>();
 /** Reserved section names derived from the framework config file schema */
 const RESERVED_SECTIONS = new Set(Object.keys(CONFIG_FILE_SECTIONS));
 
+/**
+ * Make a plain object schema strict. Recognized through `_def`, because `instanceof` fails when
+ * the consumer has its own copy of zod.
+ */
+function rejectUnknownKeys(schema: ZodTypeAny): ZodTypeAny {
+  // @type-narrowing — zod exposes `_def` as untyped internals
+  const def = schema._def as { typeName?: string; unknownKeys?: string; catchall?: ZodTypeAny };
+  const plainObject =
+    def.typeName === "ZodObject" && def.unknownKeys === "strip" && def.catchall?._def.typeName === "ZodNever";
+  // @type-narrowing — the check above established that this is a ZodObject
+  return plainObject ? (schema as ZodObject<ZodRawShape>).strict() : schema;
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -67,7 +80,9 @@ const RESERVED_SECTIONS = new Set(Object.keys(CONFIG_FILE_SECTIONS));
  * first call to `getFrameworkConfig()`). Registered sections:
  *
  * 1. Are recognized in config files (no "unknown section" error)
- * 2. Are validated against the provided Zod schema
+ * 2. Are validated against the provided Zod schema. A plain `z.object()` also rejects unknown
+ *    keys at its top level, so typos do not go unnoticed. Everything else is up to the schema:
+ *    nested objects, and schemas using `.passthrough()`, `.catchall()` or `.refine()`
  * 3. Can be retrieved via `getAppConfig(name)`
  *
  * @param name - Section name as it appears in the config file (e.g., 'myapp')
@@ -102,7 +117,7 @@ export function registerConfigSection(name: string, schema: ZodTypeAny): void {
     throw ConfigurationError.invalid(`Config section '${sectionName}' is already registered`);
   }
 
-  registeredSections.set(sectionName, { schema, data: undefined });
+  registeredSections.set(sectionName, { schema: rejectUnknownKeys(schema), data: undefined });
 }
 
 /**

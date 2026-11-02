@@ -144,8 +144,9 @@ here when you upgrade from 1.2.
 
 - Removed the `as Transport` casts; SDK 1.32 fixed the type mismatch that required them.
 - **Unknown config-file sections and keys are errors, not warnings** (MP-Tool/komodo-mcp-server#191): a file
-  with a typo used to apply everything else. It is now discarded or stops the start, see Fixed. Consumer
-  sections with `.passthrough()` or `.catchall()` keep accepting extra keys.
+  with a typo used to apply everything else. It is now discarded or stops the start, see Fixed. This holds at
+  every depth of the framework's sections, and at the top level of a consumer's plain `z.object()` section;
+  below that, and for `.passthrough()`, `.catchall()` or `.refine()`, the consumer's schema decides.
 - **Published types keep their JSDoc**: `removeComments` also stripped the `.d.ts` files, so consumers saw no
   documentation in their editor. The package grows by the comments in the `.js` files as well.
 - `build:prod` starts from an empty `build/`: `tsc` leaves the output of deleted modules behind, so removed files could

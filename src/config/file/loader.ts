@@ -23,7 +23,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { parse as tomlParse } from "smol-toml";
 import { parse as yamlParse } from "yaml";
-import type { ZodError, z } from "zod";
+import type { ZodError } from "zod";
 import { ConfigurationError } from "../../errors/categories/validation.js";
 import { addStartupError, addStartupWarning } from "../startup-warnings.js";
 import { getRegisteredSectionNames, getRegisteredSectionSchema, setRegisteredSectionData } from "../extensions.js";
@@ -148,7 +148,7 @@ function validateConfigFile(filePath: string): ValidatedConfigFile | InvalidConf
 
   const root = parsed.data;
   const setsSecuritySections = SECURITY_SECTIONS.some((section) => Object.hasOwn(root, section));
-  const findings = findUnknownKeys(root);
+  const findings = findUnknownSections(root);
 
   const frameworkResult = configFileSchema.safeParse(parsed.data);
   if (!frameworkResult.success) {
@@ -395,7 +395,7 @@ function parseJsonSafe(content: string): Record<string, unknown> {
 }
 
 // ============================================================================
-// Unknown Key Detection
+// Unknown Section Detection
 // ============================================================================
 
 /**
@@ -403,51 +403,18 @@ function parseJsonSafe(content: string): Record<string, unknown> {
  *
  * This ensures sync with `configFileSchema` — no manual duplication needed.
  */
-const KNOWN_SECTIONS: ReadonlyMap<string, z.ZodTypeAny> = new Map(Object.entries(CONFIG_FILE_SECTIONS));
+const KNOWN_SECTIONS: ReadonlySet<string> = new Set(Object.keys(CONFIG_FILE_SECTIONS));
 
 /**
- * The keys a section schema declares, or `undefined` when it does not limit its keys: not an
- * object schema, or one that takes extra keys (`.passthrough()`, `.catchall()`).
- */
-function declaredKeys(schema: z.ZodTypeAny): ReadonlySet<string> | undefined {
-  if (!("shape" in schema) || typeof schema.shape !== "object" || schema.shape === null) {
-    return undefined;
-  }
-  // @type-narrowing — runtime check validates shape is a non-null object; Zod exposes shape and def as untyped
-  const def = schema._def as { unknownKeys?: string; catchall?: z.ZodTypeAny };
-  const takesExtraKeys =
-    def.unknownKeys === "passthrough" || (def.catchall && def.catchall._def.typeName !== "ZodNever");
-  return takesExtraKeys ? undefined : new Set(Object.keys(schema.shape));
-}
-
-/**
- * Find sections and keys that neither the framework nor a registered consumer section knows.
- * The object schemas would silently strip these, which hides typos and foreign files.
+ * Find sections that neither the framework nor a registered consumer knows. Unknown keys inside
+ * a known section are reported by its own strict schema.
  *
  * @param root - Raw parsed config file data
- * @returns One finding per unknown section or key
+ * @returns One finding per unknown section
  */
-function findUnknownKeys(root: Record<string, unknown>): string[] {
+function findUnknownSections(root: Record<string, unknown>): string[] {
   const consumerSections = getRegisteredSectionNames();
-  const findings: string[] = [];
-
-  for (const [sectionName, section] of Object.entries(root)) {
-    const schema =
-      KNOWN_SECTIONS.get(sectionName) ??
-      (consumerSections.has(sectionName) ? getRegisteredSectionSchema(sectionName) : undefined);
-    if (!schema) {
-      findings.push(`Unknown section '${sectionName}'`);
-      continue;
-    }
-
-    // A section that is no object at all fails its schema, which reports it.
-    const known = declaredKeys(schema);
-    if (!known || !section || typeof section !== "object") continue;
-
-    for (const key of Object.keys(section)) {
-      if (!known.has(key)) findings.push(`Unknown key '${key}' in section '${sectionName}'`);
-    }
-  }
-
-  return findings;
+  return Object.keys(root)
+    .filter((name) => !KNOWN_SECTIONS.has(name) && !consumerSections.has(name))
+    .map((name) => `Unknown section '${name}'`);
 }
