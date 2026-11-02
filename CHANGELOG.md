@@ -162,6 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   supports, when `onBeforeTelemetryInit` runs, and the `enableJsonResponse` default (`false`, not `true`).
 - The release workflow runs typecheck, lint and build before it creates a release: `ci.yml` ran alongside it, so a broken
   commit with a new version was tagged and published anyway.
+- npm publishes the released commit: on `workflow_run` the checkout took the default branch's latest commit, so anything
+  merged during the release would have been published under the new version.
 
 ### Dependencies
 
