@@ -5,7 +5,7 @@ name: Release
 # - Automatically on push/merge to main when package.json version changes
 # - Manually via workflow_dispatch
 # After a successful release, the npm publish workflow is triggered automatically
-# via workflow_run in publish-npm.yml.
+# via workflow_run in publish-npm.yml, and the docs workflow by the `docs` job below.
 
 on:
   push:
@@ -160,6 +160,24 @@ jobs:
           prerelease: ${{ needs.check-version.outputs.is_prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # A release created with GITHUB_TOKEN starts no `release` workflows, so docs.yml would never
+  # run on its own; workflow_dispatch is the exception to that rule. Runs on the default branch
+  # because the github-pages environment only allows deployments from there.
+  docs:
+    name: Trigger API docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [check-version, release]
+    permissions:
+      actions: write  # Required to dispatch docs.yml
+    steps:
+      - name: Dispatch docs workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run docs.yml --repo "$REPO" --ref "$BRANCH"
 
   summary:
     name: Release Summary

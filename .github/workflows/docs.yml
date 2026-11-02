@@ -7,7 +7,8 @@ name: Deploy API Docs
 #   Settings → Pages → Source: "GitHub Actions"
 #
 # Triggers:
-# - Automatically when a GitHub Release is published
+# - Automatically after a release: the Release workflow dispatches this one
+# - When a GitHub Release is published by hand
 # - Manually via workflow_dispatch
 
 on:

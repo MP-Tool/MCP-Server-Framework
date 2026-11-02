@@ -164,6 +164,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commit with a new version was tagged and published anyway.
 - npm publishes the released commit: on `workflow_run` the checkout took the default branch's latest commit, so anything
   merged during the release would have been published under the new version.
+- API docs deploy after a release: a release created with `GITHUB_TOKEN` starts no `release` workflows, so the docs only
+  ever ran by hand. The release workflow now dispatches them.
 
 ### Dependencies
 
