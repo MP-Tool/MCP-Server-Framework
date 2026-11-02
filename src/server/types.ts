@@ -249,7 +249,7 @@ export interface CreateServerOptions {
    * before the framework creates the NodeSDK instance. Common use cases:
    *
    * - Set a custom `DiagLogger` via `diag.setLogger()` for SDK-level
-   *   diagnostics (by default no DiagLogger is set — output is suppressed)
+   *   diagnostics (by default they go to the framework logger at `OTEL_LOG_LEVEL`)
    * - Register custom instrumentation
    * - Configure global propagators or samplers
    *

@@ -237,12 +237,12 @@ export async function initializeTelemetry(onBeforeInit?: () => void): Promise<bo
   // Load @opentelemetry/api early (lightweight, ~200 KB — not a heavy SDK package).
   // Set frameworkDiagLogger as the default DiagLogger to route OTEL SDK
   // diagnostics through the framework's logging pipeline (→ stderr).
-  // Consume OTEL_LOG_LEVEL from process.env to prevent the NodeSDK
-  // constructor from calling diag.setLogger(new DiagConsoleLogger(), level)
+  // The level comes from the merged config. OTEL_LOG_LEVEL is removed from process.env to
+  // prevent the NodeSDK constructor from calling diag.setLogger(new DiagConsoleLogger(), level)
   // which would write to stdout and corrupt MCP stdio transport.
   const api = await import("@opentelemetry/api");
 
-  const diagLevelStr = process.env["OTEL_LOG_LEVEL"]?.toUpperCase();
+  const diagLevelStr = config.logLevel?.toUpperCase();
   delete process.env["OTEL_LOG_LEVEL"];
 
   const diagLevelMap: Record<string, number> = {

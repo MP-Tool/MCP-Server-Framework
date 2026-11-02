@@ -464,8 +464,9 @@ export const frameworkEnvSchema = z
      *
      * Standard OTEL env var. Activates diag logging on the OTEL SDK.
      * Values: 'none', 'error', 'warn', 'info', 'debug', 'verbose', 'all'.
+     * Default 'warn', so failing exports reach the log.
      */
-    OTEL_LOG_LEVEL: z.string().min(1).max(7).optional().default("none"),
+    OTEL_LOG_LEVEL: z.string().min(1).max(7).default("warn"),
 
     /**
      * Periodic metric export interval.

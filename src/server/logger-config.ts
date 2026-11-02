@@ -32,6 +32,7 @@ export function configureLoggerFromEnv(options: { name?: string; version?: strin
     LOG_TIMESTAMP: config.LOG_TIMESTAMP,
     LOG_COMPONENT: config.LOG_COMPONENT,
     MCP_TRANSPORT: config.MCP_TRANSPORT,
+    NODE_ENV: config.NODE_ENV,
     ...(options.name !== undefined && { SERVER_NAME: options.name }),
     ...(options.version !== undefined && { SERVER_VERSION: options.version }),
   });

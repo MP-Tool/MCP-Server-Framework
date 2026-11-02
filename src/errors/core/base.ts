@@ -23,6 +23,27 @@ import { ErrorCodeToHttpStatus } from "./http.js";
 import type { BaseErrorOptions, SerializedError } from "./types.js";
 
 // ============================================================================
+// Runtime Environment
+// ============================================================================
+
+/** `NODE_ENV` from the merged config. Unset until the config is loaded, errors can occur earlier. */
+let configuredNodeEnv: string | undefined;
+
+/**
+ * Tells errors the `NODE_ENV` of the merged config, which can come from `.env`. Injected
+ * because this module cannot import the config: the config imports the errors.
+ *
+ * @internal
+ */
+export function setErrorNodeEnv(nodeEnv: string): void {
+  configuredNodeEnv = nodeEnv;
+}
+
+function isProduction(): boolean {
+  return (configuredNodeEnv ?? process.env.NODE_ENV) === "production";
+}
+
+// ============================================================================
 // Base Error Class
 // ============================================================================
 
@@ -112,7 +133,7 @@ export class AppError extends Error {
     };
 
     // Include stack in development only
-    if (process.env.NODE_ENV !== "production" && this.stack) {
+    if (!isProduction() && this.stack) {
       serialized.stack = this.stack;
     }
 
@@ -127,7 +148,7 @@ export class AppError extends Error {
 
     // Include context in development only — prevents leaking internal details
     // (operation names, field names, paths) in production HTTP responses.
-    if (process.env.NODE_ENV !== "production" && this.context && Object.keys(this.context).length > 0) {
+    if (!isProduction() && this.context && Object.keys(this.context).length > 0) {
       serialized.context = this.context;
     }
 

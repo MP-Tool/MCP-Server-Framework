@@ -100,6 +100,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Log rotation no longer drops lines**: rotation called `destroy()` on the old stream and discarded what it
   still had buffered. In a test with 1000 fast lines only 20 reached the disk. The old stream now flushes
   first, and `close()` waits for it.
+- **`NODE_ENV` and `OTEL_LOG_LEVEL` work from every config source**: both were read from `process.env`, which
+  `.env` and the config file never reach. With `NODE_ENV=production` in `.env`, errors kept logging stacks and
+  context, and `[telemetry].log_level` had no effect. The documented default `none` was also wrong, the code
+  always used `warn`: `warn` is now the documented default, so failing exports still reach the log.
 
 ### Changed
 

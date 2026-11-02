@@ -29,6 +29,7 @@ import { parseFrameworkEnv, validateConfigConstraints, type FrameworkEnvConfig }
 import { loadConfigFile, mapConfigToEnvKeys, type AuthSectionData } from "./file/index.js";
 import { addStartupWarning } from "./startup-warnings.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
+import { setErrorNodeEnv } from "../errors/core/base.js";
 // ============================================================================
 // Deferred Logger (injected after logger initialization)
 // ============================================================================
@@ -100,6 +101,13 @@ export function isConfigInitialized(): boolean {
   return cachedConfig !== undefined;
 }
 
+/** Stores the config and hands on what modules below the config need from it. */
+function cacheConfig(config: FrameworkEnvConfig): Readonly<FrameworkEnvConfig> {
+  cachedConfig = Object.freeze(config);
+  setErrorNodeEnv(config.NODE_ENV);
+  return cachedConfig;
+}
+
 /**
  * Returns the parsed framework environment configuration.
  *
@@ -117,7 +125,7 @@ export function isConfigInitialized(): boolean {
  */
 export function getFrameworkConfig(): Readonly<FrameworkEnvConfig> {
   if (!cachedConfig) {
-    cachedConfig = Object.freeze(initializeConfig());
+    return cacheConfig(initializeConfig());
   }
   return cachedConfig;
 }
@@ -181,7 +189,7 @@ export function applyConfigOverrides(overrides: Partial<FrameworkEnvConfig>): vo
   // Re-validate cross-field constraints after merge
   validateMergedConfig(merged);
 
-  cachedConfig = Object.freeze(merged);
+  cacheConfig(merged);
 
   // Invalidate derived caches since underlying config changed
   for (const reset of satelliteResets) {
