@@ -55,6 +55,7 @@ export const TransportErrorMessage = {
 
   // Transport state
   TRANSPORT_CLOSED: "Transport is closed",
+  INVALID_JSON_RPC_MESSAGE: "Request body is not a valid JSON-RPC message",
 
   // Protocol
   UNSUPPORTED_PROTOCOL_VERSION: "Unsupported MCP-Protocol-Version",

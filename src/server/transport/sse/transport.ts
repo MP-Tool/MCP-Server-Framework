@@ -18,10 +18,17 @@
  */
 
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
 import type { Response, Request } from "express";
 import { randomUUID } from "node:crypto";
-import { HttpStatus, TransportError, TransportErrorMessage } from "../../../errors/index.js";
+import {
+  createJsonRpcError,
+  HttpStatus,
+  JsonRpcErrorCode,
+  TransportError,
+  TransportErrorMessage,
+} from "../../../errors/index.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 import { TRANSPORT_LOG_COMPONENTS, SSE_EVENTS, SESSION_ID_DISPLAY_LENGTH } from "../constants.js";
 import { startSseKeepalive } from "../sse-keepalive.js";
@@ -40,6 +47,7 @@ const logger = baseLogger.child({ component: TRANSPORT_LOG_COMPONENTS.SSE });
 const LogMessages = {
   MESSAGE_REJECTED_CLOSED: "Message rejected: transport closed (session=%s)",
   MESSAGE_PROCESSING_ERROR: "Error processing message (session=%s): %s",
+  MESSAGE_INVALID: "Message rejected: not a JSON-RPC message (session=%s)",
 } as const;
 
 /**
@@ -159,14 +167,26 @@ export class SseTransport implements Transport {
    *
    * @param req - Express Request object
    * @param res - Express Response object for the POST response
-   * @param body - Parsed JSON-RPC message body
+   * @param rawBody - Request body as parsed by the JSON middleware; validated here
    */
-  async handlePostMessage(req: Request, res: Response, body: JSONRPCMessage): Promise<void> {
+  async handlePostMessage(req: Request, res: Response, rawBody: unknown): Promise<void> {
     if (this._closed) {
       logger.warn(LogMessages.MESSAGE_REJECTED_CLOSED, this._sessionId.substring(0, SESSION_ID_DISPLAY_LENGTH));
       res.status(HttpStatus.BAD_REQUEST).json({ error: TransportErrorMessage.TRANSPORT_CLOSED });
       return;
     }
+
+    // The protocol layer trusts its transport to hand it a JSON-RPC message, and logs anything
+    // else at error level, body included. The rejection does not echo the body either.
+    const parsed = JSONRPCMessageSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      logger.warn(LogMessages.MESSAGE_INVALID, this._sessionId.substring(0, SESSION_ID_DISPLAY_LENGTH));
+      res
+        .status(HttpStatus.BAD_REQUEST)
+        .json(createJsonRpcError(JsonRpcErrorCode.INVALID_REQUEST, TransportErrorMessage.INVALID_JSON_RPC_MESSAGE));
+      return;
+    }
+    const body: JSONRPCMessage = parsed.data;
 
     // Notify the MCP server of the incoming message. Each SSE tool call arrives as its own
     // POST — the auth middleware verifies it and sets req.auth same as it does for /mcp, but

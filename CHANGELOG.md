@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`/ready` no longer exposes session counts**: the unauthenticated endpoint returned current counts
   and limits per transport, which tell an attacker how much load exhausts the server. The numbers now
   only appear in the log when capacity is reached; the status code and `status` text are unchanged.
+- **Legacy SSE validates incoming messages**: any JSON body reached the protocol layer unchecked and
+  got `202`/`204`, and the SDK then logged it in full at error level, so a client could write arbitrary
+  content to the error log; a missing body caused a `500`. Invalid messages now get `400`.
 
 ### Changed
 
