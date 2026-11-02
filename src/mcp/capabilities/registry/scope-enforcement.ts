@@ -10,6 +10,7 @@
  */
 
 import { AuthorizationError } from "../../../errors/index.js";
+import { logAuditEvent } from "../../../logger/audit/index.js";
 import type { Logger } from "../../../logger/index.js";
 
 // ============================================================================
@@ -23,6 +24,17 @@ import type { Logger } from "../../../logger/index.js";
  */
 export interface SdkAuthInfo {
   readonly scopes?: readonly string[];
+  readonly clientId?: string;
+  readonly extra?: Record<string, unknown>;
+}
+
+/**
+ * The request a scope check runs for, from the SDK's `extra`. For the audit record.
+ * @internal
+ */
+export interface ScopeCheckRequest {
+  readonly sessionId?: string | undefined;
+  readonly requestId?: string | number | undefined;
 }
 
 // ============================================================================
@@ -34,6 +46,14 @@ const AUTH_SCOPE_DENIED = "%s [%s] requires scopes [%s] but token has [%s]";
 // ============================================================================
 // Enforcement
 // ============================================================================
+
+/**
+ * Reads the conventional `username` label from an auth `extra` payload, if present.
+ * @internal
+ */
+export function authUsername(extra: Record<string, unknown> | undefined): string | undefined {
+  return typeof extra?.["username"] === "string" ? extra["username"] : undefined;
+}
 
 /**
  * The auth info a scope check runs against: the request's own, or — for an anonymous
@@ -52,7 +72,8 @@ export function scopeSubject(
 
 /**
  * Checks that all `requiredScopes` are present in the token's scopes.
- * Throws {@link AuthorizationError} and logs a warning if scopes are insufficient.
+ * Throws {@link AuthorizationError}, logs a warning and writes a `permission.denied` audit
+ * record if scopes are insufficient: a refused call reaches no handler and no `tool.call` record.
  *
  * No-op when:
  * - `requiredScopes` is undefined or empty
@@ -63,6 +84,7 @@ export function scopeSubject(
  * @param capabilityType - Label for log messages (e.g. 'Tool', 'Resource', 'Prompt')
  * @param capabilityName - Name/URI of the capability for log context
  * @param logger - Logger instance for warning output
+ * @param request - The request being checked, for the audit record
  *
  * @throws {@link AuthorizationError} when required scopes are not satisfied
  * @internal
@@ -73,6 +95,7 @@ export function enforceScopeOrThrow(
   capabilityType: string,
   capabilityName: string,
   logger: Logger,
+  request: ScopeCheckRequest,
 ): void {
   if (!requiredScopes || requiredScopes.length === 0 || !authInfo) {
     return;
@@ -83,6 +106,20 @@ export function enforceScopeOrThrow(
 
   if (missing.length > 0) {
     logger.warn(AUTH_SCOPE_DENIED, capabilityType, capabilityName, requiredScopes.join(","), tokenScopes.join(","));
+    const username = authUsername(authInfo.extra);
+    logAuditEvent({
+      category: "permission",
+      action: "permission.denied",
+      outcome: "denied",
+      target: capabilityName,
+      ...(request.requestId !== undefined && { requestId: String(request.requestId) }),
+      actor: {
+        ...(request.sessionId && { sessionId: request.sessionId }),
+        ...(authInfo.clientId && { userId: authInfo.clientId }),
+        ...(username && { username }),
+      },
+      detail: { capability: capabilityType, requiredScopes, missingScopes: missing },
+    });
     throw AuthorizationError.insufficientScope(requiredScopes, tokenScopes);
   }
 }

@@ -32,6 +32,7 @@ import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js"
 import { BaseRegistry, withProtocolErrors } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
+import type { SdkAuthInfo } from "./scope-enforcement.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 
 const logger = baseLogger.child({ component: "resource-registry" });
@@ -338,10 +339,7 @@ export class ResourceRegistry implements ResourceProvider {
         resource.uri,
         { description: resource.description, mimeType: resource.mimeType },
         withProtocolErrors(
-          async (
-            _uri: URL,
-            extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string },
-          ) => {
+          async (_uri: URL, extra: { authInfo?: SdkAuthInfo; sessionId?: string; requestId?: string | number }) => {
             // Scope enforcement (RBAC)
             enforceScopeOrThrow(
               resource.requiredScopes,
@@ -349,6 +347,7 @@ export class ResourceRegistry implements ResourceProvider {
               "Resource",
               resource.uri,
               logger,
+              extra,
             );
 
             return withSpan(
@@ -420,7 +419,7 @@ export class ResourceRegistry implements ResourceProvider {
           async (
             _uri: URL,
             variables: Record<string, string | string[]>,
-            extra: { authInfo?: { scopes?: readonly string[]; token?: string }; sessionId?: string },
+            extra: { authInfo?: SdkAuthInfo; sessionId?: string; requestId?: string | number },
           ) => {
             // Scope enforcement (RBAC)
             enforceScopeOrThrow(
@@ -429,6 +428,7 @@ export class ResourceRegistry implements ResourceProvider {
               "Resource",
               template.uriTemplate,
               logger,
+              extra,
             );
 
             return withSpan(

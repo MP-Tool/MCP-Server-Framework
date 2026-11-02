@@ -31,14 +31,9 @@ import { withSpan, MCP_ATTRIBUTES, SpanKind } from "../../../telemetry/index.js"
 import { getServerMetrics } from "../../../telemetry/metrics.js";
 import { BaseRegistry } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
-import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
+import { authUsername, enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 import { runWithToolContext } from "../../current-tool-context.js";
 import { logAuditEvent } from "../../../logger/audit/index.js";
-
-/** Reads the conventional `username` label from an auth `extra` payload, if present. */
-function authUsername(extra: Record<string, unknown> | undefined): string | undefined {
-  return typeof extra?.["username"] === "string" ? extra["username"] : undefined;
-}
 
 // ============================================================================
 // Constants
@@ -299,7 +294,14 @@ export class ToolRegistry extends BaseRegistry<ToolDefinition> implements ToolPr
           // Tool-level scope enforcement (RBAC). Anonymous requests fall back to the
           // restricted anonymous scope set (if configured) so they are gated too;
           // `context.auth` below stays derived from the real `authInfo` only.
-          enforceScopeOrThrow(tool.requiredScopes, scopeSubject(authInfo, anonymousScopes), "Tool", tool.name, logger);
+          enforceScopeOrThrow(
+            tool.requiredScopes,
+            scopeSubject(authInfo, anonymousScopes),
+            "Tool",
+            tool.name,
+            logger,
+            extra,
+          );
 
           // Build auth context for tool handler.
           // authInfo.extra is populated by the onAuthenticated hook in auth-middleware.ts.

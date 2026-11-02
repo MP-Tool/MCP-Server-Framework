@@ -25,6 +25,7 @@ import type { ScrubbingBindOptions } from "./base-registry.js";
 import { scrubThrownError } from "./result-scrub.js";
 import { AppError } from "../../../errors/index.js";
 import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
+import type { ScopeCheckRequest, SdkAuthInfo } from "./scope-enforcement.js";
 
 // ============================================================================
 // Constants
@@ -49,8 +50,8 @@ const SdkBindingMessages = {
 export type PromptBindOptions = ScrubbingBindOptions;
 
 /** The part of the SDK's request extra a prompt binding reads. */
-interface PromptExtra {
-  readonly authInfo?: { readonly scopes?: readonly string[] };
+interface PromptExtra extends ScopeCheckRequest {
+  readonly authInfo?: SdkAuthInfo;
 }
 
 // ============================================================================
@@ -195,6 +196,7 @@ export class PromptRegistry extends BaseRegistry<PromptDefinition> implements Pr
             "Prompt",
             prompt.name,
             logger,
+            extra,
           );
 
           return withSpan(

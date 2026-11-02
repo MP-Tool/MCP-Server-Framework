@@ -205,6 +205,7 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
               "TaskTool",
               taskTool.name,
               logger,
+              extra,
             );
             const context: TaskCreateContext = TaskToolRegistry.buildTaskContext(sdk, extra, stateless);
             return await TaskToolRegistry.runTaskOp(

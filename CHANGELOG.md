@@ -68,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writes are synchronous, rotated files are named by timestamp and never deleted, a write failure sends
   records to stderr and retries, and only the detail is lost. **Operators must remove old audit files
   themselves**; `LOG_MAX_FILES` no longer applies to the audit log.
+- **Denied calls leave an audit record**: a scope denial reached neither the handler nor the `tool.call` record,
+  so the audit trail showed no attempt at all. Tools, task tools, resources and prompts now write
+  `permission.denied` with actor, target and missing scopes.
 
 ### Fixed
 
