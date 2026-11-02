@@ -46,6 +46,7 @@ import {
 // Auth
 import type { AuthOptions, OAuthServerProvider } from "../auth/types.js";
 import { isFullOAuthProvider } from "../auth/types.js";
+import { parseClientRedirectUri } from "../auth/oauth/http.js";
 
 // Routes
 import { createHealthRouter, createMetricsRouter, createOAuthRouter } from "../routes/index.js";
@@ -347,27 +348,16 @@ function setupSecurityMiddleware(app: express.Application, options?: ExpressAppO
 /**
  * Validates a redirect_uri for OAuth auto-registration.
  *
- * Rejects dangerous URI schemes (javascript:, data:, file:, etc.) and
- * ensures only http: (localhost only) or https: are accepted.
- * This prevents open-redirect attacks (CWE-601) and XSS via crafted URIs.
+ * Delegates to {@link parseClientRedirectUri} so auto-registration and the OAuth
+ * callback share one definition of an acceptable redirect target: HTTPS (any host),
+ * HTTP on loopback only, or a private-use URI scheme (RFC 8252 §7.1). Dangerous
+ * schemes (`javascript:`, `data:`, `file:`, …) are rejected. This prevents
+ * open-redirect attacks (CWE-601) and XSS via crafted URIs.
  *
  * @returns `true` if the URI is safe, `false` otherwise
  */
 function isValidRedirectUri(uri: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(uri);
-  } catch {
-    return false;
-  }
-
-  // Only allow http: for localhost (development) and https: for everything else
-  if (parsed.protocol === "http:") {
-    const isLocalhost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
-    return isLocalhost;
-  }
-
-  return parsed.protocol === "https:";
+  return parseClientRedirectUri(uri) !== null;
 }
 
 /**
