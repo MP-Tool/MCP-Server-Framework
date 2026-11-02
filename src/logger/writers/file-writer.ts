@@ -39,8 +39,8 @@ export interface FileWriterConfig {
    */
   maxFiles?: number | undefined;
   /**
-   * Log file retention in days. Files (including rotated) older than this
-   * are deleted automatically. Set to 0 to disable (default: 0).
+   * Log file retention in days. Rotated files older than this are deleted
+   * automatically; the file being written stays. Set to 0 to disable (default: 0).
    */
   retentionDays?: number | undefined;
 }
@@ -366,8 +366,8 @@ export class FileWriter extends BaseLogWriter {
   /**
    * Delete log files older than `retentionDays`.
    *
-   * Scans the log directory for files matching the configured extension
-   * and removes any whose `mtime` exceeds the retention threshold.
+   * Removes this writer's rotated files whose `mtime` exceeds the retention
+   * threshold. Files still open for writing stay.
    * Called once at startup and then once per day.
    */
   private cleanExpiredFiles(): void {
@@ -379,12 +379,12 @@ export class FileWriter extends BaseLogWriter {
     // (`audit.log`), other writers, and third-party files can live in the same directory,
     // so a blanket `*.<ext>` sweep by mtime would silently unlink a quiet-but-live
     // audit.log (its open append fd then writes to a deleted inode). Scope the sweep to
-    // each known component's base file + its rotated variants.
+    // each known component's rotated variants. A component's base file is never swept: its
+    // stream holds it open, and a quiet one would go on writing to the deleted inode.
     const ownFiles = new Set<string>();
     for (const component of this.streams.keys()) {
       // streams are already keyed by the sanitized name, but re-apply for safety.
       const safeName = this.safeComponent(component);
-      ownFiles.add(`${safeName}${this.extension}`);
       for (let n = 1; n <= this.maxFiles; n++) {
         ownFiles.add(`${safeName}.${n}${this.extension}`);
       }

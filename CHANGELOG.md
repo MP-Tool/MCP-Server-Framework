@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A task tool that fails to start tells the client why**: the SDK rejected the failure as `-32602 Invalid
   task creation result`, for scope denials as well. The client now gets a task in state `failed`, whose
   `tasks/result` carries the scrubbed reason. It stays in the store for 5 minutes.
+- **The retention sweep no longer deletes open log files**: a component that stayed quiet longer than
+  `LOG_RETENTION_DAYS` lost its current file, and its stream kept writing to the deleted inode until the
+  next rotation or restart. The sweep now only removes rotated files.
 
 ### Changed
 
