@@ -25,32 +25,40 @@
   "exports": {
     ".": {
       "types": "./build/index.d.ts",
-      "import": "./build/index.js"
+      "import": "./build/index.js",
+      "default": "./build/index.js"
     },
     "./config": {
       "types": "./build/config/index.d.ts",
-      "import": "./build/config/index.js"
+      "import": "./build/config/index.js",
+      "default": "./build/config/index.js"
     },
     "./errors": {
       "types": "./build/errors/index.d.ts",
-      "import": "./build/errors/index.js"
+      "import": "./build/errors/index.js",
+      "default": "./build/errors/index.js"
     },
     "./http": {
       "types": "./build/server/http/index.d.ts",
-      "import": "./build/server/http/index.js"
+      "import": "./build/server/http/index.js",
+      "default": "./build/server/http/index.js"
     },
     "./logger": {
       "types": "./build/logger/index.d.ts",
-      "import": "./build/logger/index.js"
+      "import": "./build/logger/index.js",
+      "default": "./build/logger/index.js"
     },
     "./session": {
       "types": "./build/server/session/index.d.ts",
-      "import": "./build/server/session/index.js"
+      "import": "./build/server/session/index.js",
+      "default": "./build/server/session/index.js"
     },
     "./telemetry": {
       "types": "./build/telemetry/index.d.ts",
-      "import": "./build/telemetry/index.js"
-    }
+      "import": "./build/telemetry/index.js",
+      "default": "./build/telemetry/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "sideEffects": [
     "./build/mcp/capabilities/registry/tool-registry.js",

@@ -125,6 +125,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   most loses its oldest events, and a client that resumes from one of those gets no replay.
 - **`headersTimeout` takes effect**: at 40 s it sat above the 30 s `requestTimeout`, which also runs while headers
   arrive, so it never fired. A test with a slow client confirms this. It is now 20 s, so slow headers are cut sooner.
+- **`require()` and `mcp-server-framework/package.json` work**: the `exports` map only had an `import` condition, so
+  both failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Each entry now has a `default` condition, and the package is
+  still ESM: `require()` needs a Node version with `require(esm)`, which all supported versions have.
 
 ### Changed
 
