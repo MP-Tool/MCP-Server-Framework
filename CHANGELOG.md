@@ -167,6 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenTelemetry on one release line: `sdk-node` was on 0.221 and the exporters and instrumentations on 0.219, which
   installed a second copy of `core`, `resources` and the exporters. All are now pinned to 0.221.0 / 2.10.0: `sdk-node`
   pins its own dependencies exactly, so any range lets a second copy back in, and its types then no longer fit.
+- `@types/express` is a regular dependency: the public `.d.ts` files import `express`, so a consumer without it and
+  with `skipLibCheck: false` got `TS7016` errors.
 
 ## [1.2.0] - feat: fail-closed secret scrubbing, unified auth factories, anonymous scope gating, server branding
 
