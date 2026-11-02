@@ -245,8 +245,8 @@ function initializeConfig(): FrameworkEnvConfig {
 }
 
 /**
- * Parse the merged sources. A discovered file passed its own checks here, but can still be
- * invalid together with the environment, and must not stop the start then either.
+ * Parse the merged sources. A file passed its own checks here, but can still be invalid
+ * together with the environment. A discardable one must not stop the start then either.
  */
 function parseSources(
   dotenvValues: Record<string, string>,
@@ -255,7 +255,7 @@ function parseSources(
   try {
     return { config: parseMergedSources(dotenvValues, fileResult), file: fileResult };
   } catch (error) {
-    if (!fileResult?.discovered) throw error;
+    if (!fileResult?.discardable) throw error;
 
     // Without the file first: an invalid environment has to fail as itself, not as the file.
     const config = parseMergedSources(dotenvValues, undefined);

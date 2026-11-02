@@ -81,8 +81,11 @@ export interface ConfigFileResult {
   readonly overrides: Partial<FrameworkEnvConfig>;
   /** Absolute path to the config file that was loaded */
   readonly sourcePath: string;
-  /** Found by auto-discovery, rather than set via `MCP_CONFIG_FILE_PATH` */
-  readonly discovered: boolean;
+  /**
+   * The server may start without this file if it turns out invalid: it was found by auto-discovery
+   * rather than set via `MCP_CONFIG_FILE_PATH`, and sets neither `[auth]` nor `[security]`.
+   */
+  readonly discardable: boolean;
   /** Format of the loaded file */
   readonly format: ConfigFileFormat;
   /**

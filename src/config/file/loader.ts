@@ -10,7 +10,8 @@
  * A file that fails any of this is a config error and is never used in part: a file found
  * by auto-discovery may not be ours (MP-Tool/komodo-mcp-server#191), so it is discarded with a
  * logged error and the server starts without it. A file named by `MCP_CONFIG_FILE_PATH` is
- * what the operator asked for, so it aborts the start.
+ * what the operator asked for, so it aborts the start. So does a discovered file that sets
+ * `[auth]` or `[security]`: starting without those could leave the server unprotected.
  *
  * Returns `undefined` when no config file is found — this is the
  * normal case for servers that rely solely on environment variables.
@@ -52,7 +53,7 @@ import type { ConfigFileData, ConfigFileFormat, ConfigFileResult } from "./schem
  *
  * @returns Config file result with overrides and metadata, or `undefined` if no file was found
  *   or a discovered file was discarded
- * @throws {ConfigurationError} If a file set via `MCP_CONFIG_FILE_PATH` is invalid
+ * @throws {ConfigurationError} If an invalid file cannot be discarded (see the module comment)
  */
 export function loadConfigFile(): ConfigFileResult | undefined {
   const found = discoverConfigFile();
@@ -61,9 +62,10 @@ export function loadConfigFile(): ConfigFileResult | undefined {
   }
 
   const validation = validateConfigFile(found.path);
+  const discardable = found.discovered && !validation.setsSecuritySections;
   if ("findings" in validation) {
-    if (!found.discovered) {
-      throw ConfigurationError.invalidFile(found.path, validation.findings);
+    if (!discardable) {
+      throw ConfigurationError.invalidFile(found.path, validation.findings, { discovered: found.discovered });
     }
     reportIgnoredConfigFile(found.path, validation.findings);
     return undefined;
@@ -76,7 +78,7 @@ export function loadConfigFile(): ConfigFileResult | undefined {
 
   // Retain the nested [auth] section — its `providers` table cannot be flattened
   // into env-style overrides, so resolveAuthConfig() reads it from here.
-  return { overrides, sourcePath: found.path, discovered: found.discovered, format, rawAuth: data.auth };
+  return { overrides, sourcePath: found.path, discardable, format, rawAuth: data.auth };
 }
 
 /**
@@ -101,8 +103,24 @@ export function reportIgnoredConfigFile(filePath: string, findings: readonly str
 // Validation
 // ============================================================================
 
+/** Sections whose loss could leave a server unprotected. */
+const SECURITY_SECTIONS = ["auth", "security"];
+
+/**
+ * The same question for a file that does not parse, so it can only be read as text: broad on
+ * purpose, as a false match stops a start and a miss could leave a server open.
+ */
+const SECURITY_SECTIONS_IN_TEXT = /^\s*(?:\[\s*)?(?:auth|security)\b|"(?:auth|security)"\s*:/m;
+
+/** A config file that failed its checks. */
+interface InvalidConfigFile {
+  readonly findings: readonly string[];
+  readonly setsSecuritySections: boolean;
+}
+
 /** A config file that passed all checks. Nothing from it has been applied yet. */
 interface ValidatedConfigFile {
+  readonly setsSecuritySections: boolean;
   readonly format: ConfigFileFormat;
   readonly data: ConfigFileData;
   readonly overrides: ConfigFileResult["overrides"];
@@ -113,15 +131,24 @@ interface ValidatedConfigFile {
  * Run all checks on a config file and collect every problem, so that one pass over the
  * file fixes it.
  */
-function validateConfigFile(filePath: string): ValidatedConfigFile | { readonly findings: readonly string[] } {
-  let parsed: ReturnType<typeof parseConfigFile>;
+function validateConfigFile(filePath: string): ValidatedConfigFile | InvalidConfigFile {
+  let content: string;
   try {
-    parsed = parseConfigFile(filePath);
+    content = readFileSafe(filePath);
   } catch (error) {
-    return { findings: [describeParseFailure(error)] };
+    return { findings: [describeParseFailure(error)], setsSecuritySections: false };
   }
 
-  const findings = findUnknownKeys(parsed.data);
+  let parsed: ReturnType<typeof parseConfigFile>;
+  try {
+    parsed = parseConfigFile(filePath, content);
+  } catch (error) {
+    return { findings: [describeParseFailure(error)], setsSecuritySections: SECURITY_SECTIONS_IN_TEXT.test(content) };
+  }
+
+  const root = parsed.data;
+  const setsSecuritySections = SECURITY_SECTIONS.some((section) => Object.hasOwn(root, section));
+  const findings = findUnknownKeys(root);
 
   const frameworkResult = configFileSchema.safeParse(parsed.data);
   if (!frameworkResult.success) {
@@ -143,18 +170,19 @@ function validateConfigFile(filePath: string): ValidatedConfigFile | { readonly 
   }
 
   if (!frameworkResult.success || findings.length > 0) {
-    return { findings };
+    return { findings, setsSecuritySections };
   }
 
   try {
     return {
+      setsSecuritySections,
       format: parsed.format,
       data: frameworkResult.data,
       overrides: mapConfigToOverrides(frameworkResult.data),
       consumerSections,
     };
   } catch (error) {
-    return { findings: [error instanceof Error ? error.message : String(error)] };
+    return { findings: [error instanceof Error ? error.message : String(error)], setsSecuritySections };
   }
 }
 
@@ -278,10 +306,14 @@ function autoDiscover(): string | undefined {
  * Returns a plain object — validation/mapping happens in the schema layer.
  *
  * @param filePath - Absolute path to the config file
+ * @param content - The file's text
  * @returns Parsed raw object and detected format
- * @throws {ConfigurationError} On read errors, unsupported format, or parse failures
+ * @throws {ConfigurationError} On unsupported format or parse failures
  */
-function parseConfigFile(filePath: string): {
+function parseConfigFile(
+  filePath: string,
+  content: string,
+): {
   data: Record<string, unknown>;
   format: ConfigFileFormat;
 } {
@@ -292,7 +324,6 @@ function parseConfigFile(filePath: string): {
     throw ConfigurationError.unsupportedFormat(ext);
   }
 
-  const content = readFileSafe(filePath);
   const data = parseContent(content, format, filePath);
 
   return { data, format };

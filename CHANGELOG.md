@@ -150,6 +150,9 @@ here when you upgrade from 1.2.
   documentation in their editor. The package grows by the comments in the `.js` files as well.
 - `build:prod` starts from an empty `build/`: `tsc` leaves the output of deleted modules behind, so removed files could
   ship with a local `npm pack`. A `prepack` script would not help here, as `.npmrc` sets `ignore-scripts`.
+- **A discovered config file with `[auth]` or `[security]` stops the start when invalid**
+  (MP-Tool/komodo-mcp-server#191): discarding it could leave a server open because of a typo, as it then starts
+  without its auth settings. Other invalid discovered files are still discarded with a logged error.
 
 ### Internal
 

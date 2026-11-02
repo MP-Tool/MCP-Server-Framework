@@ -335,15 +335,24 @@ export class ConfigurationError extends AppError {
   }
 
   /**
-   * Create a ConfigurationError for a file set via `MCP_CONFIG_FILE_PATH` that cannot be used.
+   * Create a ConfigurationError for a config file that cannot be used and must not be skipped:
+   * one set via `MCP_CONFIG_FILE_PATH`, or a discovered one that sets `[auth]` or `[security]`.
    *
    * @param findings - Everything wrong with the file, one entry per problem
    */
-  static invalidFile(filePath: string, findings: readonly string[]): ConfigurationError {
+  static invalidFile(
+    filePath: string,
+    findings: readonly string[],
+    { discovered }: { readonly discovered: boolean },
+  ): ConfigurationError {
     const list = findings.map((finding) => `  - ${finding}`).join("\n");
-    return new ConfigurationError(`Invalid config file '${filePath}' (set via MCP_CONFIG_FILE_PATH):\n${list}`, {
+    const source = discovered ? "found in the working directory" : "set via MCP_CONFIG_FILE_PATH";
+    return new ConfigurationError(`Invalid config file '${filePath}' (${source}):\n${list}`, {
       configKey: "MCP_CONFIG_FILE_PATH",
-      recoveryHint: "Fix the listed problems, or unset MCP_CONFIG_FILE_PATH to start without this file.",
+      recoveryHint: discovered
+        ? "Fix the listed problems. The file sets [auth] or [security], so the server does not start without it. " +
+          "If it is not meant for this server, move it or point MCP_CONFIG_FILE_PATH at the right file."
+        : "Fix the listed problems, or unset MCP_CONFIG_FILE_PATH to start without this file.",
     });
   }
 
