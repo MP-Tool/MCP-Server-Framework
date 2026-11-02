@@ -248,25 +248,6 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
       status: reason,
       version: config.VERSION,
       uptime: process.uptime(),
-      sessions: {
-        total: {
-          current: totalSessionCount,
-          max: maxSessions,
-          atLimit: totalAtLimit,
-        },
-        streamableHttp: {
-          current: streamableHttpSessionCount,
-          max: maxStreamableHttpSessions,
-          atLimit: streamableHttpAtLimit,
-        },
-        ...(sseEnabled && {
-          sse: {
-            current: sseSessionCount,
-            max: maxSseSessions,
-            atLimit: sseAtLimit,
-          },
-        }),
-      },
     };
 
     // Include service info only when a readiness check is configured

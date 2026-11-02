@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `true/false/1/0/yes/no/on/off`; any other value is a startup error.
 - **An empty environment value means unset**: it no longer overrides the config file or fails a
   setting such as `LOG_DIR`.
+- **`/ready` no longer exposes session counts**: the unauthenticated endpoint returned current counts
+  and limits per transport, which tell an attacker how much load exhausts the server. The numbers now
+  only appear in the log when capacity is reached; the status code and `status` text are unchanged.
 
 ### Changed
 
