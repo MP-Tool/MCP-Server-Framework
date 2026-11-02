@@ -8,7 +8,7 @@
  * @module errors/core/http
  */
 
-import { ErrorCodes, type ErrorCodeType } from "./index.js";
+import { ErrorCodes, type ErrorCodeType } from "./error-codes.js";
 
 // ============================================================================
 // HTTP Status Codes

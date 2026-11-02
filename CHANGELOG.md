@@ -138,6 +138,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Consumers with a text-only branch no longer compile: that branch never worked. New types:
   `StructuredToolResult`, `ToolErrorResult`, `ToolResultFor`.
 
+### Internal
+
+- Broke the runtime import cycle in `errors/core`: `http.ts` imported the error codes through the barrel, which
+  loads `base.ts`, which imports `http.ts`.
+
 ### Dependencies
 
 - Security updates: `proxy-addr` 2.0.8 (critical), `body-parser` 2.4.0, `qs` 6.17.1, `fast-uri`
