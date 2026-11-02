@@ -156,7 +156,12 @@ export class McpServerBuilder implements ServerBuilder {
    */
   private createServerInstance(options: ValidatedServerOptions, primitives: CollectedPrimitives): ServerInstance {
     const transport = options.transport ?? ({ mode: "stdio" } as const);
-    const stateless = isHttpTransport(transport) ? transport.stateless : undefined;
+    // Same precedence as the handler selection in the server instance: the programmatic option,
+    // then `MCP_STATELESS` / `[transport].stateless`. The two must agree, or a stateless handler
+    // serves sessions built as stateful.
+    const stateless = isHttpTransport(transport)
+      ? (transport.stateless ?? getFrameworkConfig().MCP_STATELESS)
+      : undefined;
 
     // Central secret-redaction boundary — one scrubber per server build,
     // shared by every session's tool/task-tool binding. Default ON.

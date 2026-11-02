@@ -72,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrong). The SDK then threw on every `initialize`, while `/ready` still reported ready; between task
   tools, or a tool and a task tool, the earlier definition was silently replaced. `build()` now
   throws and names every duplicate.
+- **Sessions follow `MCP_STATELESS` from the environment and config file**: the builder read only the
+  programmatic option, so these settings gave a stateless handler serving stateful sessions:
+  `ToolContext.stateless` was false, and `resources/subscribe` succeeded but never delivered an update.
 
 ### Changed
 
