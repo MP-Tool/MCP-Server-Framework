@@ -235,12 +235,11 @@ export class McpServerInstance implements ServerInstance {
       // create it now (path visible in startup logs) instead of only after the first
       // audited event, which reads as "audit logging isn't working" during a smoke test.
       // The audit sink reads no config itself (logger block stays config-free) — resolve
-      // its destination and the shared LOG_* rotation limits here instead.
+      // its destination and size limit here instead.
       const auditConfig = getFrameworkConfig();
       initializeAuditLog({
         filePath: resolveAuditFilePath(auditConfig.LOG_DIR, auditConfig.LOG_AUDIT_FILE),
         maxSizeBytes: auditConfig.LOG_MAX_FILE_SIZE,
-        maxFiles: auditConfig.LOG_MAX_FILES,
       });
 
       // Inject logger into config module (breaks config→logger dependency)

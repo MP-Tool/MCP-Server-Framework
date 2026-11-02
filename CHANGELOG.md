@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Legacy SSE validates incoming messages**: any JSON body reached the protocol layer unchecked and
   got `202`/`204`, and the SDK then logged it in full at error level, so a client could write arbitrary
   content to the error log; a missing body caused a `500`. Invalid messages now get `400`.
+- **The audit log no longer loses records**: rotation deleted the oldest file after `LOG_MAX_FILES`, so
+  a loop of rejected requests could push real records out; rotation and crashes dropped buffered lines;
+  one write error silenced auditing until restart; an unserializable detail lost the whole record. Now
+  writes are synchronous, rotated files are named by timestamp and never deleted, a write failure sends
+  records to stderr and retries, and only the detail is lost. **Operators must remove old audit files
+  themselves**; `LOG_MAX_FILES` no longer applies to the audit log.
 
 ### Changed
 
