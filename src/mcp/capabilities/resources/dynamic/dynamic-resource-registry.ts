@@ -11,8 +11,8 @@
  *   match the registering session. Cross-session reads throw a 403.
  * - **TTL eviction**: Each entry has an absolute `expiresAt` timestamp; expired
  *   entries are pruned by a periodic cleanup interval and on every `read()`.
- * - **FIFO cap**: When `maxEntries` is reached, the oldest entry is evicted to
- *   make room for the new one.
+ * - **Fair cap**: When `maxEntries` is reached, expired entries go first, then the oldest
+ *   entry of the session holding the most, so one session cannot push out another's.
  * - **Cryptographic IDs**: 16 random bytes (128 bits) → 32-hex-char id, generated
  *   via `crypto.randomBytes`. Collision probability is negligible at the configured
  *   capacity.
@@ -70,7 +70,7 @@ export interface DynamicResourceEntry {
 export interface DynamicResourceRegistryOptions {
   /** URI scheme for generated URIs (default: `ephemeral`) */
   readonly uriScheme?: string;
-  /** Maximum entries before FIFO eviction (default: 1000) */
+  /** Maximum entries; past it, the session holding the most loses its oldest (default: 1000) */
   readonly maxEntries?: number;
   /** Default TTL in ms when `register()` omits `ttlMs` (default: 5 min) */
   readonly defaultTtlMs?: number;
@@ -159,7 +159,7 @@ export class DynamicResourceRegistry {
     return this.entries.size;
   }
 
-  /** Maximum entries before FIFO eviction */
+  /** Maximum entries before eviction */
   get maxEntries(): number {
     return this.maxEntriesValue;
   }
@@ -181,14 +181,7 @@ export class DynamicResourceRegistry {
       throw FrameworkErrorFactory.validation.fieldRequired("mimeType");
     }
 
-    // FIFO eviction at cap (Map iteration order = insertion order)
-    if (this.entries.size >= this.maxEntriesValue) {
-      const oldestKey = this.entries.keys().next().value;
-      if (oldestKey !== undefined) {
-        this.entries.delete(oldestKey);
-        logger.debug("Evicted oldest dynamic resource (FIFO cap reached): %s", oldestKey);
-      }
-    }
+    this.makeRoom();
 
     const id = randomBytes(ID_BYTES).toString("hex");
     const uri = `${this.uriSchemeValue}://${options.category}/${id}`;
@@ -295,6 +288,35 @@ export class DynamicResourceRegistry {
   /** Stop the cleanup timer. Safe to call multiple times. */
   stop(): void {
     this.stopCleanup();
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Eviction
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * At the cap, frees expired entries, else the oldest entry of the session holding the most.
+   * The store is shared, so a global FIFO would let one session push out the others' resources.
+   */
+  private makeRoom(): void {
+    if (this.entries.size < this.maxEntriesValue || this.cleanupExpired() > 0) return;
+
+    const counts = new Map<string, number>();
+    let largest: string | undefined;
+    for (const { sessionId } of this.entries.values()) {
+      const count = (counts.get(sessionId) ?? 0) + 1;
+      counts.set(sessionId, count);
+      if (largest === undefined || count > (counts.get(largest) ?? 0)) largest = sessionId;
+    }
+
+    // Map iteration order = insertion order, so the first match is that session's oldest.
+    for (const [uri, entry] of this.entries) {
+      if (entry.sessionId === largest) {
+        this.entries.delete(uri);
+        logger.debug("Evicted oldest dynamic resource of the largest session (cap reached): %s", uri);
+        return;
+      }
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────────

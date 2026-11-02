@@ -117,6 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ZodError` as `cause`, which Node prints in full on an uncaught error. The message already lists every issue.
 - **Shutdown writes `session.close`**: `closeAll()` skipped the record, so every session open at shutdown had a
   `session.open` and no end in the audit trail. It now records them with reason `shutdown`.
+- **One session can no longer push out another's dynamic resources**: the store is shared and evicted the oldest
+  entry of any session at its cap, so a session producing many results lost others' still-valid URIs. The cap
+  now frees expired entries first, then takes the oldest entry of the session holding the most.
 
 ### Changed
 
