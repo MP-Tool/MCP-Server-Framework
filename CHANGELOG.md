@@ -164,6 +164,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In-range refresh: `express` 5.3.0, `helmet` 8.3.0, `express-rate-limit` 8.7.2, `jose` 6.2.14,
   `yaml` 2.9.1, `eslint` 10.14.0 and plugins, `typedoc` 0.28.20.
 - Still open: `zod` < 4.6.6 (needs the zod 4 migration), dev-only `minimatch` < 11.0.1.
+- OpenTelemetry on one release line: `sdk-node` was on 0.221 and the exporters and instrumentations on 0.219, which
+  installed a second copy of `core`, `resources` and the exporters. All are now pinned to 0.221.0 / 2.10.0: `sdk-node`
+  pins its own dependencies exactly, so any range lets a second copy back in, and its types then no longer fit.
 
 ## [1.2.0] - feat: fail-closed secret scrubbing, unified auth factories, anonymous scope gating, server branding
 

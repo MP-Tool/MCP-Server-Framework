@@ -100,15 +100,15 @@
     "zod": "^3.25.0"
   },
   "optionalDependencies": {
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.219.0",
-    "@opentelemetry/exporter-prometheus": "^0.219.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
-    "@opentelemetry/instrumentation-express": "^0.61.0",
-    "@opentelemetry/instrumentation-http": "^0.219.0",
-    "@opentelemetry/resources": "^2.0.0",
-    "@opentelemetry/sdk-metrics": "^2.6.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.221.0",
+    "@opentelemetry/exporter-prometheus": "0.221.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
+    "@opentelemetry/instrumentation-express": "0.69.0",
+    "@opentelemetry/instrumentation-http": "0.221.0",
+    "@opentelemetry/resources": "2.10.0",
+    "@opentelemetry/sdk-metrics": "2.10.0",
     "@opentelemetry/sdk-node": "0.221.0",
-    "@opentelemetry/sdk-trace-base": "^2.6.0",
+    "@opentelemetry/sdk-trace-base": "2.10.0",
     "@opentelemetry/semantic-conventions": "^1.40.0"
   },
   "devDependencies": {
