@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-32603`. A scope denial is now `-32600` and a missing resource `-32002`, as MCP specifies.
 - **Prompts without arguments work**: the SDK passes only `extra` when a prompt has no args schema, the
   binding always expected `args` first, and so every `prompts/get` on such a prompt failed with `-32603`.
+- **A task tool that fails to start tells the client why**: the SDK rejected the failure as `-32602 Invalid
+  task creation result`, for scope denials as well. The client now gets a task in state `failed`, whose
+  `tasks/result` carries the scrubbed reason. It stays in the store for 5 minutes.
 
 ### Changed
 

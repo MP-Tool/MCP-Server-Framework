@@ -15,6 +15,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AnySchema } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import type { ToolTaskHandler as SdkToolTaskHandler } from "@modelcontextprotocol/sdk/experimental/tasks/interfaces.js";
+import type { RequestTaskStore } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { CreateTaskResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { z } from "zod";
 
@@ -46,6 +48,9 @@ const SdkBindingMessages = {
   TASK_COMPLETED: "Task tool [%s:%s] completed in %dms",
   TASK_ERROR: "Error in task tool [%s:%s]:",
 } as const;
+
+/** Fixed, so a caller who is refused cannot choose how long the failed task stays in the store. */
+const FAILED_TASK_TTL_MS = 5 * 60 * 1000;
 
 // ============================================================================
 // SDK Binding Options
@@ -191,26 +196,30 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
       // We must cast to AnySchema to select overload 2
       const sdkHandler: SdkToolTaskHandler<AnySchema> = {
         createTask: async (args: unknown, extra) => {
-          // Scope enforcement (RBAC) before any background work exists. `createTask` is the
-          // only entry point the SDK uses to start a task, so this gates every caller.
-          enforceScopeOrThrow(
-            taskTool.requiredScopes,
-            scopeSubject(extra.authInfo, anonymousScopes),
-            "TaskTool",
-            taskTool.name,
-            logger,
-          );
-          const context: TaskCreateContext = TaskToolRegistry.buildTaskContext(sdk, extra, stateless);
-          return TaskToolRegistry.runTaskOp(
-            taskTool,
-            "createTask",
-            "task_create",
-            context,
-            { logger, resultScrubber },
-            () =>
-              // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
-              taskTool.taskHandler.createTask(args as Parameters<typeof taskTool.taskHandler.createTask>[0], context),
-          );
+          try {
+            // Scope enforcement (RBAC) before any background work exists. `createTask` is the
+            // only entry point the SDK uses to start a task, so this gates every caller.
+            enforceScopeOrThrow(
+              taskTool.requiredScopes,
+              scopeSubject(extra.authInfo, anonymousScopes),
+              "TaskTool",
+              taskTool.name,
+              logger,
+            );
+            const context: TaskCreateContext = TaskToolRegistry.buildTaskContext(sdk, extra, stateless);
+            return await TaskToolRegistry.runTaskOp(
+              taskTool,
+              "createTask",
+              "task_create",
+              context,
+              { logger, resultScrubber },
+              () =>
+                // @sdk-constraint — SDK registerToolTask erases input schema type; args validated at runtime
+                taskTool.taskHandler.createTask(args as Parameters<typeof taskTool.taskHandler.createTask>[0], context),
+            );
+          } catch (error) {
+            return TaskToolRegistry.createFailedTask(extra.taskStore, error);
+          }
         },
 
         getTask: (args: unknown, extra) => {
@@ -265,6 +274,22 @@ export class TaskToolRegistry extends BaseRegistry<TaskToolDefinition> implement
   // ──────────────────────────────────────────────────────────────────────────
   // Private SDK Binding Helpers
   // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Records a failed task start as a task in state `failed`.
+   *
+   * @sdk-constraint — the SDK turns whatever `createTask` throws into an `isError` result, then
+   * rejects that for a task-augmented call with `-32602 Invalid task creation result`. A task is
+   * the only answer that carries the reason to the client; it reads the result via `tasks/result`.
+   */
+  private static async createFailedTask(taskStore: RequestTaskStore, error: unknown): Promise<CreateTaskResult> {
+    const task = await taskStore.createTask({ ttl: FAILED_TASK_TTL_MS });
+    await taskStore.storeTaskResult(task.taskId, "failed", {
+      isError: true,
+      content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+    });
+    return { task: { ...task, status: "failed" } };
+  }
 
   /**
    * Builds the full task context (base + task store + client-capability
