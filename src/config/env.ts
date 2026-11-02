@@ -636,7 +636,6 @@ export function parseFrameworkEnv(envSource: Record<string, string | undefined> 
   if (result.success) return result.data;
   // A raw ZodError here escapes as an unhandled rejection during bootstrap and prints a
   // stack trace into node_modules/zod — useless to the operator who mistyped a variable.
-  // Every other validation boundary converts first; this one is the counterpart to the
-  // config-file path's `fileValidationFailed`.
+  // Every other validation boundary converts first.
   throw FrameworkErrorFactory.configuration.envValidationFailed(result.error);
 }

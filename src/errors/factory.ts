@@ -174,10 +174,6 @@ export const FrameworkErrorFactory = {
     /** Config file TOML/YAML parse failure */
     fileParseFailed: (filePath: string, cause?: Error) => ConfigurationError.fileParseFailed(filePath, cause),
 
-    /** Config file schema validation failed (typos, wrong types) */
-    fileValidationFailed: (filePath: string, zodError: ZodError) =>
-      ConfigurationError.fileValidationFailed(filePath, zodError),
-
     /** Environment schema validation failed (typos, wrong types, cross-field constraints) */
     envValidationFailed: (zodError: ZodError) => ConfigurationError.envValidationFailed(zodError),
 

@@ -12,6 +12,7 @@
  */
 
 import { z } from "zod";
+import type { ZodError } from "zod";
 import { splitCommaSeparated, parseByteSize, parseDuration } from "./string-helpers.js";
 import { lookupEnvBoolean } from "./env-helpers.js";
 
@@ -213,4 +214,21 @@ export function durationSchema(defaultValue: string) {
       }
     })
     .default(defaultValue);
+}
+
+/**
+ * One readable line per Zod issue: `path: message`, or just the message for the schema's root.
+ *
+ * @param error - The validation error
+ * @param options.section - Path of the validated value inside a larger document
+ * @param options.separator - Joins the path segments (default `.`)
+ */
+export function formatZodIssues(
+  error: ZodError,
+  { section, separator = "." }: { readonly section?: string; readonly separator?: string } = {},
+): string[] {
+  return error.issues.map((issue) => {
+    const path = [...(section === undefined ? [] : [section]), ...issue.path].join(separator);
+    return path ? `${path}: ${issue.message}` : issue.message;
+  });
 }

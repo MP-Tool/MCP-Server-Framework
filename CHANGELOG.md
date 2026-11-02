@@ -178,6 +178,9 @@ here when you upgrade from 1.2.
   ever ran by hand. The release workflow now dispatches them.
 - Workflow checkouts no longer keep the token in the git config, since none of them pushes, and release notes no longer
   link to an `examples/` directory that does not exist.
+- Zod issues are formatted in one place, `formatZodIssues()`, instead of five. A config error carries its problems as
+  `ConfigurationError.findings`, so nothing parses an error message back into lines. `fileValidationFailed` and
+  `ValidationError.formatIssues` are gone; nothing called them.
 
 ### Dependencies
 

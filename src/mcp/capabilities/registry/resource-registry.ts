@@ -33,6 +33,7 @@ import { BaseRegistry, withProtocolErrors } from "./base-registry.js";
 import type { ScrubbingBindOptions } from "./base-registry.js";
 import { enforceScopeOrThrow, scopeSubject } from "./scope-enforcement.js";
 import type { ScopeCheckRequest, SdkAuthInfo } from "./scope-enforcement.js";
+import { formatZodIssues } from "../../../utils/zod-helpers.js";
 import { logger as baseLogger } from "../../../logger/index.js";
 import type { Logger } from "../../../logger/index.js";
 
@@ -480,9 +481,7 @@ export class ResourceRegistry implements ResourceProvider {
       await template.input.parseAsync(params);
     } catch (validationError) {
       const msg =
-        validationError instanceof ZodError
-          ? validationError.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
-          : String(validationError);
+        validationError instanceof ZodError ? formatZodIssues(validationError).join(", ") : String(validationError);
       logger.warn(SdkBindingMessages.TEMPLATE_VALIDATION_FAILED, template.uriTemplate, msg);
       throw scrubThrownError(
         new McpError(ErrorCode.InvalidParams, `Invalid resource template parameters: ${msg}`),

@@ -260,7 +260,10 @@ function parseSources(
     // Without the file first: an invalid environment has to fail as itself, not as the file.
     const config = parseMergedSources(dotenvValues, undefined);
     clearRegisteredSectionData();
-    reportIgnoredConfigFile(fileResult.sourcePath, describeMergeFailure(error));
+    reportIgnoredConfigFile(
+      fileResult.sourcePath,
+      error instanceof ConfigurationError ? error.findings : [error instanceof Error ? error.message : String(error)],
+    );
     return { config, file: undefined };
   }
 }
@@ -284,12 +287,6 @@ function parseMergedSources(
   }
 
   return config;
-}
-
-/** The problems from a merge error: the lines below its heading, or its one line. */
-function describeMergeFailure(error: unknown): string[] {
-  const lines = (error instanceof Error ? error.message : String(error)).split("\n");
-  return (lines.length > 1 ? lines.slice(1) : lines).map((line) => line.replace(/^\s*-\s*/, ""));
 }
 
 // ============================================================================

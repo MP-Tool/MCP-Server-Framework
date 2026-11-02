@@ -23,8 +23,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { parse as tomlParse } from "smol-toml";
 import { parse as yamlParse } from "yaml";
-import type { ZodError } from "zod";
 import { ConfigurationError } from "../../errors/categories/validation.js";
+import { formatZodIssues } from "../../utils/zod-helpers.js";
 import { addStartupError, addStartupWarning } from "../startup-warnings.js";
 import { getRegisteredSectionNames, getRegisteredSectionSchema, setRegisteredSectionData } from "../extensions.js";
 import {
@@ -152,7 +152,7 @@ function validateConfigFile(filePath: string): ValidatedConfigFile | InvalidConf
 
   const frameworkResult = configFileSchema.safeParse(parsed.data);
   if (!frameworkResult.success) {
-    findings.push(...describeIssues(frameworkResult.error));
+    findings.push(...formatZodIssues(frameworkResult.error));
   }
 
   const consumerSections = new Map<string, unknown>();
@@ -165,7 +165,7 @@ function validateConfigFile(filePath: string): ValidatedConfigFile | InvalidConf
     if (sectionResult.success) {
       consumerSections.set(name, sectionResult.data);
     } else {
-      findings.push(...describeIssues(sectionResult.error, name));
+      findings.push(...formatZodIssues(sectionResult.error, { section: name }));
     }
   }
 
@@ -195,14 +195,6 @@ function describeParseFailure(error: unknown): string {
   const cause = error instanceof ConfigurationError && error.cause instanceof Error ? error.cause : error;
   const message = cause instanceof Error ? cause.message : String(cause);
   return message.includes("is not valid JSON") ? "Not valid JSON" : (message.split("\n", 1)[0] ?? message);
-}
-
-/** One line per Zod issue. */
-function describeIssues(error: ZodError, section?: string): string[] {
-  return error.issues.map((issue) => {
-    const path = [...(section === undefined ? [] : [section]), ...issue.path].join(".");
-    return `${path}: ${issue.message}`;
-  });
 }
 
 // ============================================================================

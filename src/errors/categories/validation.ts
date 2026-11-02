@@ -12,6 +12,7 @@ import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { ZodError } from "zod";
 import { AppError, ErrorCodes, VALIDATION_LIMITS, REDACTED_PLACEHOLDER } from "../core/index.js";
 import { isSensitiveKey } from "../../utils/sensitive-keys.js";
+import { formatZodIssues } from "../../utils/zod-helpers.js";
 import type { ValidationErrorOptions, ValidationIssue, BaseErrorOptions } from "../core/index.js";
 
 // ============================================================================
@@ -191,21 +192,6 @@ export class ValidationError extends AppError {
       recoveryHint: `Ensure '${field}' matches the expected format.`,
     });
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Formatting
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Format issues as a human-readable list.
-   */
-  formatIssues(): string {
-    if (!this.issues || this.issues.length === 0) {
-      return this.message;
-    }
-
-    return this.issues.map((issue) => `  - ${issue.path}: ${issue.message}`).join("\n");
-  }
 }
 
 // ============================================================================
@@ -228,10 +214,14 @@ export class ConfigurationError extends AppError {
   /** The configuration key that is invalid */
   readonly configKey?: string | undefined;
 
+  /** Everything wrong with the configuration, one entry per problem */
+  readonly findings: readonly string[];
+
   constructor(
     message: string,
     options: Omit<BaseErrorOptions, "code"> & {
       configKey?: string | undefined;
+      findings?: readonly string[] | undefined;
     } = {},
   ) {
     super(message, {
@@ -247,6 +237,12 @@ export class ConfigurationError extends AppError {
     });
 
     this.configKey = options.configKey;
+    this.findings = options.findings ?? [message];
+  }
+
+  /** A message with its findings listed below it. */
+  private static listFindings(heading: string, findings: readonly string[]): string {
+    return `${heading}:\n${findings.map((finding) => `  - ${finding}`).join("\n")}`;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -319,22 +315,6 @@ export class ConfigurationError extends AppError {
   }
 
   /**
-   * Create a ConfigurationError for schema validation failures in a config file.
-   *
-   * Formats Zod issues into a human-readable message with the file path
-   * so users can locate and fix typos or invalid values.
-   */
-  static fileValidationFailed(filePath: string, zodError: ZodError): ConfigurationError {
-    const issues = zodError.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
-    const detail = `Validation failed for '${filePath}':\n${issues}`;
-
-    return new ConfigurationError(detail, {
-      configKey: "MCP_CONFIG_FILE_PATH",
-      recoveryHint: "Fix the listed issues in your config file.",
-    });
-  }
-
-  /**
    * Create a ConfigurationError for a config file that cannot be used and must not be skipped:
    * one set via `MCP_CONFIG_FILE_PATH`, or a discovered one that sets `[auth]` or `[security]`.
    *
@@ -345,22 +325,24 @@ export class ConfigurationError extends AppError {
     findings: readonly string[],
     { discovered }: { readonly discovered: boolean },
   ): ConfigurationError {
-    const list = findings.map((finding) => `  - ${finding}`).join("\n");
     const source = discovered ? "found in the working directory" : "set via MCP_CONFIG_FILE_PATH";
-    return new ConfigurationError(`Invalid config file '${filePath}' (${source}):\n${list}`, {
-      configKey: "MCP_CONFIG_FILE_PATH",
-      recoveryHint: discovered
-        ? "Fix the listed problems. The file sets [auth] or [security], so the server does not start without it. " +
-          "If it is not meant for this server, move it or point MCP_CONFIG_FILE_PATH at the right file."
-        : "Fix the listed problems, or unset MCP_CONFIG_FILE_PATH to start without this file.",
-    });
+    return new ConfigurationError(
+      ConfigurationError.listFindings(`Invalid config file '${filePath}' (${source})`, findings),
+      {
+        configKey: "MCP_CONFIG_FILE_PATH",
+        findings,
+        recoveryHint: discovered
+          ? "Fix the listed problems. The file sets [auth] or [security], so the server does not start without it. " +
+            "If it is not meant for this server, move it or point MCP_CONFIG_FILE_PATH at the right file."
+          : "Fix the listed problems, or unset MCP_CONFIG_FILE_PATH to start without this file.",
+      },
+    );
   }
 
   /**
    * Create a ConfigurationError for schema validation failures in the ENVIRONMENT.
    *
-   * The counterpart to {@link fileValidationFailed} for `process.env`. Without it a
-   * single mistyped variable — a non-numeric port, an unknown log level — surfaces as
+   * Without it a single mistyped variable — a non-numeric port, an unknown log level — surfaces as
    * a raw `ZodError` stack trace pointing into `node_modules/zod`, which tells an
    * operator nothing about which variable is wrong.
    *
@@ -368,13 +350,12 @@ export class ConfigurationError extends AppError {
    * rather than shown as a single key.
    */
   static envValidationFailed(zodError: ZodError): ConfigurationError {
-    const issues = zodError.issues
-      .map((i) => `  - ${i.path.length > 0 ? i.path.join(" / ") : "(config)"}: ${i.message}`)
-      .join("\n");
+    const findings = formatZodIssues(zodError, { separator: " / " });
     const keys = [...new Set(zodError.issues.flatMap((i) => i.path.map(String)))];
 
-    return new ConfigurationError(`Invalid environment configuration:\n${issues}`, {
+    return new ConfigurationError(ConfigurationError.listFindings("Invalid environment configuration", findings), {
       ...(keys.length === 1 && keys[0] !== undefined && { configKey: keys[0] }),
+      findings,
       recoveryHint: "Correct the listed environment variables (or the matching keys in your config file).",
     });
   }
