@@ -13,15 +13,7 @@ export {
   DynamicResourceRegistry,
   getDynamicResourceRegistry,
   configureDynamicResourceRegistry,
-  resetDynamicResourceRegistry,
   defineDynamicResourceTemplate,
 } from "./dynamic/index.js";
 
-export type {
-  DynamicResourceEntry,
-  DynamicResourceRegistryOptions,
-  RegisterDynamicResourceOptions,
-  RegisterDynamicResourceResult,
-  ReadDynamicResourceResult,
-  DefineDynamicResourceTemplateOptions,
-} from "./dynamic/index.js";
+export type { DynamicResourceEntry } from "./dynamic/index.js";

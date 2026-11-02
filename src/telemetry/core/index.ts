@@ -11,20 +11,12 @@
 // ============================================================================
 
 export type {
-  // Configuration
   TelemetryConfig,
-  // Tracing
   SpanOptions,
   SpanCallback,
   AsyncSpanCallback,
-  // Metrics
   ServerMetrics,
   ServerStats,
-  // Re-exports from OpenTelemetry
-  Span,
-  Attributes,
-  Context,
-  SpanKind,
 } from "./types.js";
 
 // ============================================================================
@@ -32,21 +24,14 @@ export type {
 // ============================================================================
 
 export {
-  // Configuration
   TELEMETRY_DEFAULTS,
-  TELEMETRY_ENV_VARS,
-  // Semantic Attributes
   MCP_ATTRIBUTES,
   METRIC_ATTRIBUTES,
-  // Metric Names
   METRIC_NAMES,
   METRIC_DESCRIPTIONS,
   METRIC_UNITS,
-  // Log Components
   TELEMETRY_LOG_COMPONENTS,
-  // Log Messages
   SdkLogMessages,
-  // Transport Types
   TRANSPORT_TYPES,
 } from "./constants.js";
 

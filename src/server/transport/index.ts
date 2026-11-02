@@ -14,34 +14,9 @@
  */
 
 // ============================================================================
-// Types (public contract)
-// ============================================================================
-
-export type {
-  SessionFactory,
-  TransportHandle,
-  TransportInfo,
-  TransportType,
-  TransportState,
-  HeartbeatCapableTransport,
-  HeartbeatState,
-  TransportContext,
-} from "./types.js";
-
-export { createTransportContext, isHeartbeatCapable } from "./types.js";
-
-// ============================================================================
-// Transport Functions
-// ============================================================================
-
-export { startStdioTransport } from "./stdio-transport.js";
-
-// ============================================================================
 // Streamable HTTP Transport
 // ============================================================================
 
-export { StreamableHttpTransport } from "./streamable-http/index.js";
-export type { StreamableHttpTransportOptions } from "./streamable-http/index.js";
 export { createInMemoryEventStore } from "./streamable-http/index.js";
 export type { InMemoryEventStoreOptions, InMemoryEventStoreResult } from "./streamable-http/index.js";
 

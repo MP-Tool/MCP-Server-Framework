@@ -18,29 +18,29 @@ export { type RegistryItem } from "./base-registry.js";
 // Tool Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { ToolRegistry, globalToolRegistry, type ToolBindOptions } from "./tool-registry.js";
+export { ToolRegistry, globalToolRegistry } from "./tool-registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool-Result Secret Scrubbing (central redaction boundary)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { createResultScrubber, scrubCallToolResult, type ScrubToolResultsConfig } from "./result-scrub.js";
+export { createResultScrubber, type ScrubToolResultsConfig } from "./result-scrub.js";
 export { resolveScrubConfig } from "./resolve-scrub-config.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resource Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { ResourceRegistry, globalResourceRegistry, type ResourceBindOptions } from "./resource-registry.js";
+export { ResourceRegistry, globalResourceRegistry } from "./resource-registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { PromptRegistry, globalPromptRegistry, type PromptBindOptions } from "./prompt-registry.js";
+export { PromptRegistry, globalPromptRegistry } from "./prompt-registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Task Tool Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { TaskToolRegistry, globalTaskToolRegistry, type TaskToolBindOptions } from "./task-tool-registry.js";
+export { TaskToolRegistry, globalTaskToolRegistry } from "./task-tool-registry.js";

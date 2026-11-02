@@ -18,4 +18,3 @@
 // ============================================================================
 
 export { buildCapabilities } from "./capabilities.js";
-export { type ServerCapabilities, DEFAULT_CAPABILITIES } from "./server-capabilities.js";

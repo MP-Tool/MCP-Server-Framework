@@ -147,6 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FormatterError`, unused barrels in `logger/writers`, `logger/formatters` and `transport/sse`, the XFF warning in
   the rate limiter (the proxy guard answers first), the `default` branch and `activeSessionCount` of the Streamable
   HTTP transport (the router answers other methods), and a header write in `validateProtocolVersion` the SDK never read.
+- Internal barrels no longer re-export what nobody imports through them (139 names). The names of all public subpaths
+  are unchanged, compared from the built declarations.
 
 ### Dependencies
 

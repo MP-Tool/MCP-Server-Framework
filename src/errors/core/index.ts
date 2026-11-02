@@ -21,7 +21,7 @@ export { ErrorCodes, type ErrorCodeType } from "./error-codes.js";
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP Constants & Mappings
 // ─────────────────────────────────────────────────────────────────────────
-export { HttpStatus, ErrorCodeToHttpStatus, type HttpStatusType } from "./http.js";
+export { HttpStatus, ErrorCodeToHttpStatus } from "./http.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // JSON-RPC Constants
