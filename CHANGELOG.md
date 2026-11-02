@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `://`, so about 500 kB of `://a:` blocked the event loop for over 30 seconds wherever the text was
   scrubbed, logs included. A linear scan replaces it.
 
+- **Environment booleans are parsed strictly**: anything but `true` read as `false`, so an empty
+  `MCP_AUTH_ENABLED` (compose `${VAR}` with the variable unset) beat `[auth].enabled = true` and
+  switched authentication off, and `MCP_SCRUB_ENABLED=1` switched scrubbing off. Accepted are now
+  `true/false/1/0/yes/no/on/off`; any other value is a startup error.
+- **An empty environment value means unset**: it no longer overrides the config file or fails a
+  setting such as `LOG_DIR`.
+
 ### Changed
 
 - Removed the `as Transport` casts; SDK 1.32 fixed the type mismatch that required them.

@@ -13,18 +13,34 @@
 
 import { z } from "zod";
 import { splitCommaSeparated, parseByteSize, parseDuration } from "./string-helpers.js";
-import { parseEnvBoolean } from "./env-helpers.js";
+import { lookupEnvBoolean } from "./env-helpers.js";
 
 // ============================================================================
 // Boolean Coercion
 // ============================================================================
 
+/** A native boolean or a strictly parsed spelling; an empty string reads as `undefined`. */
+function strictEnvBoolean() {
+  return z.boolean().or(
+    z.string().transform((val, ctx): boolean | undefined => {
+      if (val.trim() === "") return undefined;
+      const parsed = lookupEnvBoolean(val);
+      if (parsed === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expected one of true, false, 1, 0, yes, no, on, off" });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
+  );
+}
+
 /**
  * Zod schema for boolean environment variables.
  *
- * Accepts both native booleans (from config files) and string values
- * from process.env. Only `"true"` (case-insensitive) maps to `true`,
- * everything else maps to `false`.
+ * Accepts both native booleans (from config files) and string values from process.env:
+ * `true/false/1/0/yes/no/on/off`, case-insensitive. An empty value means unset, so the default
+ * applies; anything else fails validation, because reading a typo as `false` could silently
+ * switch off a security setting.
  *
  * @param defaultValue - Default value when the env var is not set
  * @returns Zod schema that outputs a `boolean`
@@ -37,10 +53,9 @@ import { parseEnvBoolean } from "./env-helpers.js";
  * ```
  */
 export function booleanFromEnv(defaultValue: boolean) {
-  return z
-    .boolean()
-    .or(z.string().transform((val) => parseEnvBoolean(val)))
-    .default(defaultValue);
+  return strictEnvBoolean()
+    .default(defaultValue)
+    .transform((val) => val ?? defaultValue);
 }
 
 /**
@@ -59,10 +74,7 @@ export function booleanFromEnv(defaultValue: boolean) {
  * ```
  */
 export function optionalBooleanFromEnv() {
-  return z
-    .boolean()
-    .or(z.string().transform((val) => parseEnvBoolean(val)))
-    .optional();
+  return strictEnvBoolean().optional();
 }
 
 // ============================================================================

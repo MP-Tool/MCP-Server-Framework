@@ -196,6 +196,11 @@ export function applyConfigOverrides(overrides: Partial<FrameworkEnvConfig>): vo
 // Initialization
 // ============================================================================
 
+/** Copy of an env record without its blank values. */
+function omitEmptyValues(source: Record<string, string | undefined>): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(source).filter(([, value]) => value?.trim() !== ""));
+}
+
 /**
  * Initialize the framework config from all sources.
  *
@@ -222,7 +227,9 @@ function initializeConfig(): FrameworkEnvConfig {
   // Step 3: Build merged env source in 12-Factor priority order:
   //   .env (lowest) → config file → process.env (highest)
   const fileEnvKeys = fileResult ? mapConfigToEnvKeys(fileResult.overrides) : {};
-  const envSource = { ...dotenvValues, ...fileEnvKeys, ...process.env };
+  // An empty value means unset (compose writes `${VAR}` as "" when VAR is unset), so it must not
+  // shadow the file or fail a `.min(1)` setting.
+  const envSource = { ...omitEmptyValues(dotenvValues), ...fileEnvKeys, ...omitEmptyValues(process.env) };
 
   // Step 4: Parse merged source through Zod schema (single pass)
   const config = parseFrameworkEnv(envSource);
