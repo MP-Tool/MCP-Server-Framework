@@ -142,6 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StructuredToolResult`, `ToolErrorResult`, `ToolResultFor`.
 - **Published types keep their JSDoc**: `removeComments` also stripped the `.d.ts` files, so consumers saw no
   documentation in their editor. The package grows by the comments in the `.js` files as well.
+- `build:prod` starts from an empty `build/`: `tsc` leaves the output of deleted modules behind, so removed files could
+  ship with a local `npm pack`. A `prepack` script would not help here, as `.npmrc` sets `ignore-scripts`.
 
 ### Internal
 

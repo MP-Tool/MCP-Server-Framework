@@ -82,7 +82,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:prod": "tsc -p tsconfig.prod.json",
+    "build:prod": "npm run clean && tsc -p tsconfig.prod.json",
     "clean": "rm -rf build",
     "clean:all": "rm -rf build node_modules logs",
     "typecheck": "tsc --noEmit",
