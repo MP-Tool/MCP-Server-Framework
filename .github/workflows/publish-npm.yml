@@ -62,6 +62,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
+          persist-credentials: false
           # On workflow_run, github.sha is the default branch's latest commit, not the released one.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 

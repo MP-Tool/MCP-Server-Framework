@@ -166,6 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   merged during the release would have been published under the new version.
 - API docs deploy after a release: a release created with `GITHUB_TOKEN` starts no `release` workflows, so the docs only
   ever ran by hand. The release workflow now dispatches them.
+- Workflow checkouts no longer keep the token in the git config, since none of them pushes, and release notes no longer
+  link to an `examples/` directory that does not exist.
 
 ### Dependencies
 
