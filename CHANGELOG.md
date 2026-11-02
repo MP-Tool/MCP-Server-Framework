@@ -160,6 +160,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bindToSdk` only registers now; the handler bodies were 128 and 149 lines with a complexity up to 24.
 - Corrected comments that had drifted: `MCP_SESSION_*` variables that do not exist, heartbeats no SDK transport
   supports, when `onBeforeTelemetryInit` runs, and the `enableJsonResponse` default (`false`, not `true`).
+- The release workflow runs typecheck, lint and build before it creates a release: `ci.yml` ran alongside it, so a broken
+  commit with a new version was tagged and published anyway.
 
 ### Dependencies
 

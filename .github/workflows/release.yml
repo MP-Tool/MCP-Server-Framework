@@ -82,11 +82,40 @@ jobs:
             echo "ℹ️ package.json not modified in this push"
           fi
 
+  # Same checks as ci.yml, which runs alongside this workflow and cannot stop a release.
+  verify:
+    name: Typecheck, lint & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build:prod
+
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: check-version
+    needs: [check-version, verify]
     if: needs.check-version.outputs.should_release == 'true'
     permissions:
       contents: write  # Required for creating releases and tags
