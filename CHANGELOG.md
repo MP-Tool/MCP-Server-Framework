@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.1] - fix: Node2Shell hardening, security fixes, dependency updates
+## [1.3.0] - feat: Node2Shell hardening, security fixes, cleaner structure
+
+### Breaking
+
+This release breaks the public API on purpose, without deprecations, to reach a clean structure. Check every entry
+here when you upgrade from 1.2.
+
+- **A tool with an `output` schema must return `structuredContent`, now also at compile time**
+  (MP-Tool/komodo-mcp-server#192): the handler type allowed `text()`, which then failed every call with
+  `Output validation error`. Such a handler now returns `structured()` or `error()`, in the schema's shape.
+  Consumers with a text-only branch no longer compile: that branch never worked. New types:
+  `StructuredToolResult`, `ToolErrorResult`, `ToolResultFor`.
 
 ### Security
 
@@ -135,11 +146,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unknown config-file sections and keys are errors, not warnings** (MP-Tool/komodo-mcp-server#191): a file
   with a typo used to apply everything else. It is now discarded or stops the start, see Fixed. Consumer
   sections with `.passthrough()` or `.catchall()` keep accepting extra keys.
-- **A tool with an `output` schema must return `structuredContent`, now also at compile time**
-  (MP-Tool/komodo-mcp-server#192): the handler type allowed `text()`, which then failed every call with
-  `Output validation error`. Such a handler now returns `structured()` or `error()`, in the schema's shape.
-  Consumers with a text-only branch no longer compile: that branch never worked. New types:
-  `StructuredToolResult`, `ToolErrorResult`, `ToolResultFor`.
 - **Published types keep their JSDoc**: `removeComments` also stripped the `.d.ts` files, so consumers saw no
   documentation in their editor. The package grows by the comments in the `.js` files as well.
 - `build:prod` starts from an empty `build/`: `tsc` leaves the output of deleted modules behind, so removed files could
