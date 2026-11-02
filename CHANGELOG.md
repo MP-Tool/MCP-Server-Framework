@@ -181,6 +181,7 @@ here when you upgrade from 1.2.
 - Zod issues are formatted in one place, `formatZodIssues()`, instead of five. A config error carries its problems as
   `ConfigurationError.findings`, so nothing parses an error message back into lines. `fileValidationFailed` and
   `ValidationError.formatIssues` are gone; nothing called them.
+- Startup warnings and errors share one buffer and are replayed in the order they occurred.
 
 ### Dependencies
 

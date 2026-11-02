@@ -25,7 +25,7 @@ import { parse as tomlParse } from "smol-toml";
 import { parse as yamlParse } from "yaml";
 import { ConfigurationError } from "../../errors/categories/validation.js";
 import { formatZodIssues } from "../../utils/zod-helpers.js";
-import { addStartupError, addStartupWarning } from "../startup-warnings.js";
+import { addStartupError, addStartupWarning } from "../startup-messages.js";
 import { getRegisteredSectionNames, getRegisteredSectionSchema, setRegisteredSectionData } from "../extensions.js";
 import {
   configFileSchema,

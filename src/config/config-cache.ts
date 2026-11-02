@@ -35,7 +35,7 @@ import {
 } from "./file/index.js";
 import { clearRegisteredSectionData } from "./extensions.js";
 import { markConfigInitialized } from "./init-state.js";
-import { addStartupWarning } from "./startup-warnings.js";
+import { addStartupWarning } from "./startup-messages.js";
 import { ConfigurationError } from "../errors/categories/validation.js";
 import { setErrorNodeEnv } from "../errors/core/base.js";
 // ============================================================================
